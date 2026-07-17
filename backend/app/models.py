@@ -1,0 +1,76 @@
+"""Core lineage domain model.
+
+The graph is deliberately generic so the same shapes serve both the
+manual-JSON ingestion path (Phase 1) and, later, the sandbox-execution and
+live-Fabric paths (Phase 2). A node is any lineage-bearing object; an edge is a
+directed data-flow relationship, optionally annotated with column-level maps.
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class NodeKind(str, Enum):
+    WORKSPACE = "workspace"
+    NOTEBOOK = "notebook"
+    LAKEHOUSE = "lakehouse"
+    TABLE = "table"
+    COLUMN = "column"
+
+
+class Column(BaseModel):
+    name: str
+    data_type: str | None = None
+
+
+class Node(BaseModel):
+    id: str = Field(..., description="Stable unique id, e.g. 'lakehouse.silver/table.orders'")
+    kind: NodeKind
+    name: str
+    parent_id: str | None = Field(None, description="Containment parent (table -> lakehouse, etc.)")
+    columns: list[Column] = Field(default_factory=list, description="For table nodes")
+    meta: dict = Field(default_factory=dict)
+
+
+class ColumnMap(BaseModel):
+    """A single source-column -> target-column derivation."""
+
+    from_column: str
+    to_column: str
+    transform: str | None = Field(None, description="Human-readable transform, e.g. 'upper(x)'")
+
+
+EdgeKind = Literal["reads", "writes", "calls", "derives"]
+
+
+class Edge(BaseModel):
+    source: str = Field(..., description="Source node id")
+    target: str = Field(..., description="Target node id")
+    kind: EdgeKind = "derives"
+    columns: list[ColumnMap] = Field(default_factory=list)
+    via: str | None = Field(None, description="Node id of the transform that produced this edge, e.g. a notebook")
+
+
+class LineageGraph(BaseModel):
+    nodes: list[Node] = Field(default_factory=list)
+    edges: list[Edge] = Field(default_factory=list)
+
+
+class NotebookSource(BaseModel):
+    """Raw notebook input for the manual-ingest / static-parse path."""
+
+    name: str
+    lakehouse_default: str | None = None
+    cells: list[str] = Field(default_factory=list, description="Source of each code cell")
+
+
+class IngestRequest(BaseModel):
+    """Manual upload payload: known metadata plus notebook code to parse."""
+
+    workspace: str = "Workspace"
+    lakehouses: list[Node] = Field(default_factory=list, description="Lakehouse + table + column nodes")
+    notebooks: list[NotebookSource] = Field(default_factory=list)

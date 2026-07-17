@@ -1,0 +1,134 @@
+"""Static, heuristic lineage extraction from notebook code.
+
+This is the Phase-1 approximation: it does NOT execute anything. It scans
+PySpark / Spark SQL text for table reads and writes to draw object-level edges,
+and makes a best-effort pass at column-level maps from simple SELECT lists.
+
+Phase 2 replaces this module's output with execution-derived lineage from a
+Spark logical-plan listener (OpenLineage/Spline), which is far more accurate.
+The public shape (`build_graph`) stays the same so the frontend is unaffected.
+"""
+
+from __future__ import annotations
+
+import re
+
+from .models import (
+    ColumnMap,
+    Edge,
+    IngestRequest,
+    LineageGraph,
+    Node,
+    NodeKind,
+    NotebookSource,
+)
+
+# --- table reference patterns -------------------------------------------------
+
+_READ_PATTERNS = [
+    re.compile(r"""spark\.table\(\s*['"]([\w.]+)['"]""", re.I),
+    re.compile(r"""spark\.read[\w.]*\.table\(\s*['"]([\w.]+)['"]""", re.I),
+    re.compile(r"""\.load\(\s*['"]([\w./]+)['"]""", re.I),
+    re.compile(r"""\bFROM\s+([\w.]+)""", re.I),
+    re.compile(r"""\bJOIN\s+([\w.]+)""", re.I),
+]
+
+_WRITE_PATTERNS = [
+    re.compile(r"""\.saveAsTable\(\s*['"]([\w.]+)['"]""", re.I),
+    re.compile(r"""\.insertInto\(\s*['"]([\w.]+)['"]""", re.I),
+    re.compile(r"""\bINSERT\s+INTO\s+([\w.]+)""", re.I),
+    re.compile(r"""\bCREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+([\w.]+)""", re.I),
+]
+
+_SELECT_RE = re.compile(r"""\bSELECT\b(.*?)\bFROM\b""", re.I | re.S)
+
+
+def _short(table_ref: str) -> str:
+    """Normalize 'lakehouse.schema.table' or a path to a bare table name."""
+    ref = table_ref.strip().strip("`").rstrip("/")
+    return ref.split("/")[-1].split(".")[-1]
+
+
+def _table_node_id(name: str) -> str:
+    return f"table.{name.lower()}"
+
+
+def _find(patterns: list[re.Pattern[str]], text: str) -> set[str]:
+    found: set[str] = set()
+    for pat in patterns:
+        for m in pat.finditer(text):
+            found.add(_short(m.group(1)))
+    return found
+
+
+def _column_maps(cell: str) -> list[ColumnMap]:
+    """Best-effort column derivation from a single flat SELECT list."""
+    m = _SELECT_RE.search(cell)
+    if not m:
+        return []
+    maps: list[ColumnMap] = []
+    for raw in m.group(1).split(","):
+        expr = raw.strip()
+        if not expr or expr == "*":
+            continue
+        alias_m = re.search(r"\bAS\s+([\w]+)\s*$", expr, re.I)
+        target = alias_m.group(1) if alias_m else expr.split(".")[-1]
+        target = re.sub(r"[^\w]", "", target) or expr
+        transform = None if re.fullmatch(r"[\w.]+", expr) else expr
+        maps.append(ColumnMap(from_column=expr.split(" AS ")[0].strip(), to_column=target, transform=transform))
+    return maps
+
+
+def parse_notebook(nb: NotebookSource) -> tuple[Node, list[Edge]]:
+    nb_id = f"notebook.{nb.name.lower()}"
+    node = Node(id=nb_id, kind=NodeKind.NOTEBOOK, name=nb.name)
+
+    reads: set[str] = set()
+    writes: set[str] = set()
+    col_maps: list[ColumnMap] = []
+    for cell in nb.cells:
+        reads |= _find(_READ_PATTERNS, cell)
+        writes |= _find(_WRITE_PATTERNS, cell)
+        col_maps.extend(_column_maps(cell))
+
+    # A read that is also written in the same notebook is treated as a write target.
+    reads -= writes
+
+    edges: list[Edge] = []
+    for t in sorted(reads):
+        edges.append(Edge(source=_table_node_id(t), target=nb_id, kind="reads", via=nb_id))
+    for t in sorted(writes):
+        edges.append(
+            Edge(source=nb_id, target=_table_node_id(t), kind="writes", via=nb_id, columns=col_maps)
+        )
+    return node, edges
+
+
+def build_graph(req: IngestRequest) -> LineageGraph:
+    graph = LineageGraph()
+
+    ws_id = f"workspace.{req.workspace.lower()}"
+    graph.nodes.append(Node(id=ws_id, kind=NodeKind.WORKSPACE, name=req.workspace))
+
+    known_tables: set[str] = set()
+    for node in req.lakehouses:
+        graph.nodes.append(node)
+        if node.kind == NodeKind.TABLE:
+            known_tables.add(node.id)
+
+    for nb in req.notebooks:
+        nb_node, edges = parse_notebook(nb)
+        nb_node.parent_id = ws_id
+        graph.nodes.append(nb_node)
+        graph.edges.extend(edges)
+
+    # Materialize placeholder table nodes referenced by code but not in metadata.
+    referenced = {e.source for e in graph.edges} | {e.target for e in graph.edges}
+    existing = {n.id for n in graph.nodes}
+    for ref in referenced:
+        if ref.startswith("table.") and ref not in existing:
+            graph.nodes.append(
+                Node(id=ref, kind=NodeKind.TABLE, name=ref.removeprefix("table."), meta={"inferred": True})
+            )
+
+    return graph

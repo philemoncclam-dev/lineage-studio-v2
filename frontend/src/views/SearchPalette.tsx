@@ -1,7 +1,7 @@
 // OpenGrok-style global search palette: tables, columns, notebooks, and
 // grep-style matches over NOTEBOOK_CODE. Centered modal, keyboard-driven.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { TABLES, NOTEBOOKS, LEVELS, NOTEBOOK_CODE } from '../data'
+import { useModel, type AppModel } from '../model'
 import './search.css'
 
 export interface SearchResult {
@@ -27,44 +27,44 @@ const GROUP_LABEL: Record<SearchResult['kind'], string> = {
 const MAX_PER_GROUP = 8
 
 // All notebooks known by name (LEVELS notebook nodes + DAG notebooks), deduped.
-function notebookIndex(): { id: string; name: string }[] {
+function notebookIndex(m: AppModel): { id: string; name: string }[] {
   const seen = new Map<string, string>()
-  for (const nb of NOTEBOOKS) seen.set(nb.name, nb.id)
-  for (const lvl of Object.values(LEVELS)) {
+  for (const nb of m.notebooks) seen.set(nb.name, nb.id)
+  for (const lvl of Object.values(m.levels)) {
     for (const n of lvl.nodes ?? []) {
       if (n.sub?.includes('notebook') && !seen.has(n.label)) {
         // code is keyed by name-like id when not the DAG notebook
-        seen.set(n.label, n.label in NOTEBOOK_CODE ? n.label : n.id)
+        seen.set(n.label, n.label in m.notebookCode ? n.label : n.id)
       }
     }
   }
   return [...seen.entries()].map(([name, id]) => ({ id, name }))
 }
 
-function search(query: string): SearchResult[] {
+function search(m: AppModel, query: string): SearchResult[] {
   const q = query.trim().toLowerCase()
   if (!q) return []
   const out: SearchResult[] = []
 
-  for (const t of TABLES) {
+  for (const t of m.tables) {
     if (t.name.toLowerCase().includes(q)) {
       out.push({ kind: 'table', tableId: t.id, label: t.name, context: t.layer })
     }
   }
-  for (const t of TABLES) {
+  for (const t of m.tables) {
     for (const c of t.columns) {
       if (c.name.toLowerCase().includes(q)) {
         out.push({ kind: 'column', tableId: t.id, colKey: c.key, label: c.name, context: `${t.name} · ${c.type}` })
       }
     }
   }
-  for (const nb of notebookIndex()) {
+  for (const nb of notebookIndex(m)) {
     if (nb.name.toLowerCase().includes(q)) {
       out.push({ kind: 'notebook', notebookId: nb.id, label: nb.name, context: 'notebook' })
     }
   }
-  const nbName = new Map(notebookIndex().map(n => [n.id, n.name]))
-  for (const [id, code] of Object.entries(NOTEBOOK_CODE)) {
+  const nbName = new Map(notebookIndex(m).map(n => [n.id, n.name]))
+  for (const [id, code] of Object.entries(m.notebookCode)) {
     const lines = code.split('\n')
     let hits = 0
     for (let i = 0; i < lines.length && hits < MAX_PER_GROUP; i++) {
@@ -100,20 +100,21 @@ function hl(text: string, q: string) {
 }
 
 export default function SearchPalette({ open, onClose, onResult }: Props) {
+  const model = useModel()
   const [query, setQuery] = useState('')
   const [sel, setSel] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
   const results = useMemo(() => {
-    const all = search(query)
+    const all = search(model, query)
     // stable group order, capped per group
     const grouped: SearchResult[] = []
     for (const kind of GROUP_ORDER) {
       grouped.push(...all.filter(r => r.kind === kind).slice(0, MAX_PER_GROUP))
     }
     return grouped
-  }, [query])
+  }, [model, query])
 
   useEffect(() => {
     if (open) {

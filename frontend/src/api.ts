@@ -43,6 +43,12 @@ export async function fetchSample(): Promise<LineageGraph> {
   return res.json()
 }
 
+export async function fetchGraph(): Promise<LineageGraph> {
+  const res = await fetch(`${BASE}/graph`)
+  if (!res.ok) throw new Error(`graph failed: ${res.status}`)
+  return res.json()
+}
+
 export async function ingest(payload: unknown): Promise<LineageGraph> {
   const res = await fetch(`${BASE}/ingest`, {
     method: 'POST',

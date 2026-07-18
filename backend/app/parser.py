@@ -81,7 +81,8 @@ def _column_maps(cell: str) -> list[ColumnMap]:
 
 def parse_notebook(nb: NotebookSource) -> tuple[Node, list[Edge]]:
     nb_id = f"notebook.{nb.name.lower()}"
-    node = Node(id=nb_id, kind=NodeKind.NOTEBOOK, name=nb.name)
+    # Full source rides along in meta so the UI can grep it (OpenGrok-style).
+    node = Node(id=nb_id, kind=NodeKind.NOTEBOOK, name=nb.name, meta={"source": "\n\n".join(nb.cells)})
 
     reads: set[str] = set()
     writes: set[str] = set()

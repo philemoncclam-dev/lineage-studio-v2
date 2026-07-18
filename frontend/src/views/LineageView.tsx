@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { COL_EDGES, NOTEBOOKS, OPS, TABLES, XFORM } from '../data'
+import { useModel } from '../model'
 
 const Caret = () => <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg>
 
 interface EdgePath { d: string; from?: string; to?: string; kind?: string }
 
 // walk upstream + downstream from a column
-function trace(id: string): Set<string> {
+function trace(colEdges: [string, string][], id: string): Set<string> {
   const set = new Set<string>()
   const go = (c: string, dir: number) => {
     set.add(c)
-    for (const [s, t] of COL_EDGES) {
+    for (const [s, t] of colEdges) {
       if (dir >= 0 && s === c && !set.has(t)) go(t, 1)
       if (dir <= 0 && t === c && !set.has(s)) go(s, -1)
     }
@@ -20,17 +20,19 @@ function trace(id: string): Set<string> {
 }
 
 export default function LineageView({ focusTable, focusColumn }: { focusTable?: string; focusColumn?: string }) {
+  const { tables: TABLES, notebooks: NOTEBOOKS, colEdges: COL_EDGES, ops: OPS } = useModel()
   const canvasRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<Set<string>>(() => new Set(TABLES.map((t) => t.id)))
-  const [selected, setSelected] = useState<string | null>(focusColumn ?? 'clean.customer_name')
+  const [selected, setSelected] = useState<string | null>(focusColumn ?? null)
 
   useEffect(() => { if (focusColumn) setSelected(focusColumn) }, [focusColumn])
+  useEffect(() => { setOpen(new Set(TABLES.map((t) => t.id))) }, [TABLES])
   const [hover, setHover] = useState<string | null>(null)
   const [paths, setPaths] = useState<EdgePath[]>([])
   const [tick, setTick] = useState(0)
 
   const active = hover ?? selected
-  const traced = useMemo(() => (active ? trace(active) : null), [active])
+  const traced = useMemo(() => (active ? trace(COL_EDGES, active) : null), [active, COL_EDGES])
 
   // measure DOM and compute edge geometry
   useLayoutEffect(() => {
@@ -62,7 +64,7 @@ export default function LineageView({ focusTable, focusColumn }: { focusTable?: 
       if (a && b) next.push({ d: curve(a, b), kind })
     }
     setPaths(next)
-  }, [open, tick])
+  }, [open, tick, COL_EDGES, OPS])
 
   useEffect(() => {
     const onResize = () => setTick((t) => t + 1)
@@ -134,9 +136,11 @@ export default function LineageView({ focusTable, focusColumn }: { focusTable?: 
 }
 
 function Inspector({ colKey, onSelect }: { colKey: string | null; onSelect: (k: string) => void }) {
+  const { tables: TABLES, colEdges: COL_EDGES, xform: XFORM } = useModel()
   if (!colKey) return <aside className="ls-inspector" />
-  const table = TABLES.find((t) => t.columns.some((c) => c.key === colKey))!
-  const col = table.columns.find((c) => c.key === colKey)!
+  const table = TABLES.find((t) => t.columns.some((c) => c.key === colKey))
+  const col = table?.columns.find((c) => c.key === colKey)
+  if (!table || !col) return <aside className="ls-inspector" />
   const ups = COL_EDGES.filter(([, t]) => t === colKey).map(([s]) => s)
   const downs = COL_EDGES.filter(([s]) => s === colKey).map(([, t]) => t)
   const xf = XFORM[colKey]

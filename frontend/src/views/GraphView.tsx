@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { LEVELS, LEVEL_TABLE, TABLES, type GNode } from '../data'
+import type { GNode, Level } from '../data'
+import { useModel } from '../model'
 import './graph.css'
 
 interface Crumb { label: string; key: string }
@@ -14,10 +15,15 @@ const matchNode = (n: GNode, q: string) => {
 }
 
 export default function GraphView({ onOpenLineage }: { onOpenLineage: (tableId: string, colKey?: string) => void }) {
+  const model = useModel()
+  const LEVELS = model.levels
   const [path, setPath] = useState<Crumb[]>([{ label: 'Estate', key: 'estate' }])
   const [query, setQuery] = useState('')
+
+  useEffect(() => { setPath([{ label: 'Estate', key: 'estate' }]); setQuery('') }, [model])
+
   const key = path[path.length - 1].key
-  const level = LEVELS[key]
+  const level = LEVELS[key] ?? { level: 'Estate', type: 'graph' as const }
 
   const drill = (k: string) => {
     const d = LEVELS[k]
@@ -56,7 +62,7 @@ export default function GraphView({ onOpenLineage }: { onOpenLineage: (tableId: 
       <div className="gv-stage">
         {level.type === 'graph' ? (
           <>
-            <GraphCanvas levelKey={key} onDrill={drill} query={query} />
+            <GraphCanvas levelKey={key} level={level} onDrill={drill} query={query} />
             <div className="gq">
               <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
               <input
@@ -77,7 +83,7 @@ export default function GraphView({ onOpenLineage }: { onOpenLineage: (tableId: 
   )
 }
 
-function GraphCanvas({ levelKey, onDrill, query }: { levelKey: string; onDrill: (k: string) => void; query: string }) {
+function GraphCanvas({ levelKey, level, onDrill, query }: { levelKey: string; level: Level; onDrill: (k: string) => void; query: string }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [card, setCard] = useState<{ n: Sim; x: number; y: number } | null>(null)
@@ -86,7 +92,6 @@ function GraphCanvas({ levelKey, onDrill, query }: { levelKey: string; onDrill: 
 
   useEffect(() => {
     const wrap = wrapRef.current!, cv = canvasRef.current!, ctx = cv.getContext('2d')!
-    const level = LEVELS[levelKey]
     const nodes: Sim[] = (level.nodes || []).map((n) => ({ ...n, x: (Math.random() - 0.5) * 260, y: (Math.random() - 0.5) * 260, vx: 0, vy: 0 }))
     const byId: Record<string, Sim> = Object.fromEntries(nodes.map((n) => [n.id, n]))
     const links = level.links || []
@@ -166,7 +171,7 @@ function GraphCanvas({ levelKey, onDrill, query }: { levelKey: string; onDrill: 
       cv.removeEventListener('mousemove', onMove); cv.removeEventListener('mousedown', onDown); window.removeEventListener('mouseup', onUp)
       cv.removeEventListener('click', onClick); cv.removeEventListener('wheel', onWheel); window.removeEventListener('resize', resize)
     }
-  }, [levelKey, onDrill])
+  }, [levelKey, level, onDrill])
 
   return (
     <div className="gv-canvas-wrap" ref={wrapRef}>
@@ -183,19 +188,12 @@ function GraphCanvas({ levelKey, onDrill, query }: { levelKey: string; onDrill: 
   )
 }
 
-// Compact upstream/downstream context shown beside the table detail panel.
-const CONTEXT: Record<string, { up: [string, string, string][]; down: [string, string, string][] }> = {
-  clean: {
-    up: [['raw_orders', 'bronze', 'clean_orders'], ['raw_customers', 'bronze', 'clean_orders']],
-    down: [['orders_report', 'gold', 'daily_revenue'], ['revenue_daily', 'gold', 'daily_revenue'], ['customer_360', 'gold', 'build_customer_360']],
-  },
-}
-
 function TableDetail({ levelKey, onOpenLineage }: { levelKey: string; onOpenLineage: (tableId: string, colKey?: string) => void }) {
-  const tableId = LEVEL_TABLE[levelKey]
-  const table = tableId ? TABLES.find((t) => t.id === tableId) : undefined
-  const level = LEVELS[levelKey]
-  const ctx = tableId ? CONTEXT[tableId] : undefined
+  const model = useModel()
+  const tableId = model.levelTable[levelKey]
+  const table = tableId ? model.tables.find((t) => t.id === tableId) : undefined
+  const level = model.levels[levelKey]
+  const ctx = tableId ? model.context[tableId] : undefined
 
   const Mini = ({ rows }: { rows: [string, string, string][] }) => (
     <>

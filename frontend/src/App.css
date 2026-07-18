@@ -28,15 +28,15 @@ body { margin: 0; font-family: var(--sans); color: var(--text); background: var(
 /* ===== Toolbar ===== */
 .toolbar { display: flex; align-items: center; gap: 14px; padding: 10px 16px;
   background: color-mix(in srgb, var(--surface) 82%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); z-index: 5; }
-.brand { display: flex; align-items: center; gap: 9px; font-weight: 650; letter-spacing: -.2px; }
-.brand .dot { width: 18px; height: 18px; border-radius: 6px; background: linear-gradient(135deg, var(--accent), var(--notebook)); box-shadow: var(--shadow); }
 .seg { display: flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 3px; gap: 2px; }
 .seg button { font: inherit; font-size: 12.5px; border: 0; background: transparent; color: var(--text-2); padding: 5px 12px; border-radius: 6px; cursor: pointer; }
 .seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-weight: 560; }
 .spacer { flex: 1; }
-.search { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 7px 12px; width: 260px; color: var(--text-3); }
+.search { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 7px 12px; width: 280px; color: var(--text-3); font: inherit; cursor: pointer; text-align: left; }
+.search:hover { border-color: var(--border-strong); }
 .search svg { width: 15px; height: 15px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; }
-.search input { border: 0; background: transparent; outline: none; color: var(--text); width: 100%; font: inherit; font-size: 13px; }
+.search .ph { flex: 1; font-size: 13px; }
+.search kbd { font-family: var(--mono); font-size: 10px; color: var(--text-3); background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
 
 /* ===== Lineage view ===== */
 .ls-body { flex: 1; display: flex; min-height: 0; }
@@ -52,17 +52,17 @@ svg.ls-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-
 
 .ls-node { position: absolute; width: 208px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; transition: box-shadow .18s, border-color .18s; }
 .ls-node.focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); }
-.ls-node .head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; user-select: none; }
-.ls-node .ico { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none; color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 1px 2px rgba(20,28,51,.18); }
-.ls-node .ico svg { width: 15px; height: 15px; stroke: #fff; stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-.ico.table { background: linear-gradient(160deg, #1cb87c, #0e8a5c); }
-.ico.notebook { background: linear-gradient(160deg, #9b74f8, #6d40e0); }
+.ls-node .head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; user-select: none; }
+.tick { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-3); }
+.tick.bronze { background: var(--bronze); }
+.tick.silver { background: var(--silver); }
+.tick.gold { background: var(--gold); }
+.tick.notebook { background: var(--notebook); }
 .ls-node .title { font-size: 13px; font-weight: 620; line-height: 1.15; letter-spacing: -.1px; }
 .ls-node .sub { font-size: 10.5px; color: var(--text-3); font-family: var(--mono); }
 .ls-node .caret { margin-left: auto; display: grid; place-items: center; color: var(--text-3); transition: transform .18s; }
 .ls-node .caret svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .ls-node.open .caret { transform: rotate(90deg); }
-.ls-node .badge { font-size: 9.5px; color: var(--text-3); background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font-weight: 600; margin-left: auto; }
 .cols { border-top: 1px solid var(--border); display: none; }
 .ls-node.open .cols { display: block; }
 .col { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 12px; border-top: 1px solid var(--surface-2); cursor: pointer; }
@@ -79,12 +79,9 @@ svg.ls-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-
 .insp-head { padding: 18px 18px 14px; border-bottom: 1px solid var(--border); }
 .insp-crumb { font-size: 11px; color: var(--text-3); font-family: var(--mono); margin-bottom: 10px; }
 .insp-title { display: flex; align-items: center; gap: 10px; }
-.insp-title .ico { width: 30px; height: 30px; border-radius: 9px; }
-.insp-title .ico svg { width: 17px; height: 17px; }
 .insp-title h2 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.3px; }
 .insp-title .ttype { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
 .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; margin-top: 8px; margin-right: 6px; }
-.pill.type-string { background: color-mix(in srgb, var(--reads) 14%, transparent); color: var(--reads); }
 .pill.verified { background: color-mix(in srgb, var(--verified) 14%, transparent); color: var(--verified); }
 .sec { padding: 16px 18px; border-bottom: 1px solid var(--border); }
 .sec-t { font-size: 10.5px; letter-spacing: .6px; text-transform: uppercase; color: var(--text-3); font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 7px; }
@@ -107,7 +104,6 @@ svg.ls-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-
 .crumbs button:hover { background: var(--surface-2); color: var(--text-2); }
 .crumbs button.cur { color: var(--text); font-weight: 600; }
 .crumbs .sep { color: var(--text-3); opacity: .5; }
-.crumbs .lvl { margin-left: auto; font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-3); font-weight: 700; }
 .gv-stage { position: relative; flex: 1; overflow: hidden; }
 .gv-canvas-wrap { position: absolute; inset: 0; }
 .gv-canvas { display: block; width: 100%; height: 100%; background-image: radial-gradient(var(--grid) 1.1px, transparent 1.1px); background-size: 24px 24px; transition: opacity .16s; }

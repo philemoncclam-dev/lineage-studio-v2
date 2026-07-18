@@ -90,3 +90,80 @@ export const LEVELS: Record<string, Level> = {
       ['orders_clean', 'nb_c360', 'r'], ['customers_dim', 'nb_c360', 'r'], ['events_sess', 'nb_c360', 'r']] },
   'tbl:oc': { level: 'Table lineage', crumb: 'orders_clean', type: 'lineage' },
 }
+
+// Maps drill-level keys (type 'lineage') to TABLES ids so the graph view can
+// show real column metadata on drill. Levels without an entry fall back
+// gracefully in the UI.
+export const LEVEL_TABLE: Record<string, string> = { 'tbl:oc': 'clean' }
+
+// ---- Notebook source (for OpenGrok-style code search) ----
+// Keys: 'nb' = clean_orders (the DAG-view notebook id); the rest are keyed by
+// name-like ids matching notebooks referenced in LEVELS:
+//   'sessionize_events', 'build_customer_360', 'daily_revenue'.
+export const NOTEBOOK_CODE: Record<string, string> = {
+  nb: `# clean_orders — bronze -> silver
+from pyspark.sql import functions as F
+
+raw = spark.read.table("bronze.raw_orders")
+customers = spark.read.table("bronze.customers")
+
+orders = (
+    raw
+    .filter(F.col("amount") > 0)
+    .join(customers, raw["customer"] == customers["customer_id"], "left")
+    .select(
+        F.col("order_id"),
+        F.upper(F.col("customer")).alias("customer_name"),
+        F.col("amount"),
+        customers["region"],
+    )
+)
+
+orders.write.mode("overwrite").saveAsTable("silver.orders_clean")`,
+  sessionize_events: `# sessionize_events — bronze -> silver
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+
+events = spark.read.table("bronze.raw_events")
+
+w = Window.partitionBy("user_id").orderBy("event_ts")
+gap = F.col("event_ts").cast("long") - F.lag("event_ts").over(w).cast("long")
+
+sessions = (
+    events
+    .withColumn("new_session", (gap > 30 * 60).cast("int"))
+    .withColumn("session_id", F.sum("new_session").over(w))
+)
+
+sessions.write.mode("overwrite").saveAsTable("silver.events_sessionized")`,
+  build_customer_360: `# build_customer_360 — silver -> gold
+from pyspark.sql import functions as F
+
+orders = spark.read.table("silver.orders_clean")
+customers = spark.read.table("silver.customers_dim")
+events = spark.read.table("silver.events_sessionized")
+
+spend = orders.groupBy("customer_name").agg(F.sum("amount").alias("lifetime_value"))
+activity = events.groupBy("user_id").agg(F.countDistinct("session_id").alias("sessions"))
+
+c360 = (
+    customers
+    .join(spend, "customer_name", "left")
+    .join(activity, customers["customer_id"] == activity["user_id"], "left")
+)
+
+c360.write.mode("overwrite").saveAsTable("gold.customer_360")`,
+  daily_revenue: `# daily_revenue — silver -> gold
+from pyspark.sql import functions as F
+
+orders = spark.read.table("silver.orders_clean")
+
+daily = (
+    orders
+    .withColumn("order_date", F.to_date("ts"))
+    .groupBy("order_date", "region")
+    .agg(F.sum("amount").alias("revenue"), F.count("order_id").alias("orders"))
+)
+
+daily.write.mode("overwrite").saveAsTable("gold.daily_revenue")`,
+}

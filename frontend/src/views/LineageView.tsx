@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { COL_EDGES, NOTEBOOKS, OPS, TABLES, XFORM } from '../data'
 
-const TableIcon = () => (
-  <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" /><path d="M3.5 10h17M9.5 10v9.5" /></svg>
-)
 const Caret = () => <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg>
 
 interface EdgePath { d: string; from?: string; to?: string; kind?: string }
@@ -22,10 +19,12 @@ function trace(id: string): Set<string> {
   return set
 }
 
-export default function LineageView({ focusTable }: { focusTable?: string }) {
+export default function LineageView({ focusTable, focusColumn }: { focusTable?: string; focusColumn?: string }) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<Set<string>>(() => new Set(TABLES.map((t) => t.id)))
-  const [selected, setSelected] = useState<string | null>('clean.customer_name')
+  const [selected, setSelected] = useState<string | null>(focusColumn ?? 'clean.customer_name')
+
+  useEffect(() => { if (focusColumn) setSelected(focusColumn) }, [focusColumn])
   const [hover, setHover] = useState<string | null>(null)
   const [paths, setPaths] = useState<EdgePath[]>([])
   const [tick, setTick] = useState(0)
@@ -95,9 +94,8 @@ export default function LineageView({ focusTable }: { focusTable?: string }) {
           {NOTEBOOKS.map((nb) => (
             <div className="ls-node" id={`ls-${nb.id}`} key={nb.id} style={{ left: nb.x, top: nb.y }}>
               <div className="head">
-                <span className="ico notebook"><svg viewBox="0 0 24 24"><rect x="4.5" y="3.5" width="15" height="17" rx="2.5" /><path d="M9.2 8.5l-2 2 2 2M14.8 8.5l2 2-2 2" /></svg></span>
+                <span className="tick notebook" />
                 <div><div className="title">{nb.name}</div><div className="sub">notebook · PySpark</div></div>
-                <span className="badge">3 cells</span>
               </div>
             </div>
           ))}
@@ -108,7 +106,7 @@ export default function LineageView({ focusTable }: { focusTable?: string }) {
               <div className={`ls-node ${isOpen ? 'open' : ''} ${t.id === focusTable ? 'focus' : ''}`}
                 id={`ls-${t.id}`} key={t.id} style={{ left: t.x, top: t.y }}>
                 <div className="head" onClick={() => toggle(t.id)}>
-                  <span className="ico table"><TableIcon /></span>
+                  <span className={`tick ${t.layer}`} />
                   <div><div className="title">{t.name}</div><div className="sub">{t.layer}</div></div>
                   <span className="caret"><Caret /></span>
                 </div>
@@ -160,10 +158,9 @@ function Inspector({ colKey, onSelect }: { colKey: string | null; onSelect: (k: 
       <div className="insp-head">
         <div className="insp-crumb">{table.layer}.{table.name}</div>
         <div className="insp-title">
-          <span className="ico table"><TableIcon /></span>
           <div><h2>{col.name}</h2><div className="ttype">{col.type}{col.pk ? ' · primary key' : ''}</div></div>
         </div>
-        <span className="pill type-string">column</span>{col.pk && <span className="pill verified">verified</span>}
+        {col.pk && <span className="pill verified">verified</span>}
       </div>
       {xf && (
         <div className="sec"><div className="sec-t">Transformation</div>

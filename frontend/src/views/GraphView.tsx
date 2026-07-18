@@ -1,27 +1,47 @@
 import { useEffect, useRef, useState } from 'react'
-import { LEVELS, type GNode } from '../data'
+import { LEVELS, LEVEL_TABLE, TABLES, type GNode } from '../data'
+import './graph.css'
 
 interface Crumb { label: string; key: string }
 interface Sim extends GNode { x: number; y: number; vx: number; vy: number }
 
 const cssVar = (k: string) => getComputedStyle(document.documentElement).getPropertyValue('--' + k).trim()
 
-export default function GraphView({ onOpenLineage }: { onOpenLineage: (tableId: string) => void }) {
+const matchNode = (n: GNode, q: string) => {
+  const s = q.trim().toLowerCase()
+  if (!s) return false
+  return n.label.toLowerCase().includes(s) || (n.sub || '').toLowerCase().includes(s)
+}
+
+export default function GraphView({ onOpenLineage }: { onOpenLineage: (tableId: string, colKey?: string) => void }) {
   const [path, setPath] = useState<Crumb[]>([{ label: 'Estate', key: 'estate' }])
+  const [query, setQuery] = useState('')
   const key = path[path.length - 1].key
   const level = LEVELS[key]
 
   const drill = (k: string) => {
     const d = LEVELS[k]
     setPath((p) => [...p, { label: d.crumb || d.level, key: k }])
+    setQuery('')
   }
-  const goto = (i: number) => setPath((p) => p.slice(0, i + 1))
+  const goto = (i: number) => { setPath((p) => p.slice(0, i + 1)); setQuery('') }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPath((p) => (p.length > 1 ? p.slice(0, -1) : p)) }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  const onQueryKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      if (query) { e.stopPropagation(); setQuery(''); (e.target as HTMLInputElement).blur() }
+      return
+    }
+    if (e.key === 'Enter') {
+      const matches = (level.nodes || []).filter((n) => matchNode(n, query))
+      if (matches.length === 1 && matches[0].drill) drill(matches[0].drill)
+    }
+  }
 
   return (
     <div className="gv-root">
@@ -32,21 +52,37 @@ export default function GraphView({ onOpenLineage }: { onOpenLineage: (tableId: 
             {i < path.length - 1 && <span className="sep">›</span>}
           </span>
         ))}
-        <span className="lvl">{level.level}</span>
       </div>
       <div className="gv-stage">
-        {level.type === 'graph'
-          ? <GraphCanvas levelKey={key} onDrill={drill} />
-          : <LineageHandoff onOpen={() => onOpenLineage('clean')} />}
+        {level.type === 'graph' ? (
+          <>
+            <GraphCanvas levelKey={key} onDrill={drill} query={query} />
+            <div className="gq">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={onQueryKey}
+                placeholder={`Query ${level.level.toLowerCase()}…`}
+                spellCheck={false}
+              />
+              {query && <button className="gq-clear" onClick={() => setQuery('')} aria-label="Clear query">×</button>}
+            </div>
+          </>
+        ) : (
+          <TableDetail levelKey={key} onOpenLineage={onOpenLineage} />
+        )}
       </div>
     </div>
   )
 }
 
-function GraphCanvas({ levelKey, onDrill }: { levelKey: string; onDrill: (k: string) => void }) {
+function GraphCanvas({ levelKey, onDrill, query }: { levelKey: string; onDrill: (k: string) => void; query: string }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [card, setCard] = useState<{ n: Sim; x: number; y: number } | null>(null)
+  const queryRef = useRef(query)
+  queryRef.current = query
 
   useEffect(() => {
     const wrap = wrapRef.current!, cv = canvasRef.current!, ctx = cv.getContext('2d')!
@@ -65,18 +101,24 @@ function GraphCanvas({ levelKey, onDrill }: { levelKey: string; onDrill: (k: str
 
     const draw = () => {
       ctx.clearRect(0, 0, W, H)
+      const q = queryRef.current.trim()
+      // matched: nodes the live query keeps lit (null when no query)
+      const matched = q ? new Set(nodes.filter((n) => matchNode(n, q)).map((n) => n.id)) : null
       const hi = hover ? new Set([hover.id, ...adj[hover.id]]) : null
       links.forEach(([ai, bi]) => {
-        const a = screen(byId[ai]), b = screen(byId[bi]); const on = hi && hi.has(ai) && hi.has(bi)
+        const a = screen(byId[ai]), b = screen(byId[bi])
+        const on = hi ? hi.has(ai) && hi.has(bi) : matched ? matched.has(ai) || matched.has(bi) : false
+        const dimmed = (hi || matched) && !on
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo(mx, my, b.x, b.y)
-        ctx.strokeStyle = on ? cssVar('accent') : cssVar('border-strong'); ctx.globalAlpha = hi ? (on ? 0.95 : 0.07) : 0.5; ctx.lineWidth = on ? 2 : 1; ctx.stroke()
+        ctx.strokeStyle = on ? cssVar('accent') : cssVar('border-strong'); ctx.globalAlpha = dimmed ? 0.07 : on ? 0.95 : 0.5; ctx.lineWidth = on ? 2 : 1; ctx.stroke()
       })
       ctx.globalAlpha = 1
       nodes.forEach((n) => {
-        const p = screen(n), R = n.r * zoom, dim = hi && !hi.has(n.id)
+        const p = screen(n), R = n.r * zoom
+        const dim = hi ? !hi.has(n.id) : matched ? !matched.has(n.id) : false
         ctx.globalAlpha = dim ? 0.22 : 1
-        if (hover === n) { ctx.beginPath(); ctx.arc(p.x, p.y, R + 7, 0, 7); ctx.fillStyle = cssVar(n.c); ctx.globalAlpha = 0.16; ctx.fill(); ctx.globalAlpha = 1 }
+        if (hover === n || (matched && matched.has(n.id))) { ctx.beginPath(); ctx.arc(p.x, p.y, R + 7, 0, 7); ctx.fillStyle = cssVar(n.c); ctx.globalAlpha = 0.16; ctx.fill(); ctx.globalAlpha = dim ? 0.22 : 1 }
         ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, 7); ctx.fillStyle = cssVar(n.c); ctx.fill(); ctx.lineWidth = 2.2; ctx.strokeStyle = cssVar('surface'); ctx.stroke()
         if (!dim) {
           ctx.fillStyle = cssVar('text'); ctx.font = `520 ${Math.max(11, 12 * zoom)}px ${cssVar('sans')}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'
@@ -141,29 +183,81 @@ function GraphCanvas({ levelKey, onDrill }: { levelKey: string; onDrill: (k: str
   )
 }
 
-function LineageHandoff({ onOpen }: { onOpen: () => void }) {
-  const T = (name: string, layer: string, via: string | null, color: string, focus = false) => (
-    <div className={`tcard ${focus ? 'focus' : ''}`}>
-      <i style={{ background: `var(--${color})` }} />
-      <div className="tn">{name}</div><div className="ts">{layer}</div>
-      {via && <div className="via">via {via}</div>}
-    </div>
+// Compact upstream/downstream context shown beside the table detail panel.
+const CONTEXT: Record<string, { up: [string, string, string][]; down: [string, string, string][] }> = {
+  clean: {
+    up: [['raw_orders', 'bronze', 'clean_orders'], ['raw_customers', 'bronze', 'clean_orders']],
+    down: [['orders_report', 'gold', 'daily_revenue'], ['revenue_daily', 'gold', 'daily_revenue'], ['customer_360', 'gold', 'build_customer_360']],
+  },
+}
+
+function TableDetail({ levelKey, onOpenLineage }: { levelKey: string; onOpenLineage: (tableId: string, colKey?: string) => void }) {
+  const tableId = LEVEL_TABLE[levelKey]
+  const table = tableId ? TABLES.find((t) => t.id === tableId) : undefined
+  const level = LEVELS[levelKey]
+  const ctx = tableId ? CONTEXT[tableId] : undefined
+
+  const Mini = ({ rows }: { rows: [string, string, string][] }) => (
+    <>
+      {rows.map(([name, layer, via]) => (
+        <div className="tcard mini" key={name}>
+          <i style={{ background: `var(--${layer})` }} />
+          <div className="tn">{name}</div><div className="ts">{layer}</div>
+          <div className="via">via {via}</div>
+        </div>
+      ))}
+    </>
   )
-  const Chev = () => <div className="lchev"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg></div>
+
+  if (!table || !tableId) {
+    return (
+      <div className="td-wrap on">
+        <div className="td-panel">
+          <div className="td-head">
+            <div className="td-name">{level.crumb || level.level}</div>
+            <div className="td-meta">No column metadata available for this table yet.</div>
+          </div>
+          <div className="td-empty">Column-level detail appears here once this table has been ingested.</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="lineage on">
-      <div className="lcol"><div className="lh">Upstream</div>
-        {T('raw_orders', 'bronze', 'clean_orders', 'bronze')}
-        {T('raw_customers', 'bronze', 'clean_orders', 'bronze')}</div>
-      <Chev />
-      <div className="lcol"><div className="lh">Focus</div>
-        {T('orders_clean', 'silver · 4 columns', null, 'silver', true)}
-        <button className="openbtn" onClick={onOpen}>View column-level lineage →</button></div>
-      <Chev />
-      <div className="lcol"><div className="lh">Downstream</div>
-        {T('orders_report', 'gold', 'daily_revenue', 'gold')}
-        {T('revenue_daily', 'gold', 'daily_revenue', 'gold')}
-        {T('customer_360', 'gold', 'build_customer_360', 'gold')}</div>
+    <div className="td-wrap on">
+      {ctx && (
+        <div className="td-side">
+          <div className="td-sidehead">Upstream</div>
+          <Mini rows={ctx.up} />
+        </div>
+      )}
+      <div className="td-panel">
+        <div className="td-head">
+          <i className="td-dot" style={{ background: `var(--${table.c})` }} />
+          <div>
+            <div className="td-name">{table.name}</div>
+            <div className="td-meta">{table.layer} · {table.columns.length} columns</div>
+          </div>
+        </div>
+        <div className="td-cols">
+          {table.columns.map((col) => (
+            <button className="td-col" key={col.key} onClick={() => onOpenLineage(tableId, col.key)} title={`Trace ${col.name} lineage`}>
+              <span className="name">{col.name}</span>
+              {col.pk && <span className="pk">PK</span>}
+              <span className="type">{col.type}</span>
+            </button>
+          ))}
+        </div>
+        <div className="td-foot">
+          <button className="openbtn" onClick={() => onOpenLineage(tableId)}>View column-level lineage →</button>
+        </div>
+      </div>
+      {ctx && (
+        <div className="td-side">
+          <div className="td-sidehead">Downstream</div>
+          <Mini rows={ctx.down} />
+        </div>
+      )}
     </div>
   )
 }

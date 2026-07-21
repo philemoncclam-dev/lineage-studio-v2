@@ -35,7 +35,11 @@ export interface LineageGraph {
   edges: LineageEdge[]
 }
 
-const BASE = 'http://localhost:8000'
+// Where the FastAPI backend lives. Set VITE_API_BASE at build time to point a
+// deployed frontend at a reachable backend; the default keeps `npm run dev`
+// working with no configuration. Vite inlines this at build time, so it is
+// baked into the bundle and is not a runtime secret.
+const BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '')
 
 export async function fetchSample(): Promise<LineageGraph> {
   const res = await fetch(`${BASE}/sample`)

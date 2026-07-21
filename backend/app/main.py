@@ -27,9 +27,11 @@ from .sample import SAMPLE
 
 app = FastAPI(title="Lineage Studio API", version="0.1.0")
 
+# Deliberately an allow-list, not a wildcard: this API can spend Purview
+# credentials, so any origin permitted here can do so on a visitor's behalf.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=get_settings().allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -42,6 +42,17 @@ class Settings(BaseSettings):
         False, description="Permit lineage pushes into Purview"
     )
 
+    #: Extra browser origins allowed to call this API, comma-separated. The Vite
+    #: dev server is always allowed; a deployed frontend is not, because the
+    #: backend holds Purview credentials and any origin permitted here can spend
+    #: them on a visitor's behalf.
+    cors_origins: str = ""
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        configured = [o.strip().rstrip("/") for o in self.cors_origins.split(",")]
+        return ["http://localhost:5173", *[o for o in configured if o]]
+
     @property
     def purview_configured(self) -> bool:
         """True when every credential needed for a read call is present."""

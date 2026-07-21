@@ -24,6 +24,7 @@ from .client import PurviewClient, PurviewError
 from .dataproduct import (
     catalog_datamap_assets,
     create_data_product,
+    created_product_id,
     list_data_products,
     list_governance_domains,
 )
@@ -44,6 +45,10 @@ class DataProductRequest(BaseModel):
     description: str | None = None
     #: Data-map GUIDs, which are what our graph nodes carry as their ids.
     asset_guids: list[str] = Field(default_factory=list)
+    #: Entra object ids. Defaults to this service principal when omitted.
+    owner_ids: list[str] = Field(default_factory=list)
+    #: GUID -> display name, so onboarding payloads are readable in a preview.
+    asset_names: dict[str, str] = Field(default_factory=dict)
     apply: bool = False
 
 
@@ -124,17 +129,35 @@ def catalog_data_product(req: DataProductRequest) -> dict:
     """
     try:
         client = PurviewClient()
+        owners = req.owner_ids or [client.principal_object_id() or ""]
+        if not any(owners):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "A data product needs an owner, and this service principal's "
+                    "own object id could not be read from the directory — pass "
+                    "owner_ids explicitly."
+                ),
+            )
         session = WriteSession(client, apply=req.apply)
         product_id = create_data_product(
             session,
             req.name,
             req.domain_id,
+            owners,
             description=req.description,
         )
         result = session.run()
+        # The service assigns its own id and ignores the one we proposed, so
+        # the assets must be linked against what it returned.
+        product_id = created_product_id(result, product_id)
         if req.apply and result.ok and req.asset_guids:
             assets = catalog_datamap_assets(
-                client, product_id, req.asset_guids, apply=True
+                client,
+                product_id,
+                req.asset_guids,
+                names=req.asset_names,
+                apply=True,
             )
             result.ops.extend(assets.ops)
             result.responses.extend(assets.responses)

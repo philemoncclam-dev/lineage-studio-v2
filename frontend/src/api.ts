@@ -197,6 +197,7 @@ export async function catalogDataProduct(body: {
   domain_id: string
   description?: string
   asset_guids: string[]
+  asset_names?: Record<string, string>
   apply: boolean
 }): Promise<WriteResult & { data_product_id: string }> {
   const res = await fetch(`${BASE}/purview/dataproducts`, {

@@ -46,6 +46,8 @@ class PurviewClient:
             client_secret=self.settings.purview_client_secret,
         )
         self._session = requests.Session()
+        #: Cached by `principal_object_id`; "" records a failed lookup.
+        self._principal_object_id: str | None = None
 
     @property
     def _base(self) -> str:
@@ -92,6 +94,39 @@ class PurviewClient:
             continuation = payload.get("continuationToken")
             if not continuation:
                 return
+
+    def principal_object_id(self) -> str | None:
+        """Our own service principal's Entra object id, or None.
+
+        Needed because a data product must name an owner contact, and the only
+        identity this process can always speak for is itself. The object id is
+        not the client id — they are different GUIDs for the same app — so it
+        has to be looked up rather than read from config.
+
+        Directory reads are a separate grant from the Purview ones, so this
+        returns None rather than raising: a caller can then ask the user for an
+        owner instead of failing outright.
+        """
+        if self._principal_object_id is not None:
+            return self._principal_object_id or None
+        try:
+            token = self._credential.get_token(
+                "https://graph.microsoft.com/.default"
+            ).token
+            resp = self._session.get(
+                "https://graph.microsoft.com/v1.0/servicePrincipals",
+                params={
+                    "$filter": f"appId eq '{self.settings.purview_client_id}'",
+                    "$select": "id",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=_TIMEOUT,
+            )
+            values = resp.json().get("value", []) if resp.ok else []
+            self._principal_object_id = values[0]["id"] if values else ""
+        except Exception:  # noqa: BLE001 — an optional lookup must never break a write
+            self._principal_object_id = ""
+        return self._principal_object_id or None
 
     def get_entity(self, guid: str) -> dict:
         """Full entity including its `columns` relationship attribute."""

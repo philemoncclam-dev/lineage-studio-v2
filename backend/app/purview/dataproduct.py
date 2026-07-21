@@ -22,10 +22,10 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable, Literal, Mapping
 
 from ..models import LineageGraph
-from .client import PurviewClient
+from .client import PurviewClient, PurviewError
 from .writer import WriteSession, WriteResult
 
 #: Governance-domain, data-product and data-asset operations all live here.
@@ -37,7 +37,9 @@ UC_API_VERSION = "2026-03-20-preview"
 #: service spells the enum in upper case.
 ENTITY_TYPE_DATA_ASSET = "DATAASSET"
 
-Status = Literal["DRAFT", "PUBLISHED", "EXPIRED"]
+# Title case, not upper: this is how the service echoes the value back, and the
+# swagger's enum casing is not what the create endpoint accepts.
+Status = Literal["Draft", "Published", "Expired"]
 
 
 def _uc(path: str, **query: Any) -> str:
@@ -148,14 +150,22 @@ def list_data_product_assets(
     The relationship records carry only the related entity's id, so callers
     that need names or source GUIDs must resolve them separately — hence the
     plain list of ids rather than a half-populated `DataAssetRef`.
+
+    A just-created product 404s here for a while before it becomes queryable.
+    That means "no assets related yet", which is exactly what an empty list
+    says, so it is not an error — treating it as one breaks the common path of
+    creating a product and filling it in the same request.
     """
-    payload = client.request(
-        "GET",
-        _uc(
-            f"/dataProducts/{data_product_id}/relationships",
-            entityType=ENTITY_TYPE_DATA_ASSET,
-        ),
-    )
+    try:
+        payload = client.request(
+            "GET",
+            _uc(
+                f"/dataProducts/{data_product_id}/relationships",
+                entityType=ENTITY_TYPE_DATA_ASSET,
+            ),
+        )
+    except PurviewError:
+        return []
     return [r["entityId"] for r in payload.get("value", []) if r.get("entityId")]
 
 
@@ -198,27 +208,36 @@ def create_data_product(
     session: WriteSession,
     name: str,
     domain_id: str,
+    owner_ids: Iterable[str],
     *,
     description: str | None = None,
     product_type: str = "Analytical",
-    status: Status = "DRAFT",
+    status: Status = "Draft",
     data_product_id: str | None = None,
 ) -> str:
-    """Queue creation of a data product and return the id it will be given.
+    """Queue creation of a data product and return the id we proposed.
 
-    The service does not mint the id — `id` is a required field on the create
-    body — so the caller can hold the id before anything is transmitted and
-    queue the asset links against it in the same session. That is also what
-    makes the dry run a complete preview of a multi-step catalogue operation
-    rather than just its first step.
+    The returned id is only good for previewing. Despite `id` being accepted in
+    the create body, the service assigns its own and returns it in the response
+    — linking assets against the proposed id 404s with "DataProduct does not
+    exist" even though the product was created. Callers that apply must read
+    the id back from the response; see `created_product_id`.
+
+    `owner_ids` are Entra object ids. At least one is required: the service
+    rejects a create with no owner contact (`DataCatalogInvalidEntity`), which
+    the swagger does not mark as required — it was found by being refused.
     """
     product_id = data_product_id or str(uuid.uuid4())
+    owners = [{"id": oid, "description": "Lineage Studio"} for oid in owner_ids if oid]
+    if not owners:
+        raise ValueError("a data product needs at least one owner contact")
     body: dict[str, Any] = {
         "id": product_id,
         "name": name,
         "domain": domain_id,
         "type": product_type,
         "status": status,
+        "contacts": {"owner": owners},
     }
     if description:
         body["description"] = description
@@ -231,17 +250,49 @@ def create_data_product(
     return product_id
 
 
-def queue_asset_onboarding(session: WriteSession, datamap_guid: str) -> None:
+def created_product_id(result: WriteResult, proposed: str) -> str:
+    """The id the service actually gave a product, falling back to `proposed`.
+
+    On a dry run there is no response to read, so the proposed id stands in and
+    the preview remains coherent.
+    """
+    for response in result.responses:
+        if response.get("id"):
+            return str(response["id"])
+    return proposed
+
+
+def queue_asset_onboarding(
+    session: WriteSession, datamap_guid: str, name: str | None = None
+) -> None:
     """Queue onboarding of a data-map entity as a Unified Catalog asset.
 
     The new asset's catalog id comes back in the response and cannot be known
     in advance, so linking it to a product is a separate, later step.
+
+    Three fields the swagger does not present as required, all established by
+    being refused:
+
+      * `name` and `type` are mandatory. `type` accepts only ADLSGen2Path,
+        AzureSqlTable or General — none of the data-map entity types — so
+        Fabric tables and views are all General.
+      * `source.type` is a *different* enum (DataMap / PurviewDataMap) and
+        omitting it creates an asset with no link back to the data map, which
+        looks like success and is not what anyone wants.
+
+    `name` is required but not authoritative: the service replaces it with the
+    data-map entity's real name, so the caller's value only matters when the
+    lookup somehow yields nothing.
     """
     session.add(
         "POST",
         _uc("/dataAssets"),
-        {"source": {"assetId": datamap_guid}},
-        describes=f"onboard data-map asset {datamap_guid} into the catalog",
+        {
+            "name": name or datamap_guid,
+            "type": "General",
+            "source": {"assetId": datamap_guid, "type": "DataMap"},
+        },
+        describes=f"onboard data-map asset {name or datamap_guid} into the catalog",
     )
 
 
@@ -271,6 +322,7 @@ def catalog_datamap_assets(
     data_product_id: str,
     datamap_guids: Iterable[str],
     *,
+    names: Mapping[str, str] | None = None,
     apply: bool = False,
 ) -> WriteResult:
     """Put data-map entities into a data product, onboarding them if needed.
@@ -289,7 +341,7 @@ def catalog_datamap_assets(
     onboarding = WriteSession(client, apply=apply)
     for guid in guids:
         if guid not in known:
-            queue_asset_onboarding(onboarding, guid)
+            queue_asset_onboarding(onboarding, guid, (names or {}).get(guid))
     result = onboarding.run()
 
     asset_ids = [known[g].id for g in guids if g in known]

@@ -152,6 +152,7 @@ function CatalogTab({ writeEnabled }: { writeEnabled: boolean }) {
           name,
           domain_id: domainId,
           asset_guids: chosen.map((t) => t.id),
+          asset_names: Object.fromEntries(chosen.map((t) => [t.id, t.name])),
           apply,
         }),
       )

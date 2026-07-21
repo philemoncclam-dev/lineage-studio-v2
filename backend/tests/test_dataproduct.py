@@ -11,7 +11,8 @@ import pytest
 from app import config
 from app.models import LineageGraph, Node, NodeKind
 from app.purview import dataproduct as dp
-from app.purview.writer import WriteSession
+from app.purview.client import PurviewError
+from app.purview.writer import WriteResult, WriteSession
 
 
 class FakeUCClient:
@@ -103,26 +104,83 @@ def test_create_returns_the_id_it_queued():
     """The id is client-minted, so links can be queued before anything sends."""
     session = WriteSession(FakeUCClient())
     product_id = dp.create_data_product(
-        session, "LineageStudio Test Product", "d-1", description="hi"
+        session, "LineageStudio Test Product", "d-1", ["own-1"], description="hi"
     )
     op = session.run().ops[0]
     assert op.body["id"] == product_id
-    assert op.body["domain"] == "d-1" and op.body["status"] == "DRAFT"
+    assert op.body["domain"] == "d-1" and op.body["status"] == "Draft"
 
 
 def test_create_omits_an_empty_description():
     session = WriteSession(FakeUCClient())
-    dp.create_data_product(session, "P", "d-1")
+    dp.create_data_product(session, "P", "d-1", ["own-1"])
     assert "description" not in session.run().ops[0].body
+
+
+def test_create_carries_an_owner_contact():
+    """The service rejects an ownerless product, and the swagger does not say so."""
+    session = WriteSession(FakeUCClient())
+    dp.create_data_product(session, "P", "d-1", ["own-1"])
+    assert session.run().ops[0].body["contacts"] == {
+        "owner": [{"id": "own-1", "description": "Lineage Studio"}]
+    }
+
+
+def test_create_without_an_owner_is_refused_before_it_is_sent():
+    """Fail here rather than let the service answer DataCatalogInvalidEntity."""
+    session = WriteSession(FakeUCClient())
+    with pytest.raises(ValueError, match="owner"):
+        dp.create_data_product(session, "P", "d-1", [])
+
+
+def test_the_service_assigned_id_wins_over_the_one_we_proposed():
+    """Linking against our proposed id 404s — the service mints its own.
+
+    The swagger presents `id` as a client-supplied create field, so this was
+    only caught by the product existing under a different id than the one we
+    sent, and the asset links then failing with "DataProduct does not exist".
+    """
+    result = WriteResult(dry_run=False, responses=[{"id": "server-side"}])
+    assert dp.created_product_id(result, "proposed") == "server-side"
+
+
+def test_a_dry_run_falls_back_to_the_proposed_id():
+    """With no response to read, the preview still has to name something."""
+    assert dp.created_product_id(WriteResult(dry_run=True), "proposed") == "proposed"
+
+
+def test_onboarding_links_the_asset_back_to_the_data_map():
+    """`source.type` omitted creates a floating asset — a silent wrong answer."""
+    session = WriteSession(FakeUCClient())
+    dp.queue_asset_onboarding(session, "dm-9", "orders")
+    assert session.run().ops[0].body["source"] == {"assetId": "dm-9", "type": "DataMap"}
+
+
+def test_a_brand_new_product_reports_no_assets_rather_than_failing():
+    """It 404s until it becomes queryable; that means empty, not broken."""
+
+    class NotYet:
+        def request(self, *a, **k):
+            raise PurviewError("404 DataProduct with id ... does not exist")
+
+    assert dp.list_data_product_assets(NotYet(), "p-new") == []
 
 
 def test_cataloguing_onboards_only_unknown_guids(allow_write):
     client = FakeUCClient(assets=[{"id": "uc-1", "source": {"assetId": "dm-1"}}])
-    result = dp.catalog_datamap_assets(client, "p-1", ["dm-1", "dm-2"], apply=True)
+    result = dp.catalog_datamap_assets(
+        client, "p-1", ["dm-1", "dm-2"], names={"dm-2": "orders"}, apply=True
+    )
 
     onboarded = [o for o in result.ops if o.path.endswith(f"api-version={dp.UC_API_VERSION}")
                  and "/dataAssets?" in o.path]
-    assert [o.body for o in onboarded] == [{"source": {"assetId": "dm-2"}}]
+    assert [o.body for o in onboarded] == [
+        {
+            "name": "orders",
+            "type": "General",
+            "source": {"assetId": "dm-2", "type": "DataMap"},
+        }
+    ]
 
     linked = [o.body["entityId"] for o in result.ops if "/relationships" in o.path]
     # `uc-1` was already onboarded; `uc-new` is the id the create call returned.

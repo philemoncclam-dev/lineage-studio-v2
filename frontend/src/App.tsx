@@ -5,7 +5,7 @@ import SearchPalette, { type SearchResult } from './views/SearchPalette'
 import PurviewPanel from './views/PurviewPanel'
 import { fetchGraph, fetchPurviewGraph, fetchPurviewStatus } from './api'
 import { adapt, ModelProvider, sampleModel, type AppModel } from './model'
-import './App.css'
+import './styles/components.css'
 
 type Mode = 'lineage' | 'graph'
 

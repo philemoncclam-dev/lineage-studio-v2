@@ -2,63 +2,83 @@
 
 /* Secondary action in the table detail footer — deliberately quieter than
    .openbtn so the panel gains an entry point, not a second primary button. */
-.linkbtn { display: block; margin-top: 8px; border: 0; background: transparent; padding: 0;
-  font: inherit; font-size: 11.5px; color: var(--text-3); cursor: pointer; }
-.linkbtn:hover { color: var(--accent); }
+.linkbtn { display: block; margin-top: var(--spacing-2); border: 0; background: transparent; padding: 0;
+  font: inherit; font-size: var(--text-micro); color: var(--color-text-tertiary); cursor: pointer; }
+.linkbtn:hover { color: var(--color-accent); }
 
 .di-overlay {
   position: fixed; inset: 0; z-index: 110;
-  background: color-mix(in srgb, var(--text) 18%, transparent);
+  background: var(--overlay-scrim);
   display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh;
 }
 
 .di-panel {
   width: min(720px, calc(100vw - 32px));
   max-height: 68vh;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-  box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column;
+  background: var(--card-bg); border: var(--border-width) solid var(--card-border); border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow); overflow: hidden; display: flex; flex-direction: column;
 }
 
-.di-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
-.di-title { font-weight: 650; font-size: 14px; letter-spacing: -.2px; color: var(--text); }
-.di-sub { font-size: 10.5px; color: var(--text-3); font-family: var(--mono); margin-top: 2px; }
-.di-x { margin-left: auto; border: 0; background: transparent; color: var(--text-3);
-  font: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
-.di-x:hover { color: var(--text); }
+.di-head { display: flex; align-items: center; gap: var(--spacing-3); padding: var(--spacing-3) var(--spacing-4); border-bottom: var(--border-width) solid var(--card-border); }
+.di-title { font-weight: 600; font-size: var(--text-base); color: var(--color-text-primary); }
+.di-sub { font-size: var(--text-micro); color: var(--color-text-tertiary); font-family: var(--font-mono); margin-top: 0; }
+.di-x {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font: inherit;
+  font-size: var(--text-heading);
+  line-height: 1;
+  cursor: pointer;
+  /* Padding + negative top/bottom/right margin gives a >=44x44px hit
+     target (DS-04's touch-target exception); margin-left stays auto so the
+     button keeps its right-aligned position in the header. */
+  padding: var(--spacing-4);
+  margin-top: calc(-1 * var(--spacing-4));
+  margin-bottom: calc(-1 * var(--spacing-4));
+  margin-right: calc(-1 * var(--spacing-4));
+}
+.di-x:hover { color: var(--color-text-primary); }
 
-.di-error { margin: 10px 16px 0; padding: 8px 10px; border-radius: 8px; font-size: 12px;
-  color: var(--text); background: color-mix(in srgb, var(--bronze) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--bronze) 40%, transparent); }
+.di-error { margin: var(--spacing-2) var(--spacing-4) 0; padding: var(--spacing-2); border-radius: var(--radius-control); font-size: var(--text-base);
+  color: var(--color-text-primary); background: color-mix(in oklch, var(--color-destructive) 14%, transparent);
+  border: var(--border-width) solid color-mix(in oklch, var(--color-destructive) 40%, transparent); }
 
-.di-drop { padding: 22px 16px 24px; text-align: center; }
-.di-drop p { margin: 0 0 14px; font-size: 12.5px; color: var(--text-3); }
-.di-pick { display: inline-block; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--accent);
-  border: 1px solid var(--accent); border-radius: 8px; padding: 8px 16px; background: var(--accent-soft); }
+.di-drop { padding: var(--spacing-6) var(--spacing-4) var(--spacing-6); text-align: center; }
+.di-drop p { margin: 0 0 var(--spacing-3); font-size: var(--text-micro); color: var(--color-text-tertiary); }
+.di-pick { display: inline-block; cursor: pointer; font-size: var(--text-micro); font-weight: 600; color: var(--color-accent);
+  border: var(--border-width) solid var(--color-accent); border-radius: var(--radius-control); padding: var(--spacing-2) var(--spacing-4); background: var(--color-accent-dim); }
 .di-pick input { display: none; }
 
-.di-rows { overflow-y: auto; padding: 4px 0; }
+.di-rows { overflow-y: auto; padding: var(--spacing-1) 0; }
 .di-row { display: grid; grid-template-columns: auto minmax(90px, 1fr) auto minmax(90px, 1fr) 76px 1.4fr;
-  align-items: center; gap: 8px; padding: 7px 16px; font-size: 12px; color: var(--text);
-  border-top: 1px solid var(--surface-2); cursor: pointer; }
+  align-items: center; gap: var(--spacing-2); padding: var(--spacing-2) var(--spacing-4); font-size: var(--text-base); color: var(--color-text-primary);
+  border-top: var(--border-width) solid var(--color-surface-2); cursor: pointer; }
 .di-row:first-child { border-top: 0; }
-.di-row:hover { background: var(--accent-soft); }
+.di-row:hover { background: var(--color-accent-dim); }
 .di-row.off { opacity: .55; cursor: default; }
-.di-row input { accent-color: var(--accent); }
+.di-row input { accent-color: var(--color-accent); }
 
-.di-src, .di-tgt { font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.di-arrow { color: var(--text-3); }
-.di-conf { font-family: var(--mono); font-size: 9.5px; letter-spacing: .3px; color: var(--text-3);
-  border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; text-align: center; }
-.di-row.exact .di-conf { color: var(--accent); border-color: var(--accent); }
-.di-row.ambiguous .di-conf { color: var(--bronze); border-color: var(--bronze); }
-.di-desc { color: var(--text-3); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.di-alt { grid-column: 4 / -1; font-size: 10px; color: var(--text-3); font-family: var(--mono); }
+.di-src, .di-tgt { font-family: var(--font-mono); font-size: var(--text-micro); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.di-arrow { color: var(--color-text-tertiary); }
+.di-conf { font-family: var(--font-mono); font-size: var(--text-micro); color: var(--color-text-tertiary);
+  border: var(--border-width) solid var(--color-border); border-radius: var(--radius-input); padding: 0 var(--spacing-1); text-align: center; }
+.di-row.exact .di-conf { color: var(--color-accent); border-color: var(--color-accent); }
+/* Ambiguous confidence is deliberately the same neutral treatment as the
+   default .di-conf state (tertiary text/border) rather than a domain
+   colour — domain hues identify data domains, not confidence/UI state
+   (THEME-05's channel rule). Kept explicit here rather than removed so the
+   migration decision stays visible. */
+.di-row.ambiguous .di-conf { color: var(--color-text-tertiary); border-color: var(--color-border); }
+.di-desc { color: var(--color-text-tertiary); font-size: var(--text-micro); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.di-alt { grid-column: 4 / -1; font-size: var(--text-micro); color: var(--color-text-tertiary); font-family: var(--font-mono); }
 
-.di-foot { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--border); }
-.di-count { font-size: 11.5px; color: var(--text-3); }
+.di-foot { display: flex; align-items: center; gap: var(--spacing-3); padding: var(--spacing-3) var(--spacing-4); border-top: var(--border-width) solid var(--card-border); }
+.di-count { font-size: var(--text-micro); color: var(--color-text-tertiary); }
 .di-foot .openbtn { margin-left: auto; margin-top: 0; }
 .di-foot .openbtn:disabled { opacity: .45; cursor: default; }
 
-.di-done { padding: 18px 16px 0; }
-.di-done p { margin: 0 0 6px; font-size: 12.5px; color: var(--text); }
-.di-done .di-foot { margin: 12px -16px 0; }
+.di-done { padding: var(--spacing-4) var(--spacing-4) 0; }
+.di-done p { margin: 0 0 var(--spacing-1); font-size: var(--text-micro); color: var(--color-text-primary); }
+.di-done .di-foot { margin: var(--spacing-3) calc(-1 * var(--spacing-4)) 0; }

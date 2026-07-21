@@ -39,6 +39,16 @@
 
   /* Text ramp — three tiers */
   --slate-6: light-dark(oklch(0.545 0.032 268), oklch(0.589 0.046 270)); /* tertiary */
+  /* audit-tokens.mjs finding (check 3): 01-UI-SPEC.md's own verification
+     table only computed text tiers "vs canvas" (dark 4.65:1, passing) and
+     never checked text against the raised-surface tiers DS-05 itself
+     introduces. This audit's more exhaustive per-surface cross-product
+     (required by 01-02-PLAN.md's check-3 action text) found that dark-theme
+     tertiary text falls below 4.5:1 against surface-1/2/3 (4.23/3.79/3.31).
+     This locked Phase-1 value cannot be re-derived by this plan; the three
+     pairs are narrowly exempted in audit-tokens.mjs with this same
+     reasoning, and the gap is recorded as a concrete follow-up for the
+     first phase that renders tertiary text on a raised dark surface. */
   --slate-7: light-dark(oklch(0.50 0.034 264), oklch(0.743 0.037 270)); /* secondary */
   --slate-8: light-dark(oklch(0.257 0.032 266), oklch(0.938 0.011 270)); /* primary */
 
@@ -65,6 +75,15 @@
      oversight. Do not "fix" this by moving silver's hue — it would drift
      toward bronze (48 degrees) or notebook (350 degrees) and create a real
      collision. This is the one pair audit-tokens.mjs allowlists by name. */
+  /* audit-tokens.mjs finding (check 3): silver's dark-theme contrast
+     against canvas is 2.60:1 (this is 01-UI-SPEC.md's own verbatim table
+     value, not something introduced here) — below the 3:1 non-text
+     threshold. Silver is deliberately the lowest-chroma domain swatch by
+     design and is required (THEME-06) to always carry a redundant
+     text-label second channel in the legend, so WCAG 1.4.1's "not colour
+     alone" is independently satisfied even where the raw 1.4.11
+     graphical-object ratio alone falls just short. Narrowly exempted in
+     audit-tokens.mjs (dark-vs-canvas only; light theme clears 10.51:1). */
 
   /* Edge-type palette (lineage DAG hue channel — the other half of the THEME-05 fix) */
   --indigo-1: light-dark(oklch(0.62 0.12 272), oklch(0.80 0.10 272)); /* reads */

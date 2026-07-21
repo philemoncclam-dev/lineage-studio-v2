@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GNode, Level } from '../data'
 import { useModel } from '../model'
+import { canvasFont, DOMAIN_TOKEN, getCanvasTokens, invalidateCanvasTokens } from '../tokens/canvasTokens'
 import DefinitionsImport from './DefinitionsImport'
 import './graph.css'
 
 interface Crumb { label: string; key: string }
 interface Sim extends GNode { x: number; y: number; vx: number; vy: number }
-
-const cssVar = (k: string) => getComputedStyle(document.documentElement).getPropertyValue('--' + k).trim()
 
 const matchNode = (n: GNode, q: string) => {
   const s = q.trim().toLowerCase()
@@ -93,6 +92,11 @@ function GraphCanvas({ levelKey, level, onDrill, query }: { levelKey: string; le
 
   useEffect(() => {
     const wrap = wrapRef.current!, cv = canvasRef.current!, ctx = cv.getContext('2d')!
+    // Snapshot read hoisted outside the draw function (THEME-03) — a plain
+    // object, never a per-frame DOM read. Refreshed only when data-theme
+    // actually changes, via the observer wired below; every frame just
+    // dereferences tokensRef.current.
+    const tokensRef = { current: getCanvasTokens() }
     const nodes: Sim[] = (level.nodes || []).map((n) => ({ ...n, x: (Math.random() - 0.5) * 260, y: (Math.random() - 0.5) * 260, vx: 0, vy: 0 }))
     const byId: Record<string, Sim> = Object.fromEntries(nodes.map((n) => [n.id, n]))
     const links = level.links || []
@@ -106,6 +110,7 @@ function GraphCanvas({ levelKey, level, onDrill, query }: { levelKey: string; le
     const screen = (n: Sim) => ({ x: W / 2 + n.x * zoom, y: H / 2 + n.y * zoom })
 
     const draw = () => {
+      const t = tokensRef.current
       ctx.clearRect(0, 0, W, H)
       const q = queryRef.current.trim()
       // matched: nodes the live query keeps lit (null when no query)
@@ -117,19 +122,20 @@ function GraphCanvas({ levelKey, level, onDrill, query }: { levelKey: string; le
         const dimmed = (hi || matched) && !on
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo(mx, my, b.x, b.y)
-        ctx.strokeStyle = on ? cssVar('accent') : cssVar('border-strong'); ctx.globalAlpha = dimmed ? 0.07 : on ? 0.95 : 0.5; ctx.lineWidth = on ? 2 : 1; ctx.stroke()
+        ctx.strokeStyle = on ? t.accent : t.borderStrong; ctx.globalAlpha = dimmed ? 0.07 : on ? 0.95 : 0.5; ctx.lineWidth = on ? 2 : 1; ctx.stroke()
       })
       ctx.globalAlpha = 1
       nodes.forEach((n) => {
         const p = screen(n), R = n.r * zoom
         const dim = hi ? !hi.has(n.id) : matched ? !matched.has(n.id) : false
+        const nodeColor = t[DOMAIN_TOKEN[n.c]]
         ctx.globalAlpha = dim ? 0.22 : 1
-        if (hover === n || (matched && matched.has(n.id))) { ctx.beginPath(); ctx.arc(p.x, p.y, R + 7, 0, 7); ctx.fillStyle = cssVar(n.c); ctx.globalAlpha = 0.16; ctx.fill(); ctx.globalAlpha = dim ? 0.22 : 1 }
-        ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, 7); ctx.fillStyle = cssVar(n.c); ctx.fill(); ctx.lineWidth = 2.2; ctx.strokeStyle = cssVar('surface'); ctx.stroke()
+        if (hover === n || (matched && matched.has(n.id))) { ctx.beginPath(); ctx.arc(p.x, p.y, R + 7, 0, 7); ctx.fillStyle = nodeColor; ctx.globalAlpha = 0.16; ctx.fill(); ctx.globalAlpha = dim ? 0.22 : 1 }
+        ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, 7); ctx.fillStyle = nodeColor; ctx.fill(); ctx.lineWidth = 2.2; ctx.strokeStyle = t.surface1; ctx.stroke()
         if (!dim) {
-          ctx.fillStyle = cssVar('text'); ctx.font = `520 ${Math.max(11, 12 * zoom)}px ${cssVar('sans')}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'
+          ctx.fillStyle = t.textPrimary; ctx.font = canvasFont(600, 'base', 'sans', zoom); ctx.textAlign = 'center'; ctx.textBaseline = 'top'
           ctx.fillText(n.label, p.x, p.y + R + 5)
-          if (n.drill && n.sub) { ctx.globalAlpha = 0.55; ctx.font = `500 ${Math.max(9, 9.5 * zoom)}px ${cssVar('mono')}`; ctx.fillStyle = cssVar('text-3'); ctx.fillText(n.sub, p.x, p.y + R + 19); ctx.globalAlpha = 1 }
+          if (n.drill && n.sub) { ctx.globalAlpha = 0.55; ctx.font = canvasFont(400, 'micro', 'mono', zoom); ctx.fillStyle = t.textTertiary; ctx.fillText(n.sub, p.x, p.y + R + 19); ctx.globalAlpha = 1 }
         }
         ctx.globalAlpha = 1
       })
@@ -161,6 +167,17 @@ function GraphCanvas({ levelKey, level, onDrill, query }: { levelKey: string; le
     const onUp = () => { drag = null }
     const onClick = (e: MouseEvent) => { const n = pick(e.offsetX, e.offsetY); if (n?.drill) onDrill(n.drill) }
     const onWheel = (e: WheelEvent) => { e.preventDefault(); zoom = Math.min(2.4, Math.max(0.5, zoom * (e.deltaY < 0 ? 1.1 : 0.9))) }
+    // The draw loop above never reads styles itself — it only dereferences
+    // tokensRef.current. This observer is the sole place that re-reads the
+    // snapshot, and only once per real data-theme change, never per frame:
+    // invalidateCanvasTokens() forces a fresh read regardless of whether the
+    // bootstrap-level observer in main.tsx has already cleared the cache.
+    const onThemeChange = () => {
+      invalidateCanvasTokens()
+      tokensRef.current = getCanvasTokens()
+    }
+    const themeObserver = new MutationObserver(onThemeChange)
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
     resize()
     cv.addEventListener('mousemove', onMove); cv.addEventListener('mousedown', onDown); window.addEventListener('mouseup', onUp)
@@ -171,6 +188,7 @@ function GraphCanvas({ levelKey, level, onDrill, query }: { levelKey: string; le
       cancelAnimationFrame(raf)
       cv.removeEventListener('mousemove', onMove); cv.removeEventListener('mousedown', onDown); window.removeEventListener('mouseup', onUp)
       cv.removeEventListener('click', onClick); cv.removeEventListener('wheel', onWheel); window.removeEventListener('resize', resize)
+      themeObserver.disconnect()
     }
   }, [levelKey, level, onDrill])
 

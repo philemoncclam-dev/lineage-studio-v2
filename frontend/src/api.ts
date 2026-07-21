@@ -134,6 +134,80 @@ export async function applyDefinitions(
   return res.json()
 }
 
+export interface PurviewStatus {
+  configured: boolean
+  write_enabled: boolean
+}
+
+export interface GovernanceDomain {
+  id: string
+  name: string
+  status: string
+}
+
+export interface DataProduct {
+  id: string
+  name: string
+  domain: string
+  status: string
+}
+
+/** A `WriteResult` plus which notebooks Fabric actually gave us source for. */
+export interface LineagePushResult extends WriteResult {
+  notebooks_read: string[]
+}
+
+export async function fetchPurviewStatus(): Promise<PurviewStatus> {
+  const res = await fetch(`${BASE}/purview/status`)
+  if (!res.ok) return detail(res, 'purview status')
+  return res.json()
+}
+
+/** Rebuild the graph from the live catalog. Also makes it the current graph. */
+export async function fetchPurviewGraph(): Promise<LineageGraph> {
+  const res = await fetch(`${BASE}/purview/graph`)
+  if (!res.ok) return detail(res, 'purview graph')
+  return res.json()
+}
+
+export async function pushLineage(apply: boolean): Promise<LineagePushResult> {
+  const res = await fetch(`${BASE}/purview/lineage/push`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apply }),
+  })
+  if (!res.ok) return detail(res, 'lineage push')
+  return res.json()
+}
+
+export async function fetchDomains(): Promise<GovernanceDomain[]> {
+  const res = await fetch(`${BASE}/purview/domains`)
+  if (!res.ok) return detail(res, 'domains')
+  return res.json()
+}
+
+export async function fetchDataProducts(): Promise<DataProduct[]> {
+  const res = await fetch(`${BASE}/purview/dataproducts`)
+  if (!res.ok) return detail(res, 'data products')
+  return res.json()
+}
+
+export async function catalogDataProduct(body: {
+  name: string
+  domain_id: string
+  description?: string
+  asset_guids: string[]
+  apply: boolean
+}): Promise<WriteResult & { data_product_id: string }> {
+  const res = await fetch(`${BASE}/purview/dataproducts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) return detail(res, 'catalog data product')
+  return res.json()
+}
+
 export async function ingest(payload: unknown): Promise<LineageGraph> {
   const res = await fetch(`${BASE}/ingest`, {
     method: 'POST',

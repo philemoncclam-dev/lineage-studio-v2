@@ -30,7 +30,7 @@ Resolved before requirements, recorded so they aren't relitigated:
 
 - [x] **THEME-01**: Palette is defined in a perceptual colour space (OKLCH) so lightness steps are visually even across hues
 - [x] **THEME-02**: A single mechanism switches themes — the current triple definition (media query + two attribute selectors) is eliminated
-- [ ] **THEME-03**: Canvas and SVG rendering read colour from the same tokens as the DOM, via a snapshot cached and re-read only on theme change — never per frame
+- [x] **THEME-03**: Canvas and SVG rendering read colour from the same tokens as the DOM, via a snapshot cached and re-read only on theme change — never per frame
 - [x] **THEME-04**: The dark canvas is a dark grey, not pure black, to avoid halation
 - [x] **THEME-05**: Domain colours and edge-type colours are drawn from visually distinct ranges — the present-tense `--writes` == `--notebook` collision (`#8b5cf6` / `#a78bfa`) is fixed
 - [x] **THEME-06**: Domain colours remain distinguishable under deuteranopia and protanopia simulation; where colour alone is insufficient, a second channel (shape, stroke, position) carries the distinction
@@ -163,7 +163,7 @@ dependencies, parallelization, and pitfall guards.
 | DS-06 | Phase 1 | Complete |
 | THEME-01 | Phase 1 | Complete |
 | THEME-02 | Phase 1 | Complete |
-| THEME-03 | Phase 1 | Pending |
+| THEME-03 | Phase 1 | Complete |
 | THEME-04 | Phase 1 | Complete |
 | THEME-05 | Phase 1 | Complete |
 | THEME-06 | Phase 1 | Complete |

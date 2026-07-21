@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: design-tokens-typography-foundation
 status: executing
-stopped_at: Completed 01-02-PLAN.md (colour system & audit)
-last_updated: "2026-07-21T20:19:44.874Z"
+stopped_at: Completed 01-03-PLAN.md (token-to-canvas bridge)
+last_updated: "2026-07-21T20:31:11.949Z"
 last_activity: 2026-07-21
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 ## Current Position
 
 Phase: 01 (design-tokens-typography-foundation) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-07-21 — Phase 01 execution started
 
-Progress: [█████░░░░░] 50%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [█████░░░░░] 50%
 |------|----------|-------|-------|
 | Phase 01 P01 | 20min | 3 tasks | 8 files |
 | Phase 01 P02 | 35min | 2 tasks | 3 files |
+| Phase 01 P03 | 20min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,9 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: unicode-range on both @font-face blocks copied verbatim from Fontsource's latin split so U+2318 deliberately falls through to the generic fallback stack
 - [Phase ?]: Near-equality collision detection scoped to identity-bearing channels (domain/edge/state/status) only, not surface/text, since the raw OKLCH math makes it impossible to catch the sanctioned silver/accent pair without also flagging near-achromatic neutral pairs that are objectively closer on every axis
 - [Phase ?]: audit-tokens.mjs discovered two genuine WCAG/CVD gaps beyond the UI-SPEC's own manual verification (domain-silver dark-vs-canvas contrast, text-tertiary dark-vs-raised-surface contrast); both are narrowly exempted with documented reasoning since this plan has no authority to re-derive the locked OKLCH values
+- [Phase ?]: Added surface1 field to CanvasTokens (not enumerated by task 1's field list) because task 2 requires reading the surface-1 token for the node outline stroke
+- [Phase ?]: canvasFont() takes an optional scale param so one helper serves both static and zoom-scaled canvas text, with the token's own px value as the floor
+- [Phase ?]: GraphView keeps a component-local data-theme MutationObserver alongside the bootstrap-level one, explicitly calling invalidateCanvasTokens() before re-reading so its live redraw never depends on cross-observer firing order
 
 ### Pending Todos
 
@@ -102,6 +106,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-21T20:19:37.668Z
-Stopped at: Completed 01-02-PLAN.md (colour system & audit)
+Last session: 2026-07-21T20:31:11.940Z
+Stopped at: Completed 01-03-PLAN.md (token-to-canvas bridge)
 Resume file: None

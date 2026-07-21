@@ -149,17 +149,80 @@ Backend safety architecture already exists in `WriteSession` — dry-run by defa
 
 ## Traceability
 
-Populated during roadmap creation.
+Populated by ROADMAP.md creation. Every v1 requirement below maps to exactly
+one phase; see `.planning/ROADMAP.md` for phase goals, success criteria,
+dependencies, parallelization, and pitfall guards.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| _(pending roadmap)_ | — | Pending |
+| DS-01 | Phase 1 | Pending |
+| DS-02 | Phase 1 | Pending |
+| DS-03 | Phase 1 | Pending |
+| DS-04 | Phase 1 | Pending |
+| DS-05 | Phase 1 | Pending |
+| DS-06 | Phase 1 | Pending |
+| THEME-01 | Phase 1 | Pending |
+| THEME-02 | Phase 1 | Pending |
+| THEME-03 | Phase 1 | Pending |
+| THEME-04 | Phase 1 | Pending |
+| THEME-05 | Phase 1 | Pending |
+| THEME-06 | Phase 1 | Pending |
+| THEME-07 | Phase 6 | Pending |
+| THEME-08 | Phase 1 | Pending |
+| SHELL-01 | Phase 2 | Pending |
+| SHELL-02 | Phase 2 | Pending |
+| SHELL-03 | Phase 2 | Pending |
+| SHELL-04 | Phase 2 | Pending |
+| SHELL-05 | Phase 2 | Pending |
+| SHELL-06 | Phase 2 | Pending |
+| SHELL-07 | Phase 2 | Pending |
+| DAG-01 | Phase 3 | Pending |
+| DAG-02 | Phase 3 | Pending |
+| DAG-03 | Phase 3 | Pending |
+| DAG-04 | Phase 3 | Pending |
+| DAG-05 | Phase 3 | Pending |
+| DAG-06 | Phase 3 | Pending |
+| DAG-07 | Phase 3 | Pending |
+| DAG-08 | Phase 3 | Pending |
+| TRUST-01 | Phase 3 | Pending |
+| TRUST-02 | Phase 3 | Pending |
+| TRUST-03 | Phase 3 | Pending |
+| GRAPH-01 | Phase 4 | Pending |
+| GRAPH-02 | Phase 4 | Pending |
+| GRAPH-03 | Phase 4 | Pending |
+| GRAPH-04 | Phase 4 | Pending |
+| GRAPH-05 | Phase 4 | Pending |
+| GRAPH-06 | Phase 4 | Pending |
+| GRAPH-07 | Phase 4 | Pending |
+| GRAPH-08 | Phase 4 | Pending |
+| GRAPH-09 | Phase 4 | Pending |
+| PUSH-01 | Phase 5 | Pending |
+| PUSH-02 | Phase 5 | Pending |
+| PUSH-03 | Phase 5 | Pending |
+| PUSH-04 | Phase 5 | Pending |
+| PUSH-05 | Phase 5 | Pending |
+| PUSH-06 | Phase 5 | Pending |
+| PUSH-07 | Phase 5 | Pending |
+| PUSH-08 | Phase 5 | Pending |
+| PUSH-09 | Phase 5 | Pending |
+| PUSH-10 | Phase 5 | Pending |
+| PUSH-11 | Phase 5 | Pending |
+| CAT-01 | Phase 5 | Pending |
+| CAT-02 | Phase 5 | Pending |
+| CAT-03 | Phase 5 | Pending |
+| CAT-04 | Phase 5 | Pending |
+| NAV-01 | Phase 2 | Pending |
+| NAV-02 | Phase 7 | Pending |
+| NAV-03 | Phase 2 | Pending |
+| MOT-01 | Phase 7 | Pending |
+| MOT-02 | Phase 7 | Pending |
+| MOT-03 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 62 total
-- Mapped to phases: 0
-- Unmapped: 62 ⚠️ (expected — roadmap not yet created)
+- Mapped to phases: 62
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-07-21*
-*Last updated: 2026-07-21 after initial definition*
+*Last updated: 2026-07-21 after roadmap creation — traceability populated, full coverage confirmed*

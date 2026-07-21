@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+/* ===== Self-hosted variable fonts (DS-01, DS-06) =====
+   Vendored into frontend/public/fonts/ by plan 01-01, task 2 — the src URL
+   below is byte-identical to the preload href in index.html in both dev and
+   a production build. unicode-range matches Fontsource's own latin subset:
+   characters outside it (e.g. U+2318, the search trigger's command-key
+   glyph) fall through to the next family in the --font-sans/--font-mono
+   stack instead of rendering as tofu. */
+@font-face {
+  font-family: "Geist Variable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Geist Mono Variable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-mono-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ===== Tier 1 / Tier 2 design tokens ===== */
+@theme {
+  /* --- Tier 1/2 colour tokens (placeholder — filled in by plan 01-02) --- */
+
+  /* --- Typography (DS-01, DS-03) --- */
+  --font-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+
+  --text-micro: 11px;
+  --text-micro--line-height: 1.35;
+  --text-micro--letter-spacing: 0;
+
+  --text-base: 13px;
+  --text-base--line-height: 1.45;
+  --text-base--letter-spacing: 0;
+
+  --text-heading: 18px;
+  --text-heading--line-height: 1.3;
+  --text-heading--letter-spacing: -0.006em;
+
+  --text-display: 22px;
+  --text-display--line-height: 1.25;
+  --text-display--letter-spacing: -0.01em;
+
+  /* --- Spacing (DS-04) — every step is a 4px multiple --- */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-12: 48px;
+  --spacing-16: 64px;
+
+  /* --- Radius --- */
+  --radius-card: 6px;
+  --radius-input: 5px;
+  --radius-control: 8px;
+  --radius-pill: 999px;
+}
+
+/* ===== Density primitives + theme mechanism (THEME-02) =====
+   The color-scheme declaration below, paired with light-dark() inside token
+   values (plan 01-02), is the single theme mechanism. The app flips themes
+   by setting data-theme on the document element; no media query is
+   declared here. */
+:root {
+  --border-width: 1px;
+  --row-height: 28px;
+
+  color-scheme: light dark;
+  font-synthesis: none;
+}
+
+/* ===== Base reset ===== */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+code {
+  font-family: var(--font-mono);
+}

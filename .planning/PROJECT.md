@@ -134,6 +134,12 @@ about building Purview integration from scratch.
 | Self-host a variable font | The current OS-dependent stack silently fails on Windows — the single largest cause of the "it looks off" problem | — Pending |
 | Purview push designed alongside the UI, not deferred | It is partly a UI problem (scope selection, preview, confirm-before-push) and the milestone's success is defined by it | — Pending |
 | Supersede the earlier light/minimal/Apple design direction | Superseded by the dark-first decision above; recorded so it isn't reintroduced | — Pending |
+| sigma.js + graphology (MIT) for the knowledge-graph renderer | Cosmograph is faster but CC-BY-NC-4.0 non-commercial; an employer-deployed tool plausibly trips that clause. sigma.js is WebGL and comfortable well past 5k nodes | — Pending |
+| Tailwind CSS v4 `@theme` as the token layer | Tokens compile to real CSS custom properties readable from canvas code, solving one-palette-two-renderers without a second system. Chosen over vanilla-extract, whose theme contracts would have *enforced* light/dark parity at compile time — so parity now depends on review discipline, which THEME-07 exists to protect | ⚠️ Revisit |
+| TanStack Router, replacing the hand-rolled breadcrumb array | Typed search params matter here: drill path and selection belong in the URL, making views deep-linkable and shareable | — Pending |
+| Push audit/history deferred to v1.x | Preserves the no-database-persistence boundary; per-push results are shown live but not persisted | — Pending |
+| Hop-depth control in v1, not v1.x | Research conflict resolved in favour of PITFALLS.md — hairball illegibility onsets in the low hundreds of nodes, so this is load-bearing for a real estate graph, not polish | — Pending |
+| Purview push phase is UI-only | `WriteSession` already implements dry-run-by-default on a single non-drifting code path, per-op error reporting, and a double gate (`apply` + `PURVIEW_ALLOW_WRITE`). Verified against `backend/app/purview/writer.py` — materially shrinks the highest-risk phase | ✓ Good |
 | Phase 2 Spark sandbox stays out of this milestone | It swaps the extraction engine behind an unchanged contract; independent of UI work | — Pending |
 
 ## Evolution

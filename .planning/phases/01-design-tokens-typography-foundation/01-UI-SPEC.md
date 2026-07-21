@@ -402,34 +402,59 @@ observer.observe(document.documentElement, { attributes: true, attributeFilter: 
 
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
+| Label | 11px (`micro`) | 400 (regular) | 1.35 |
 | Body | 13px (`base`) | 400 (regular) | 1.45 |
-| Label | 12px (`small`) | 400 (regular) | 1.4 |
-| Heading | 18px (`lg`) | 600 (semibold) | 1.3 |
-| Display | 22px (`xl`) | 600 (semibold) | 1.25 |
+| Heading | 18px (`heading`) | 600 (semibold) | 1.3 |
+| Display | 22px (`display`) | 600 (semibold) | 1.25 |
 
-### Full named ramp (retires the scattered 10.5/11.5/12.5/13/14/17px values)
+### Full named ramp — four steps (retires the scattered 10.5/11.5/12.5/13/14/17px values)
 
-Six steps, not the generic four — deliberately, because DS-03 must retire
-**six** distinct legacy sizes across meta labels, identifiers, body, titles,
-and headings, and a 4-step ramp cannot cover that range without collapsing
-distinctions the UI actually needs (e.g. `.src-chip` at 10.5px vs `.col .name`
-at 11.5px vs `.title` at 13px vs `.insp-title h2` at 17px are four genuinely
-different jobs). Every step maps 1:1 to a semantic role so nothing is ever
-sized by eyeballing a raw pixel value again.
+**Revised down from an earlier six-step draft.** The checker correctly
+rejected that draft: a hard maximum of 4 font sizes is the design-contract
+rule, and 11/12/13 sitting inside a 2px band read as inconsistency rather than
+a perceptible hierarchy — precisely the failure mode the 4-size rule exists to
+prevent. 15px (the old fifth step, `text-md`) sat between body and heading
+doing little independent work. The surviving four-step ramp has real,
+unambiguous perceptual jumps: 11 → 13 → 18 → 22.
 
-| Step | Size | Weight | Line-height | Letter-spacing | Replaces (old scattered value) | Used for |
-|------|------|--------|-------------|------------------|-------------------------------|----------|
-| `text-micro` | 11px | 400 | 1.35 | 0 | 10.5px | Meta labels, badges, `.sec-t` uppercase labels, PK/verified pill text |
-| `text-small` | 12px | 400 | 1.4 | 0 | 11.5, 12.5px | Secondary text, column type labels, breadcrumbs, table sub-text |
-| `text-base` | **13px** | 400 | **1.45** | 0 | 13px (unchanged, now systematic) | Default body copy, node titles, list items |
-| `text-md` | 15px | 400/600 | 1.4 | 0 | 14px | Emphasized body, section intros |
-| `text-lg` | 18px | 600 | 1.3 | -0.006em | 17px | Inspector title, card headline, section headings |
-| `text-xl` | 22px | 600 | 1.25 | -0.01em | *(new — no old equivalent)* | Page-level headings (introduced for Phase 2's shell, defined here for completeness) |
+| Step | Size | Weight | Line-height | Letter-spacing | Used for |
+|------|------|--------|-------------|------------------|----------|
+| `text-micro` | 11px | 400 | 1.35 | 0 | Meta labels, badges, `.sec-t` uppercase labels, PK/verified pill text, column type annotations, table sub-labels, breadcrumbs |
+| `text-base` | **13px** | 400 (regular) / 600 (semibold) | **1.45** | 0 | Default body copy, table rows, inputs, buttons, node titles, list items — the default for nearly all UI. Semibold `text-base` (600) carries any role that previously wanted a distinct in-between size (e.g. emphasized body, section intros) — weight substitutes for size here, see note below |
+| `text-heading` | 18px | 600 | 1.3 | -0.006em | Inspector title, card headline, panel titles, section headings |
+| `text-display` | 22px | 600 | 1.25 | -0.01em | Page/destination-level titles (introduced for Phase 2's shell, defined here for completeness) |
 
-**Mono type** (`--font-mono`, Geist Mono Variable): reuses `text-micro`,
-`text-small`, and `text-base` only — identifiers, GUIDs, column names, and
-transform expressions never need a heading-sized mono. Mono letter-spacing is
-always `0` (never inherits a heading's negative tracking).
+**Weight/colour substitutes for a fifth size.** Where a role genuinely needs a
+distinction between body (13px) and heading (18px) — e.g. the old
+"emphasized body, section intros" job that a removed 15px step used to
+do — that distinction is expressed with **weight** (`text-base` at 600
+instead of 400) or, where an even quieter distinction is needed, a **colour
+tier** (`--color-text-secondary`/`--color-text-tertiary` instead of
+`--color-text-primary`), never with a new size. This is a deliberate,
+permanent substitution — later phases must not reintroduce a fifth size to
+solve this class of problem; reach for weight or colour tier first.
+
+### Legacy-size retirement mapping (DS-03 — every scattered value gets an explicit destination)
+
+All six legacy pixel values found scattered across the current app collapse
+onto the four surviving tokens below. None are dropped silently — every one
+has a stated destination, and where two-plus legacy values land on the same
+token, the distinction that mattered (if any) is now carried by weight or
+colour tier, not by size:
+
+| Old scattered value | Old usage | New destination | How the original distinction (if any) is preserved |
+|---|---|---|---|
+| `10.5px` | `.src-chip`, badge/pill text | `text-micro` (11px), regular | Same job, same tier — no distinction was needed against the next row |
+| `11.5px` | `.col .name` (column type labels) | `text-micro` (11px), regular, `--color-text-secondary` | Softer emphasis than the 13px body tier is now carried by colour tier, not a smaller size |
+| `12.5px` | Breadcrumbs, table sub-text | `text-micro` (11px), regular, `--color-text-tertiary` for the quietest sub-text instances | Same reasoning as above — colour tier carries the "quieter than body" job that a near-duplicate size used to |
+| `13px` | `.title`, body copy | `text-base` (13px), regular | Unchanged — already the systematic body size |
+| `14px` | Emphasized body, section intros | `text-base` (13px), **semibold (600)** | Weight substitutes for the old size difference — see Weight/colour substitutes above |
+| `17px` | `.insp-title h2`, inspector/section headings | `text-heading` (18px), semibold | Rounds up to the nearest surviving step — the 1px difference is imperceptible and heading already carried 600 weight |
+
+**Mono type** (`--font-mono`, Geist Mono Variable): reuses `text-micro` and
+`text-base` only — identifiers, GUIDs, column names, and transform
+expressions never need a heading-sized mono. Mono letter-spacing is always
+`0` (never inherits a heading's negative tracking).
 
 **Weights — exactly two, per the design-contract discipline**: `400` (regular)
 and `600` (semibold). The current app's arbitrary `560`/`620` weight values

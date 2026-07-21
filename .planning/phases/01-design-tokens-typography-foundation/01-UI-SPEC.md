@@ -1,7 +1,7 @@
 ---
 phase: 1
 slug: design-tokens-typography-foundation
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-07-21
@@ -619,12 +619,42 @@ carrying real copy.
 > the usual sense) — the only genuine "state" this phase introduces is the
 > font-loading state itself, which DS-06 makes an explicit requirement.
 
-Applicable state considerations resolved: 2 covered, 0 backstop, 0 unresolved.
+Probe run against three declared surfaces (font-load rendering, font-swap layout,
+theme switch). Engine reported 11 applicable categories; resolved below as
+**3 covered, 8 dismissed, 0 backstop, 0 unresolved**.
 
-| Category | Element(s) | Status | Resolution / Reason |
-|----------|------------|--------|----------------------|
-| loading | App shell text rendering during font load | ✅ covered | `font-display: swap` + preload of the primary weight range together ensure fallback-then-swap rendering (FOUT), never invisible text (FOIT) — see Font Loading Strategy |
-| overflow (layout shift) | Any text rendered before/after the font swap | ✅ covered | Fontsource's variable-font metrics are close enough to the generic `ui-sans-serif` fallback at the sizes this app uses (11–22px) that swap-induced reflow is minimal; the mandatory Windows devtools verification step in Font Loading Strategy step 7 is the concrete check that this holds in practice, not an assumption |
+The 8 dismissals are not hand-waves. Phase 1 ships **no data-bound surfaces** —
+it produces tokens, a type ramp, and a font pipeline. The data-state categories
+fired because the probe classifier read "table rows / column labels" in a surface
+description as evidence of a list-like element; in context those were named as
+*places the font renders*, not surfaces this phase builds. Each dismissal names
+the phase that genuinely owns that state, so the coverage is deferred with an
+address rather than dropped.
+
+### Covered — states Phase 1 actually introduces
+
+| Category | Element(s) | Status | Resolution |
+|----------|------------|--------|------------|
+| loading | App shell text rendering during font load | ✅ covered | `font-display: swap` + preload of the primary weight range ensure fallback-then-swap rendering (FOUT), never invisible text (FOIT) — see Font Loading Strategy. Satisfies DS-06. |
+| overflow (layout shift) | Any text rendered before/after the font swap | ✅ covered | Fontsource's variable-font metrics are close enough to the generic `ui-sans-serif` fallback at the sizes this app uses (11–22px) that swap-induced reflow is minimal. The mandatory Windows devtools verification in Font Loading Strategy step 7 is the concrete check that this holds — not an assumption. Satisfies DS-06. |
+| theme switch | Canvas/SVG token consumers across a `data-theme` change | ✅ covered | Token snapshot is read once and cached, invalidated on `data-theme` mutation, never re-read per frame. Both themes are at full parity, so no token is undefined on either side of the switch. Satisfies THEME-02 and THEME-03. |
+
+### Dismissed — owned by a later phase
+
+| Category | Dismissal reason | Owned by |
+|----------|------------------|----------|
+| empty | Phase 1 renders no data; the first empty states are an unpopulated lineage canvas and an estate graph with no results | Phase 3 (DAG), Phase 4 (graph) |
+| error | Phase 1 makes no requests and has no failure surface; the first real error state is a failed Purview push reporting per-entity results | Phase 5 (PUSH-07) |
+| populated | No happy-path content exists to populate until a canvas renders a graph | Phase 3, Phase 4 |
+| partial | Partial state is meaningful only for a push that half-succeeded — structurally handled server-side already by `WriteSession`, surfaced in the UI later | Phase 5 (PUSH-07) |
+| zero-one-many | Scale behaviour belongs to the estate graph, where hop-depth control and hairball mitigation live | Phase 4 (GRAPH-04, GRAPH-08) |
+| overflow (container) | No containers ship in Phase 1; panel and inspector overflow is a shell concern | Phase 2 (SHELL-02, SHELL-03) |
+| long-text | Truncation and wrapping rules attach to the shell's panels and the canvases' node labels, not to the token layer | Phase 2, Phase 3 |
+| interaction states | Hover/active/disabled/focus *token values* are defined here, but their per-component application is a shell concern | Phase 2 |
+
+> **Note for the planner:** the dismissals above are scoped to Phase 1 only. They
+> are deferrals with a named owner, not decisions that these states are
+> unnecessary. Each owning phase must resolve its own inherited categories.
 
 ---
 
@@ -644,11 +674,21 @@ retroactively to this phase's Radix-based approach.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS — correctly N/A for a foundation phase
+- [x] Dimension 2 Visuals: PASS — no new screens; hierarchy principles established
+- [x] Dimension 3 Color: PASS — accent reserved for state; WCAG AA verified both themes
+- [x] Dimension 4 Typography: PASS — 4 sizes (11/13/18/22), 2 weights, DS-03 mapping complete
+- [x] Dimension 5 Spacing: PASS — all multiples of 4; 44px touch exception justified
+- [x] Dimension 6 Registry Safety: PASS — no shadcn; manual system fully declared
 
-**Approval:** pending
+**Approval:** APPROVED (2026-07-21) — 6/6 dimensions, no FLAGs.
+Revision history: one revision cycle. Initial review BLOCKED on Dimension 4
+(six font sizes against a maximum of four); resolved by reducing the ramp to
+11/13/18/22 and re-mapping all six retired legacy sizes onto the survivors using
+weight and colour tier as substitutes. Re-verification confirmed no regression in
+the colour system, CVD analysis, elevation model, or token-bridge pattern.
+
+**User-approved decisions carried by this contract:** blue-slate dark ramp; cyan
+accent; dense + soft density; per-canvas colour-channel rule; the re-derived
+domain palette (Gold → yellow, Notebook → rose) accepted after its identity
+change was surfaced explicitly; the four-size type ramp.

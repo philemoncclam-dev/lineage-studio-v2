@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GNode, Level } from '../data'
 import { useModel } from '../model'
+import DefinitionsImport from './DefinitionsImport'
 import './graph.css'
 
 interface Crumb { label: string; key: string }
@@ -194,6 +195,13 @@ function TableDetail({ levelKey, onOpenLineage }: { levelKey: string; onOpenLine
   const table = tableId ? model.tables.find((t) => t.id === tableId) : undefined
   const level = model.levels[levelKey]
   const ctx = tableId ? model.context[tableId] : undefined
+  const [importing, setImporting] = useState(false)
+
+  // Definitions are pushed onto Purview entities by GUID. In the live model a
+  // table's id *is* its Purview GUID (model.adapt keeps it); in the sample
+  // model it is a name, so there is nothing to write to and no button.
+  const purviewGuid =
+    model.source === 'live' && tableId && /^[0-9a-f-]{36}$/i.test(tableId) ? tableId : null
 
   const Mini = ({ rows }: { rows: [string, string, string][] }) => (
     <>
@@ -248,7 +256,17 @@ function TableDetail({ levelKey, onOpenLineage }: { levelKey: string; onOpenLine
         </div>
         <div className="td-foot">
           <button className="openbtn" onClick={() => onOpenLineage(tableId)}>View column-level lineage →</button>
+          {purviewGuid && (
+            <button className="linkbtn" onClick={() => setImporting(true)}>Import definitions…</button>
+          )}
         </div>
+        {importing && purviewGuid && (
+          <DefinitionsImport
+            tableGuid={purviewGuid}
+            tableName={table.name}
+            onClose={() => setImporting(false)}
+          />
+        )}
       </div>
       {ctx && (
         <div className="td-side">

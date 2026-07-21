@@ -20,6 +20,7 @@ from .config import get_settings
 from .models import IngestRequest, LineageGraph
 from .parser import build_graph
 from .purview.client import PurviewError
+from .purview.definitions import router as definitions_router
 from .purview.ingest import build_graph_from_purview
 from .sample import SAMPLE
 
@@ -31,6 +32,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(definitions_router)
 
 # Trivial single-slot store; the last-built graph is what the UI reads.
 _last_graph: LineageGraph = build_graph(SAMPLE)

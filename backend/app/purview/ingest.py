@@ -13,7 +13,7 @@ import re
 from urllib.parse import unquote
 
 from ..models import Column, Edge, LineageGraph, Node, NodeKind
-from .client import PurviewClient
+from .client import PurviewClient, PurviewError
 
 # Fabric scan entity types -> our node kinds. Types absent from this map (paths,
 # pipelines) are skipped: they are storage and orchestration artefacts, not
@@ -33,10 +33,14 @@ _TABLE_KINDS = {NodeKind.TABLE}
 
 # Fabric qualified names look like:
 #   https://app.fabric.microsoft.com/groups/<ws-guid>/lakehouses/<lh-guid>/tables/dbo%252Fraw_customers
-# The container segment varies (lakehouses/warehouses/notebooks), so match the
-# guid that follows any of them rather than hard-coding one.
+# The container segment varies, so match the guid that follows any of them
+# rather than hard-coding one. `lakewarehouses` is the segment Fabric emits for
+# a lakehouse's SQL analytics endpoint, and it is where views live — omitting it
+# silently reparented every view to the workspace.
 _WORKSPACE_RE = re.compile(r"/groups/([0-9a-f-]{36})", re.I)
-_CONTAINER_RE = re.compile(r"/(?:lakehouses|warehouses)/([0-9a-f-]{36})", re.I)
+_CONTAINER_RE = re.compile(
+    r"/(?:lakehouses|lakewarehouses|warehouses)/([0-9a-f-]{36})", re.I
+)
 
 
 def parse_fabric_qualified_name(qualified_name: str) -> dict[str, str | None]:
@@ -60,14 +64,45 @@ def _own_fabric_id(qualified_name: str) -> str | None:
     return parsed["container_id"] or parsed["workspace_id"]
 
 
-def _columns_of(entity: dict) -> list[Column]:
-    rels = entity.get("relationshipAttributes", {}) or {}
+def _columns_of(detail: dict) -> list[Column]:
+    """Columns carried directly on an entity's `columns` relationship.
+
+    Data types are not on the relationship stub, only on the full column
+    entities in `referredEntities`, so look them up there when present.
+    """
+    entity = detail.get("entity", detail)
+    referred = detail.get("referredEntities") or {}
     out: list[Column] = []
-    for col in rels.get("columns") or []:
+    for col in (entity.get("relationshipAttributes") or {}).get("columns") or []:
         name = col.get("displayText") or col.get("qualifiedName")
-        if name:
-            out.append(Column(name=unquote(name)))
+        if not name:
+            continue
+        attrs = (referred.get(col.get("guid")) or {}).get("attributes") or {}
+        # The spelling varies by entity type: lakehouse table columns use
+        # `dataType`, tabular_schema columns use `data_type`.
+        data_type = attrs.get("dataType") or attrs.get("data_type") or attrs.get("type")
+        out.append(Column(name=unquote(name), data_type=data_type))
     return out
+
+
+def _table_columns(client: PurviewClient, guid: str) -> list[Column]:
+    """Columns for a table-like entity, from wherever Fabric hung them.
+
+    Lakehouse tables carry `columns` on the entity itself. Warehouse views do
+    not — theirs hang off a separate `tabular_schema` entity, which costs one
+    extra fetch. Views looked column-less until we followed that link.
+    """
+    detail = client.get_entity(guid)
+    columns = _columns_of(detail)
+    if columns:
+        return columns
+
+    entity = detail.get("entity", detail)
+    schema = (entity.get("relationshipAttributes") or {}).get("tabular_schema")
+    schema_guid = (schema or {}).get("guid")
+    if not schema_guid:
+        return []
+    return _columns_of(client.get_entity(schema_guid))
 
 
 def build_graph_from_purview(client: PurviewClient | None = None) -> LineageGraph:
@@ -90,8 +125,11 @@ def build_graph_from_purview(client: PurviewClient | None = None) -> LineageGrap
         guid = hit["id"]
         qname = hit.get("qualifiedName") or ""
 
-        # A lakehouse scanned under two type names (fabric_lakehouse and
-        # fabric_lake_warehouse) is one object; keep the first and skip the dup.
+        # Guard against one container scanned twice under the same Fabric GUID.
+        # Note LH_Sales appearing as both fabric_lakehouse and
+        # fabric_lake_warehouse is *not* that case: those carry different GUIDs
+        # (the lakehouse and its SQL endpoint) and are deliberately kept apart —
+        # tables hang off the former, views off the latter.
         fabric_id = _own_fabric_id(qname)
         if kind is NodeKind.LAKEHOUSE and fabric_id and fabric_id in by_fabric_id:
             by_qualified_name[qname] = by_fabric_id[fabric_id]
@@ -99,13 +137,18 @@ def build_graph_from_purview(client: PurviewClient | None = None) -> LineageGrap
 
         columns: list[Column] = []
         if kind in _TABLE_KINDS:
-            detail = client.get_entity(guid)
-            columns = _columns_of(detail.get("entity", detail))
+            columns = _table_columns(client, guid)
+
+        # A lakehouse and its SQL endpoint share a display name, so the graph
+        # would otherwise show two identical nodes with different children.
+        name = hit.get("name") or hit.get("displayText") or guid
+        if hit["entityType"] == "fabric_lake_warehouse":
+            name = f"{name} (SQL endpoint)"
 
         nodes[guid] = Node(
             id=guid,
             kind=kind,
-            name=hit.get("name") or hit.get("displayText") or guid,
+            name=name,
             columns=columns,
             meta={
                 "purview_guid": guid,
@@ -141,9 +184,10 @@ def build_graph_from_purview(client: PurviewClient | None = None) -> LineageGrap
 def _collect_edges(client: PurviewClient, nodes: dict[str, Node]) -> list[Edge]:
     """Read lineage relationships for every table node.
 
-    A freshly scanned Fabric catalog usually has none of these — Purview knows
-    the assets but not how they connect, which is what the notebook parser and
-    the push path exist to fill in.
+    Queried per direction from the table side only: `get_next_lineage` rejects
+    BOTH, and the notebook side would need a flag that breaks the table side.
+    An entity with no lineage 404s instead of returning nothing, so a failure
+    here is the ordinary case for an unconnected asset, not an error.
     """
     edges: list[Edge] = []
     seen: set[tuple[str, str]] = set()
@@ -151,13 +195,17 @@ def _collect_edges(client: PurviewClient, nodes: dict[str, Node]) -> list[Edge]:
     for node in nodes.values():
         if node.kind not in _TABLE_KINDS:
             continue
-        lineage = client.get_lineage(node.id)
-        for rel in lineage.get("relations", []) or []:
-            src, tgt = rel.get("fromEntityId"), rel.get("toEntityId")
-            # Lineage can traverse process entities we did not keep as nodes.
-            if src not in nodes or tgt not in nodes or (src, tgt) in seen:
+        for direction in ("INPUT", "OUTPUT"):
+            try:
+                lineage = client.get_next_lineage(node.id, direction)
+            except PurviewError:
                 continue
-            seen.add((src, tgt))
-            edges.append(Edge(source=src, target=tgt, kind="derives"))
+            for rel in lineage.get("relations", []) or []:
+                src, tgt = rel.get("fromEntityId"), rel.get("toEntityId")
+                # Lineage can traverse process entities we did not keep as nodes.
+                if src not in nodes or tgt not in nodes or (src, tgt) in seen:
+                    continue
+                seen.add((src, tgt))
+                edges.append(Edge(source=src, target=tgt, kind="derives"))
 
     return edges

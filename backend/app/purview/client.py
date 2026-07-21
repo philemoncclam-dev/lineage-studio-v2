@@ -98,9 +98,32 @@ class PurviewClient:
         return self.request("GET", f"/atlas/v2/entity/guid/{guid}")
 
     def get_lineage(self, guid: str, depth: int = 3, direction: str = "BOTH") -> dict:
-        """Lineage graph centred on `guid`, as Purview already knows it."""
+        """Lineage as the *scan-populated index* knows it.
+
+        Kept for scan-derived lineage only. It does not see lineage pushed
+        through the API — see `get_next_lineage`.
+        """
         return self.request(
             "GET",
             f"/atlas/v2/lineage/{guid}",
             params={"depth": depth, "direction": direction},
+        )
+
+    def get_next_lineage(self, guid: str, direction: str) -> dict:
+        """Lineage from the `/next` endpoint, which serves API-pushed edges.
+
+        The classic `/lineage/{guid}` above reads an index that only a scan
+        populates, so edges we push ourselves never appear there no matter how
+        long we wait, even while the relationships are ACTIVE on the entity.
+        `/next` returns them immediately, at the cost of three quirks found by
+        trial against the live catalog:
+
+          * `direction` must be INPUT or OUTPUT; BOTH is a 400.
+          * `getDerivedLineage=true` 404s for tables and is required for
+            notebooks, so we query tables only and omit it.
+          * an entity with no lineage at all 404s rather than returning an
+            empty set, which is why callers must tolerate `PurviewError`.
+        """
+        return self.request(
+            "GET", f"/atlas/v2/lineage/{guid}/next", params={"direction": direction}
         )

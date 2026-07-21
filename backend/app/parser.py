@@ -42,6 +42,16 @@ _WRITE_PATTERNS = [
 
 _SELECT_RE = re.compile(r"""\bSELECT\b(.*?)\bFROM\b""", re.I | re.S)
 
+# `FROM` means one thing in SQL and another in Python. `from pyspark.sql import
+# Row` otherwise parses as a read of a table called `sql`, so notebooks invent a
+# phantom upstream table merely by importing something.
+_PY_IMPORT_RE = re.compile(r"^\s*(?:from\s+[\w.]+\s+import\b|import\s+[\w.]+)", re.M)
+
+
+def _without_python_imports(cell: str) -> str:
+    """Blank out Python import lines before scanning for SQL table references."""
+    return _PY_IMPORT_RE.sub("", cell)
+
 
 def _short(table_ref: str) -> str:
     """Normalize 'lakehouse.schema.table' or a path to a bare table name."""
@@ -88,9 +98,10 @@ def parse_notebook(nb: NotebookSource) -> tuple[Node, list[Edge]]:
     writes: set[str] = set()
     col_maps: list[ColumnMap] = []
     for cell in nb.cells:
-        reads |= _find(_READ_PATTERNS, cell)
-        writes |= _find(_WRITE_PATTERNS, cell)
-        col_maps.extend(_column_maps(cell))
+        scannable = _without_python_imports(cell)
+        reads |= _find(_READ_PATTERNS, scannable)
+        writes |= _find(_WRITE_PATTERNS, scannable)
+        col_maps.extend(_column_maps(scannable))
 
     # A read that is also written in the same notebook is treated as a write target.
     reads -= writes

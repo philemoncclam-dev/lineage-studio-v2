@@ -49,6 +49,91 @@ export async function fetchGraph(): Promise<LineageGraph> {
   return res.json()
 }
 
+// ---- column definition import (backend/app/purview/definitions.py) ----
+
+export type MatchStatus = 'exact' | 'fuzzy' | 'ambiguous' | 'unmatched'
+
+/** One spreadsheet row paired with the Purview column we think it describes. */
+export interface DefinitionProposal {
+  source_name: string
+  description: string
+  column_guid: string | null
+  column_name: string | null
+  confidence: number
+  status: MatchStatus
+  /** Backend's suggestion; the user can override before applying. */
+  selected: boolean
+  alternatives: string[]
+}
+
+export interface PurviewColumn {
+  guid: string
+  name: string
+  data_type?: string | null
+  current_description?: string | null
+}
+
+export interface DefinitionMatch {
+  table_guid: string
+  columns: PurviewColumn[]
+  proposals: DefinitionProposal[]
+}
+
+export interface WriteOperation {
+  verb: string
+  path: string
+  describes: string
+  body: unknown
+}
+
+/** Mirrors purview.writer.WriteResult.to_dict(). */
+export interface WriteResult {
+  dry_run: boolean
+  ok: boolean
+  operations: WriteOperation[]
+  responses: Record<string, unknown>[]
+  errors: string[]
+}
+
+export interface DefinitionAssignment {
+  column_guid: string
+  column_name?: string | null
+  description: string
+}
+
+async function detail(res: Response, what: string): Promise<never> {
+  let msg = `${what} failed: ${res.status}`
+  try {
+    const body = (await res.json()) as { detail?: string }
+    if (body.detail) msg = body.detail
+  } catch {
+    /* non-JSON error body — keep the status text */
+  }
+  throw new Error(msg)
+}
+
+export async function matchDefinitions(tableGuid: string, file: File): Promise<DefinitionMatch> {
+  const form = new FormData()
+  form.append('table_guid', tableGuid)
+  form.append('file', file)
+  const res = await fetch(`${BASE}/purview/definitions/match`, { method: 'POST', body: form })
+  if (!res.ok) return detail(res, 'match')
+  return res.json()
+}
+
+export async function applyDefinitions(
+  assignments: DefinitionAssignment[],
+  apply: boolean,
+): Promise<WriteResult> {
+  const res = await fetch(`${BASE}/purview/definitions/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assignments, apply }),
+  })
+  if (!res.ok) return detail(res, 'apply')
+  return res.json()
+}
+
 export async function ingest(payload: unknown): Promise<LineageGraph> {
   const res = await fetch(`${BASE}/ingest`, {
     method: 'POST',

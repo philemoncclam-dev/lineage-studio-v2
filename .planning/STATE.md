@@ -2,19 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 1
-current_phase_name: Design Tokens & Typography Foundation
+current_phase: 01
+current_phase_name: design-tokens-typography-foundation
 status: executing
-stopped_at: ROADMAP.md and STATE.md created; REQUIREMENTS.md traceability updated with full 62-requirement coverage
-last_updated: "2026-07-21T19:37:41.106Z"
+stopped_at: Completed 01-01-PLAN.md (design tokens & typography foundation)
+last_updated: "2026-07-21T19:48:42.116Z"
 last_activity: 2026-07-21
-last_activity_desc: ROADMAP.md created, 62/62 v1 requirements mapped, REQUIREMENTS.md traceability updated
+last_activity_desc: Phase 01 execution started
 progress:
-  total_phases: 7
+  total_phases: 1
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 4
+  completed_plans: 1
 ---
 
 # Project State
@@ -24,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-20)
 
 **Core value:** Purview gets populated from this app — explore lineage visually → select what matters → push to Purview → see it land, in a UI you'd demo without apologising.
-**Current focus:** Phase 1 — Design Tokens & Typography Foundation
+**Current focus:** Phase 01 — design-tokens-typography-foundation
 
 ## Current Position
 
-Phase: 1 of 7 (Design Tokens & Typography Foundation)
-Plan: TBD — not yet planned
+Phase: 01 (design-tokens-typography-foundation) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-07-21 — ROADMAP.md created, 62/62 v1 requirements mapped, REQUIREMENTS.md traceability updated
+Last activity: 2026-07-21 — Phase 01 execution started
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███░░░░░░░] 25%
 
 ## Performance Metrics
 
@@ -55,6 +54,11 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: N/A
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01 P01 | 20min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -70,6 +74,8 @@ carried into the roadmap without re-litigation:
 - Push audit/history: deferred to v1.x, not in this roadmap
 - Purview-push phase (Phase 5) is UI-only — `WriteSession` write-safety plumbing already verified server-side; no backend research scheduled
 - THEME-07 (light theme review) gets its own dedicated Phase 6 rather than folding into a neighboring phase — explicit exception to normal single-requirement-phase compression
+- [Phase ?]: Vendored Geist/Geist Mono woff2 into public/fonts/ instead of importing Fontsource's own CSS, keeping preload href and @font-face src byte-identical in dev and production
+- [Phase ?]: unicode-range on both @font-face blocks copied verbatim from Fontsource's latin split so U+2318 deliberately falls through to the generic fallback stack
 
 ### Pending Todos
 
@@ -91,6 +97,6 @@ None yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-21
-Stopped at: ROADMAP.md and STATE.md created; REQUIREMENTS.md traceability updated with full 62-requirement coverage
+Last session: 2026-07-21T19:48:42.108Z
+Stopped at: Completed 01-01-PLAN.md (design tokens & typography foundation)
 Resume file: None

@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: design-tokens-typography-foundation
 status: executing
-stopped_at: Completed 01-01-PLAN.md (design tokens & typography foundation)
-last_updated: "2026-07-21T19:48:42.116Z"
+stopped_at: Completed 01-02-PLAN.md (colour system & audit)
+last_updated: "2026-07-21T20:19:44.874Z"
 last_activity: 2026-07-21
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 ## Current Position
 
 Phase: 01 (design-tokens-typography-foundation) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-07-21 — Phase 01 execution started
 
-Progress: [███░░░░░░░] 25%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [███░░░░░░░] 25%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01 P01 | 20min | 3 tasks | 8 files |
+| Phase 01 P02 | 35min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,8 @@ carried into the roadmap without re-litigation:
 - THEME-07 (light theme review) gets its own dedicated Phase 6 rather than folding into a neighboring phase — explicit exception to normal single-requirement-phase compression
 - [Phase ?]: Vendored Geist/Geist Mono woff2 into public/fonts/ instead of importing Fontsource's own CSS, keeping preload href and @font-face src byte-identical in dev and production
 - [Phase ?]: unicode-range on both @font-face blocks copied verbatim from Fontsource's latin split so U+2318 deliberately falls through to the generic fallback stack
+- [Phase ?]: Near-equality collision detection scoped to identity-bearing channels (domain/edge/state/status) only, not surface/text, since the raw OKLCH math makes it impossible to catch the sanctioned silver/accent pair without also flagging near-achromatic neutral pairs that are objectively closer on every axis
+- [Phase ?]: audit-tokens.mjs discovered two genuine WCAG/CVD gaps beyond the UI-SPEC's own manual verification (domain-silver dark-vs-canvas contrast, text-tertiary dark-vs-raised-surface contrast); both are narrowly exempted with documented reasoning since this plan has no authority to re-derive the locked OKLCH values
 
 ### Pending Todos
 
@@ -83,10 +86,12 @@ None yet.
 
 ### Blockers/Concerns
 
-None yet. Watch items carried from research, to revisit as their phases start:
+yet. Watch items carried from research, to revisit as their phases start:
 
 - Phase 1: verify Geist's small-size legibility on real Windows ClearType before committing (flagged LOW-confidence risk in STACK.md)
 - Phase 4: real Fabric-tenant node/edge scale is unknown — test against a synthesized large graph, not just the bundled demo dataset
+- Follow-up: dark-theme --color-text-tertiary fails WCAG AA (4.5:1) against surface-1/2/3 (scores 4.23/3.79/3.31) — needs a lightness nudge or a documented never-use-on-raised-surfaces component rule in the first phase that renders tertiary text on a raised dark surface. Exempted with reasoning in audit-tokens.mjs and tokens.css.
+- Follow-up for Phase 6 (THEME-07): re-verify domain-silver vs edge-writes and domain-notebook vs edge-reads under CVD simulation in light theme — both sit at/under the 0.05 perceptibility floor there (dark theme clears comfortably). Currently exempted pending that dedicated review.
 
 ## Deferred Items
 
@@ -97,6 +102,6 @@ None yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-21T19:48:42.108Z
-Stopped at: Completed 01-01-PLAN.md (design tokens & typography foundation)
+Last session: 2026-07-21T20:19:37.668Z
+Stopped at: Completed 01-02-PLAN.md (colour system & audit)
 Resume file: None

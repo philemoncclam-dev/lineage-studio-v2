@@ -20,22 +20,22 @@ Resolved before requirements, recorded so they aren't relitigated:
 ### Design System (`DS`)
 
 - [x] **DS-01**: UI and mono fonts are self-hosted and render identically on Windows 11 — no OS-dependent font stack appears anywhere in the codebase
-- [ ] **DS-02**: A single token layer is the sole source of truth for colour, type, spacing, radius, and elevation; the competing `index.css` / `App.css` bases are gone
+- [x] **DS-02**: A single token layer is the sole source of truth for colour, type, spacing, radius, and elevation; the competing `index.css` / `App.css` bases are gone
 - [x] **DS-03**: Type scale is systematic — the scattered 10.5/11.5/12.5/13/14/17px sizes are replaced by a defined ramp
 - [x] **DS-04**: Spacing follows a consistent grid rather than ad-hoc pixel values
-- [ ] **DS-05**: Elevation is expressed as tiered surface lightness, not shadow — shadows do not read on a dark canvas
+- [x] **DS-05**: Elevation is expressed as tiered surface lightness, not shadow — shadows do not read on a dark canvas
 - [x] **DS-06**: Font loading produces no layout shift and no flash of invisible text
 
 ### Theming (`THEME`)
 
-- [ ] **THEME-01**: Palette is defined in a perceptual colour space (OKLCH) so lightness steps are visually even across hues
+- [x] **THEME-01**: Palette is defined in a perceptual colour space (OKLCH) so lightness steps are visually even across hues
 - [x] **THEME-02**: A single mechanism switches themes — the current triple definition (media query + two attribute selectors) is eliminated
 - [ ] **THEME-03**: Canvas and SVG rendering read colour from the same tokens as the DOM, via a snapshot cached and re-read only on theme change — never per frame
-- [ ] **THEME-04**: The dark canvas is a dark grey, not pure black, to avoid halation
-- [ ] **THEME-05**: Domain colours and edge-type colours are drawn from visually distinct ranges — the present-tense `--writes` == `--notebook` collision (`#8b5cf6` / `#a78bfa`) is fixed
-- [ ] **THEME-06**: Domain colours remain distinguishable under deuteranopia and protanopia simulation; where colour alone is insufficient, a second channel (shape, stroke, position) carries the distinction
+- [x] **THEME-04**: The dark canvas is a dark grey, not pure black, to avoid halation
+- [x] **THEME-05**: Domain colours and edge-type colours are drawn from visually distinct ranges — the present-tense `--writes` == `--notebook` collision (`#8b5cf6` / `#a78bfa`) is fixed
+- [x] **THEME-06**: Domain colours remain distinguishable under deuteranopia and protanopia simulation; where colour alone is insufficient, a second channel (shape, stroke, position) carries the distinction
 - [ ] **THEME-07**: Light theme is reviewed on its own terms in its own dedicated pass — not as a comparison against dark, and not at the end of a phase
-- [ ] **THEME-08**: All text and meaningful non-text contrast meets WCAG AA in both themes
+- [x] **THEME-08**: All text and meaningful non-text contrast meets WCAG AA in both themes
 
 ### App Shell (`SHELL`)
 
@@ -156,19 +156,19 @@ dependencies, parallelization, and pitfall guards.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | DS-01 | Phase 1 | Complete |
-| DS-02 | Phase 1 | Pending |
+| DS-02 | Phase 1 | Complete |
 | DS-03 | Phase 1 | Complete |
 | DS-04 | Phase 1 | Complete |
-| DS-05 | Phase 1 | Pending |
+| DS-05 | Phase 1 | Complete |
 | DS-06 | Phase 1 | Complete |
-| THEME-01 | Phase 1 | Pending |
+| THEME-01 | Phase 1 | Complete |
 | THEME-02 | Phase 1 | Complete |
 | THEME-03 | Phase 1 | Pending |
-| THEME-04 | Phase 1 | Pending |
-| THEME-05 | Phase 1 | Pending |
-| THEME-06 | Phase 1 | Pending |
+| THEME-04 | Phase 1 | Complete |
+| THEME-05 | Phase 1 | Complete |
+| THEME-06 | Phase 1 | Complete |
 | THEME-07 | Phase 6 | Pending |
-| THEME-08 | Phase 1 | Pending |
+| THEME-08 | Phase 1 | Complete |
 | SHELL-01 | Phase 2 | Pending |
 | SHELL-02 | Phase 2 | Pending |
 | SHELL-03 | Phase 2 | Pending |

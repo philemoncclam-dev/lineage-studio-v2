@@ -1,0 +1,38 @@
+# Render blueprint for the Lineage Studio backend.
+#
+# Render reads this when you point it at the repo, so the service configures
+# itself instead of you filling in a form. The frontend is deployed separately
+# on Vercel — this file only describes the API.
+#
+# Secrets are deliberately `sync: false`: Render prompts for them once and
+# stores them, so they never live in the repo.
+
+services:
+  - type: web
+    name: lineage-studio-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # $PORT is supplied by Render; binding 0.0.0.0 is what makes the service
+    # reachable from outside the container.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: PURVIEW_ACCOUNT_NAME
+        sync: false
+      - key: PURVIEW_TENANT_ID
+        sync: false
+      - key: PURVIEW_CLIENT_ID
+        sync: false
+      - key: PURVIEW_CLIENT_SECRET
+        sync: false
+      # Start read-only. This service has no authentication of its own, so
+      # anyone who finds the URL can use whatever it is allowed to do.
+      - key: PURVIEW_ALLOW_WRITE
+        value: "false"
+      # Set to your Vercel URL once you have it, then redeploy.
+      - key: CORS_ORIGINS
+        sync: false

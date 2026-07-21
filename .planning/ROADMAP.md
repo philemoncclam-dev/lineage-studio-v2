@@ -101,12 +101,12 @@ alone:
   6. The dark canvas is dark grey, not pure black, with a tiered elevation system that reads correctly with shadow contribution minimized; the domain palette passes deuteranopia/protanopia simulation in both themes
   7. All text and meaningful non-text contrast meets WCAG AA in both themes, checked against actual composited/color-mix backgrounds
 
-**Plans**: 3/4 plans executed
+**Plans**: 4/4 plans executed
 
 - [x] 01-01-PLAN.md
 - [x] 01-02-PLAN.md
 - [x] 01-03-PLAN.md
-- [ ] 01-04-PLAN.md
+- [x] 01-04-PLAN.md
 
 **UI hint**: yes
 
@@ -240,7 +240,7 @@ everything (3, 4, 5, 6) and closes the milestone.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
-| 1. Design Tokens & Typography Foundation | 3/4 | In Progress|  |
+| 1. Design Tokens & Typography Foundation | 4/4 | In Progress|  |
 | 2. App Shell, Routing & Canvas Infrastructure | 0/TBD | Not started | - |
 | 3. Lineage DAG Canvas Rebuild | 0/TBD | Not started | - |
 | 4. Knowledge Graph Canvas Rebuild | 0/TBD | Not started | - |

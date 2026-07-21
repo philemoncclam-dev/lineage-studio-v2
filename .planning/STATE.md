@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 01
 current_phase_name: design-tokens-typography-foundation
-status: executing
-stopped_at: Completed 01-03-PLAN.md (token-to-canvas bridge)
-last_updated: "2026-07-21T20:31:11.949Z"
+status: verifying
+stopped_at: Completed 01-04-PLAN.md (component & view stylesheet token migration — phase 01 complete)
+last_updated: "2026-07-21T20:46:05.178Z"
 last_activity: 2026-07-21
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 
 Phase: 01 (design-tokens-typography-foundation) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-21 — Phase 01 execution started
 
-Progress: [████████░░] 75%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [████████░░] 75%
 | Phase 01 P01 | 20min | 3 tasks | 8 files |
 | Phase 01 P02 | 35min | 2 tasks | 3 files |
 | Phase 01 P03 | 20min | 2 tasks | 3 files |
+| Phase 01 P04 | 35min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,10 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: Added surface1 field to CanvasTokens (not enumerated by task 1's field list) because task 2 requires reading the surface-1 token for the node outline stroke
 - [Phase ?]: canvasFont() takes an optional scale param so one helper serves both static and zoom-scaled canvas text, with the token's own px value as the floor
 - [Phase ?]: GraphView keeps a component-local data-theme MutationObserver alongside the bootstrap-level one, explicitly calling invalidateCanvasTokens() before re-reading so its live redraw never depends on cross-observer firing order
+- [Phase ?]: Applied plan 01-04's font-size/weight/radius/spacing migration tables mechanically (by literal old value), including the flagged 12px->13px density increase across ~14 declarations
+- [Phase ?]: Spacing snaps to the nearest DECLARED spacing token (not an arbitrary 4px multiple) — e.g. 40px has no exact token and rounds down to --spacing-8 (32px) on a tie
+- [Phase ?]: Uppercase micro-labels keep letter-spacing via 0.08em (matching search.css's pre-existing convention) instead of losing tracking outright, to avoid a visible inconsistency across uppercase labels
+- [Phase ?]: Corrected purview's 2px tab-indicator border to var(--border-width) (1px) as a Rule 2 fix — DS-04/UI-SPEC forbids any component introducing a 2px structural border
 
 ### Pending Todos
 
@@ -106,6 +111,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-21T20:31:11.940Z
-Stopped at: Completed 01-03-PLAN.md (token-to-canvas bridge)
+Last session: 2026-07-21T20:46:05.169Z
+Stopped at: Completed 01-04-PLAN.md (component & view stylesheet token migration — phase 01 complete)
 Resume file: None

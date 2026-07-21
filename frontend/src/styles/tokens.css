@@ -27,7 +27,94 @@
 
 /* ===== Tier 1 / Tier 2 design tokens ===== */
 @theme {
-  /* --- Tier 1/2 colour tokens (placeholder — filled in by plan 01-02) --- */
+  /* --- Tier 1 — OKLCH primitives (THEME-01): each swatch declared exactly once as light-dark(<light>, <dark>) — light-dark() takes the light-theme value first, the dark-theme value second. Every value below is verbatim from 01-UI-SPEC.md's Color System tables (computed with Björn Ottosson's OKLab reference matrices), never eyeballed or re-derived. --- */
+
+  /* Neutral ramp — four surface tiers + two border tokens */
+  --slate-0: light-dark(oklch(0.975 0.006 268), oklch(0.165 0.018 266)); /* canvas */
+  --slate-1: light-dark(oklch(0.99 0.0015 268), oklch(0.215 0.027 266)); /* card */
+  --slate-2: light-dark(oklch(0.995 0.001 268), oklch(0.257 0.032 266)); /* raised */
+  --slate-3: light-dark(oklch(1.0 0 0), oklch(0.299 0.036 266)); /* overlay/modal */
+  --slate-4: light-dark(oklch(0.88 0.016 268), oklch(0.329 0.034 266)); /* border */
+  --slate-5: light-dark(oklch(0.66 0.024 268), oklch(0.52 0.030 266)); /* border-strong */
+
+  /* Text ramp — three tiers */
+  --slate-6: light-dark(oklch(0.545 0.032 268), oklch(0.589 0.046 270)); /* tertiary */
+  --slate-7: light-dark(oklch(0.50 0.034 264), oklch(0.743 0.037 270)); /* secondary */
+  --slate-8: light-dark(oklch(0.257 0.032 266), oklch(0.938 0.011 270)); /* primary */
+
+  /* Accent (state channel — traced/hover on both canvases, focus rings, CTA) */
+  --cyan-1: light-dark(oklch(0.52 0.115 232), oklch(0.754 0.139 233));
+  --cyan-2: light-dark(oklch(0.44 0.12 232), oklch(0.828 0.101 230)); /* hover/pressed */
+  --cyan-3: light-dark(oklch(0.93 0.03 232), oklch(0.273 0.050 240)); /* wash */
+
+  /* Domain palette (knowledge-graph hue channel — THEME-05/THEME-06 re-derivation) */
+  --gold-1: light-dark(oklch(0.62 0.14 95), oklch(0.85 0.14 95));
+  /* Gold is a true yellow-gold (H95°); the previous green-for-gold value
+     (#16a06b/#34d39c) is retired. Yellow was chosen deliberately over
+     green: with blue, it is one of the two hues that survives red-green
+     colour deficiency (protanopia/deuteranopia) largely intact, unlike the
+     retired green, which sat close to Bronze's orange under CVD
+     simulation. */
+  --amber-1: light-dark(oklch(0.48 0.15 48), oklch(0.65 0.15 48)); /* bronze */
+  --rose-1: light-dark(oklch(0.56 0.16 350), oklch(0.72 0.16 350)); /* notebook */
+  --steel-1: light-dark(oklch(0.35 0.03 235), oklch(0.45 0.03 235)); /* silver */
+  /* Silver's hue (235 degrees) sits only ~2-3 degrees from the accent's
+     (233 dark / 232 light) — this is deliberate and safe, not a collision:
+     silver's chroma (0.03) is roughly 4-5x lower than the accent's
+     (0.115-0.139), which is the actual separation mechanism, not an
+     oversight. Do not "fix" this by moving silver's hue — it would drift
+     toward bronze (48 degrees) or notebook (350 degrees) and create a real
+     collision. This is the one pair audit-tokens.mjs allowlists by name. */
+
+  /* Edge-type palette (lineage DAG hue channel — the other half of the THEME-05 fix) */
+  --indigo-1: light-dark(oklch(0.62 0.12 272), oklch(0.80 0.10 272)); /* reads */
+  --violet-1: light-dark(oklch(0.40 0.15 315), oklch(0.55 0.15 315)); /* writes */
+  --graphite-1: light-dark(oklch(0.72 0.02 266), oklch(0.38 0.02 266)); /* derives */
+  /* Derives is deliberately low-contrast and near-achromatic — it is the
+     lowest-confidence edge type (an unattributed transform, no strong
+     signal either way) and carries no required information on its own, so
+     it is the single token exempt from the 3:1 non-text WCAG threshold
+     (see audit-tokens.mjs check 3). */
+
+  /* Status colours */
+  --red-1: light-dark(oklch(0.50 0.19 15), oklch(0.68 0.19 15)); /* destructive */
+  /* Reserved exclusively for destructive-action affordances (Purview
+     overwrite warnings, delete confirmations — consumed starting Phase 5).
+     Defined now so Phase 5 doesn't invent an ad hoc red. */
+  --green-1: light-dark(oklch(0.50 0.11 160), oklch(0.78 0.15 165)); /* success */
+
+  /* --- Tier 2 — semantic roles (THEME-01): each references exactly one tier-1 primitive above and never holds a literal colour value of its own. --- */
+  --color-surface-canvas: var(--slate-0);
+  --color-surface-1: var(--slate-1);
+  --color-surface-2: var(--slate-2);
+  --color-surface-3: var(--slate-3);
+  --color-border: var(--slate-4);
+  --color-border-strong: var(--slate-5);
+  --color-text-primary: var(--slate-8);
+  --color-text-secondary: var(--slate-7);
+  --color-text-tertiary: var(--slate-6);
+  --color-accent: var(--cyan-1);
+  --color-accent-hi: var(--cyan-2);
+  --color-accent-dim: var(--cyan-3);
+  --color-domain-gold: var(--gold-1);
+  --color-domain-bronze: var(--amber-1);
+  --color-domain-notebook: var(--rose-1);
+  --color-domain-silver: var(--steel-1);
+  /* Not in the approved UI-SPEC — flagged in plan 01-01's assumption 4.
+     Both reference an existing primitive so no new hue enters the
+     system. */
+  --color-domain-neutral: var(--slate-6); /* fallback domain colour for colorFor() in model.tsx; matches the neutral default the tick indicator already renders */
+  --color-edge-reads: var(--indigo-1);
+  --color-edge-writes: var(--violet-1);
+  --color-edge-derives: var(--graphite-1);
+  --color-grid-dot: var(--slate-4); /* dot-grid canvas background on both canvases */
+  --color-destructive: var(--red-1);
+  --color-success: var(--green-1);
+
+  /* Elevation (DS-05): on dark, shadow is supplementary only — lightness stepping plus the border token carry elevation there, because a near-black canvas has almost no headroom to go darker, which is why shadow-as-primary silently stops reading. On light, shadow is a legitimate primary mechanism — white has almost no lightness headroom, so shadow plus border do the perceptual work instead. Each shadow layer's colour switches between themes via the primitive mechanism; the dark theme's second layer is transparent so all three tiers share one visible reference shadow rather than a fabricated multi-layer dark shadow. */
+  --shadow-card: 0 1px 2px light-dark(rgb(28 35 51 / 0.04), rgb(0 0 0 / 0.35)), 0 4px 12px light-dark(rgb(28 35 51 / 0.08), transparent);
+  --shadow-raised: 0 2px 4px light-dark(rgb(28 35 51 / 0.06), rgb(0 0 0 / 0.35)), 0 8px 20px light-dark(rgb(28 35 51 / 0.10), transparent);
+  --shadow-overlay: 0 8px 24px light-dark(rgb(28 35 51 / 0.14), rgb(0 0 0 / 0.35)), 0 24px 48px light-dark(rgb(28 35 51 / 0.18), transparent);
 
   /* --- Typography (DS-01, DS-03) --- */
   --font-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
@@ -67,16 +154,28 @@
 }
 
 /* ===== Density primitives + theme mechanism (THEME-02) =====
-   The color-scheme declaration below, paired with light-dark() inside token
-   values (plan 01-02), is the single theme mechanism. The app flips themes
-   by setting data-theme on the document element; no media query is
-   declared here. */
+   The color-scheme declaration below, paired with the light/dark switch
+   built into every tier-1 primitive (plan 01-02), is the single theme
+   mechanism. The app flips themes by setting data-theme on the document
+   element; no media query is declared here. */
 :root {
   --border-width: 1px;
   --row-height: 28px;
 
   color-scheme: light dark;
   font-synthesis: none;
+}
+
+/* data-theme is the single explicit theme switch — light-dark() inside every
+   tier-1 primitive above does the rest. Neither block below redefines a
+   token; if a future edit adds one here, that value belongs in tier 1
+   instead (see 01-UI-SPEC.md's "Retired Values — Explicit Grep Targets"). */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 /* ===== Base reset ===== */

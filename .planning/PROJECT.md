@@ -97,6 +97,25 @@ acceptable, because there colour is load-bearing.
 segmented control read well and are explicitly liked — the visual treatment
 carries forward even though the shell around it changes.
 
+**The target Purview account is disposable.** It comes from a student Azure trial
+and its contents are of no value — the user is explicit that anything in it can be
+overwritten or destroyed. This materially changes how Phase 5 should be planned, and
+is the reason its risk posture is lighter than the pitfalls research assumes:
+
+- `PUSH-11` (throttling and batch limits) should be probed *aggressively* rather than
+  ramped cautiously. Microsoft publishes no exhaustive limits, so provoke real 429s
+  and record the actual numbers instead of designing around guesses.
+- `PUSH-03`/`PUSH-04` (create vs update-own vs overwrite-foreign, and overwrite
+  acknowledgement) become genuinely testable: seed hand-curated content, overwrite it
+  deliberately, and verify the UI classified and gated it correctly. These are hard to
+  build confidently against a catalog you may never damage.
+- `PUSH-08` (see-it-land re-fetch) can measure real eventual-consistency delay rather
+  than assuming one.
+
+The safety *design* is unchanged — preview, confirmation, and provenance marking are
+requirements because they must be right for a real catalog later, not because this
+one is precious.
+
 **Purview is further along than the UI suggests.** `backend/app/purview/` already
 contains client, ingest, definitions, lineage_push, dataproduct, actions, and
 writer modules, plus a `purview_allow_write` safety gate. The gap is not backend
@@ -118,7 +137,9 @@ about building Purview integration from scratch.
   the credential boundary — any allowed origin can spend the service principal's
   credentials, so the allowlist stays explicit and opt-in
 - **Safety**: Purview writes stay behind the `purview_allow_write` gate, and no
-  write may execute without an explicit user confirmation step in the UI
+  write may execute without an explicit user confirmation step in the UI. Note
+  the gate stays `false` through Phases 1–4 purely because nothing uses it until
+  Phase 5 — not because the target catalog is precious (see below)
 - **Safety**: No writes to real Fabric tables, ever
 - **Dependencies**: Azure AD service principal access to both Purview and Fabric
   REST APIs

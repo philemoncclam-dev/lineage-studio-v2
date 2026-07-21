@@ -14,8 +14,13 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi import HTTPException
+
+from .config import get_settings
 from .models import IngestRequest, LineageGraph
 from .parser import build_graph
+from .purview.client import PurviewError
+from .purview.ingest import build_graph_from_purview
 from .sample import SAMPLE
 
 app = FastAPI(title="Lineage Studio API", version="0.1.0")
@@ -50,4 +55,25 @@ def ingest(req: IngestRequest) -> LineageGraph:
 
 @app.get("/graph", response_model=LineageGraph)
 def graph() -> LineageGraph:
+    return _last_graph
+
+
+@app.get("/purview/status")
+def purview_status() -> dict[str, bool]:
+    """Lets the UI show or hide the Purview source without a failing call."""
+    settings = get_settings()
+    return {
+        "configured": settings.purview_configured,
+        "write_enabled": settings.purview_allow_write,
+    }
+
+
+@app.get("/purview/graph", response_model=LineageGraph)
+def purview_graph() -> LineageGraph:
+    """Build the graph from the live Purview data map and make it current."""
+    global _last_graph
+    try:
+        _last_graph = build_graph_from_purview()
+    except PurviewError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return _last_graph

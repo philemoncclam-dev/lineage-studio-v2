@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "microsoft-fabric": {
+      "type": "stdio",
+      "command": "dnx",
+      "args": [
+        "Microsoft.Fabric.Mcp@1.2.0",
+        "--yes",
+        "--",
+        "server",
+        "start"
+      ],
+      "env": {}
+    }
+  }
+}

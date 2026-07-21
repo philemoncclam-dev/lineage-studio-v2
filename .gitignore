@@ -10,6 +10,14 @@ node_modules/
 frontend/dist/
 *.local
 
+# Secrets — never commit. .env.example is the tracked template.
+# The .txt/.bak variants matter: Windows editors silently append an extension,
+# and a bare `*.env` rule would not match `.env.txt`.
+.env
+*.env
+.env.*
+!.env.example
+
 # Editor / OS
 .DS_Store
 .idea/

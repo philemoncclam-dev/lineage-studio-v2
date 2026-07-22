@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: app-shell-routing-canvas-infrastructure
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-07-22T05:22:52.173Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-07-22T05:33:47.134Z"
 last_activity: 2026-07-21
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 10
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 ## Current Position
 
 Phase: 02 (app-shell-routing-canvas-infrastructure) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-07-21 — Phase 02 execution started
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [█████░░░░░] 50%
 | Phase 01 P03 | 20min | 2 tasks | 3 files |
 | Phase 01 P04 | 35min | 2 tasks | 6 files |
 | Phase 02 P01 | 2min | 2 tasks | 5 files |
+| Phase 02 P02 | 15min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,8 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: Uppercase micro-labels keep letter-spacing via 0.08em (matching search.css's pre-existing convention) instead of losing tracking outright, to avoid a visible inconsistency across uppercase labels
 - [Phase ?]: Corrected purview's 2px tab-indicator border to var(--border-width) (1px) as a Rule 2 fix — DS-04/UI-SPEC forbids any component introducing a 2px structural border
 - [Phase ?]: Added passWithNoTests: true to vitest.config.ts (Rule 3) so an empty Vitest suite exits 0 as the plan's acceptance criteria require
+- [Phase ?]: Added frontend/src/model/ids.ts for shared tid/nid helpers, avoiding a circular import between adapt.ts and its leaf modules
+- [Phase ?]: Added frontend/src/model/__tests__/fixtures.ts as a single shared LineageGraph fixture reused across all four model test files
 
 ### Pending Todos
 
@@ -113,6 +116,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-22T05:22:52.164Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-07-22T05:33:47.126Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None

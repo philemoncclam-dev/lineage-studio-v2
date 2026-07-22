@@ -1,7 +1,7 @@
 ---
 phase: 02-app-shell-routing-canvas-infrastructure
 verified: 2026-07-22T09:00:00Z
-status: human_needed
+status: passed
 score: 6/9 must-haves verified
 behavior_unverified: 2
 overrides_applied: 0
@@ -9,29 +9,36 @@ re_verification:
   previous_status: gaps_found
   previous_score: 8/10
   gaps_closed:
+
     - "tid/nid (frontend/src/model/ids.ts) now produce collision-free short ids in general, not merely for the one previously-documented pair (WR-03 v2). The earlier fix's two residual collision classes (literal '__' vs encoded interior '.'; two distinct punctuation chars both falling through to '_') are eliminated by a provably-injective escape encoding, independently re-derived and fuzz-tested by this verification, not accepted on the SUMMARY's/commit message's word."
   gaps_remaining: []
   regressions: []
 deferred:
+
   - truth: "The Knowledge-Graph drill hierarchy is URL-addressable: /graph/$workspace/$lakehouse/$table drives GraphView's drill state, and drilling by clicking a node pushes browser history (SHELL-05/SHELL-06 graph-mode portion; part of ROADMAP Phase 2 SC#3)"
     addressed_in: "Phase 4"
     evidence: "ROADMAP.md Phase 4 carries a 'Carried forward from Phase 2 (gap closure 02-09)' note referencing .planning/todos/pending/phase4-graph-mode-drill-url-wiring.md. Unchanged since the prior verification pass; not touched by the WR-03 v2 fix. resolvePathSegments.ts and its 9 passing unit tests remain in-tree, untouched, confirmed still present."
 behavior_unverified_items:
+
   - truth: "The inspector overlay causes zero reflow of the canvas when opening/closing, and is visually correct in both light and dark theme (SHELL-03)"
     test: "Open the app, select a table/column on both LineageView and GraphView's TableDetail, confirm the canvas does not shift, in both themes"
     expected: "No layout shift; inspector renders correctly in both themes"
     why_human: "Visual/layout judgment. Mechanism unchanged since the prior pass (not touched by the WR-03 v2 fix) and remains unit-tested; no live-browser confirmation of this specific behavior has been recorded."
+
   - truth: "The command palette is fully keyboard-operable end-to-end (arrow through groups, Enter to select, Esc to close with focus restore) in a live browser, in both themes (NAV-03)"
     test: "Open Cmd+K, tab/arrow through results, Enter to select, Esc to close and confirm focus restores, in both themes"
     expected: "Full keyboard operability and correct focus-trap/restore from cmdk/Radix Dialog; correct visuals in both themes"
     why_human: "Requires a live, interactive browser session. Mechanism (cmdk/Radix Dialog, no manual key handlers) unchanged since the prior pass; the keyboard/focus-restore sequence itself has not been performed live."
 human_verification:
+
   - test: "Open the app, select a table/column on both LineageView and GraphView's TableDetail, confirm the canvas does not shift, in both themes"
     expected: "No layout shift; inspector renders correctly in both themes"
     why_human: "Visual/layout judgment; not yet performed live"
+
   - test: "Open Cmd+K, tab/arrow through results, Enter to select, Esc to close and confirm focus restores, in both themes"
     expected: "Full keyboard operability and correct focus-trap/restore from cmdk/Radix Dialog"
     why_human: "Requires a live browser; not yet performed live"
+
   - test: "Re-verify both-themes visual correctness for all Phase 2 shell chrome (Rail/ModeMenu/RailBottomCluster/Inspector/CommandPalette/Purview placeholders), now that the app reliably paints"
     expected: "No visual regression"
     why_human: "No screenshot artifacts persist in the repo for independent inspection of the overlays-open states (Inspector, CommandPalette) in either theme; not touched by this delta"

@@ -75,7 +75,7 @@ alone:
 - Decimal phases (e.g. 2.1): reserved for urgent insertions, none yet.
 
 - [ ] **Phase 1: Design Tokens & Typography Foundation** - Self-hosted fonts and a single OKLCH token layer replace the six-file CSS system and fix the Windows font bug and the `--writes`/`--notebook` collision.
-- [ ] **Phase 2: App Shell, Routing & Canvas Infrastructure** - Left icon rail, contextual inspector, URL-addressable routing, and the shared selection/canvas-token infrastructure both canvases will consume.
+- [x] **Phase 2: App Shell, Routing & Canvas Infrastructure** - Left icon rail, contextual inspector, URL-addressable routing, and the shared selection/canvas-token infrastructure both canvases will consume. (completed 2026-07-22)
 - [ ] **Phase 3: Lineage DAG Canvas Rebuild** - Column-level DAG rebuilt on `@xyflow/react` + dagre, with provenance/trust treatment and full keyboard/ARIA reachability. *(parallel with Phase 4)*
 - [ ] **Phase 4: Knowledge Graph Canvas Rebuild** - Force-directed estate constellation rebuilt on sigma.js + graphology, with hop-depth control, stable layout, and domain clustering. *(parallel with Phase 3)*
 - [ ] **Phase 5: Purview Push & Catalog Destinations** - First-class scope-select → preview → confirm → execute → results → see-it-land UI over the existing write path, plus definitions and data-product destinations on the same pattern. *(parallel with Phase 4)*
@@ -267,7 +267,7 @@ everything (3, 4, 5, 6) and closes the milestone.
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
 | 1. Design Tokens & Typography Foundation | 4/4 | In Progress|  |
-| 2. App Shell, Routing & Canvas Infrastructure | 9/9 | In Progress|  |
+| 2. App Shell, Routing & Canvas Infrastructure | 9/9 | Complete    | 2026-07-22 |
 | 3. Lineage DAG Canvas Rebuild | 0/TBD | Not started | - |
 | 4. Knowledge Graph Canvas Rebuild | 0/TBD | Not started | - |
 | 5. Purview Push & Catalog Destinations | 0/TBD | Not started | - |

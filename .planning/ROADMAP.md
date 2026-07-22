@@ -126,7 +126,15 @@ alone:
   5. Cmd+K opens a fully keyboard-operable command palette searching tables, columns, and notebook code
   6. At every commit within this phase, the running app remains usable and demoable — the old canvases, temporarily bridged onto the new tokens, keep working inside the new shell until Phases 3-4 replace them outright
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+- [ ] 02-01-PLAN.md — Toolchain foundation: deps + Vitest/jsdom test infra (blocking package-legitimacy gate)
+- [ ] 02-02-PLAN.md — model.tsx decomposition into adapt/lineageLayout/graphLayout/domainColor (pure, parallel)
+- [ ] 02-03-PLAN.md — TanStack Router + root loader + name→GUID resolver + selection search-param store
+- [ ] 02-04-PLAN.md — Mode-based shell chrome: logo menu, data-driven rail, rail-bottom cluster, tier-3 tokens, canvas bridge, Purview placeholders
+- [ ] 02-05-PLAN.md — Non-modal overlay inspector + canvas selection wiring (SHELL-03)
+- [ ] 02-06-PLAN.md — cmdk command palette rebuild, retire SearchPalette (NAV-01/03)
+
 **UI hint**: yes
 
 ### Phase 3: Lineage DAG Canvas Rebuild
@@ -241,7 +249,7 @@ everything (3, 4, 5, 6) and closes the milestone.
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
 | 1. Design Tokens & Typography Foundation | 4/4 | In Progress|  |
-| 2. App Shell, Routing & Canvas Infrastructure | 0/TBD | Not started | - |
+| 2. App Shell, Routing & Canvas Infrastructure | 0/6 | Planned | - |
 | 3. Lineage DAG Canvas Rebuild | 0/TBD | Not started | - |
 | 4. Knowledge Graph Canvas Rebuild | 0/TBD | Not started | - |
 | 5. Purview Push & Catalog Destinations | 0/TBD | Not started | - |

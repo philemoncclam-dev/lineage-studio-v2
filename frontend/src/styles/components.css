@@ -180,3 +180,15 @@ svg.ls-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-
 .tcard i { display: block; width: 8px; height: 8px; border-radius: 50%; position: absolute; top: 16px; right: 14px; }
 .openbtn { margin-top: var(--spacing-3); align-self: flex-start; font: inherit; font-size: var(--text-base); font-weight: 600; color: var(--btn-primary-fg); background: var(--btn-primary-bg); border: 0; border-radius: var(--tbtn-radius); padding: var(--spacing-2) var(--spacing-3); cursor: pointer; }
 .lchev { align-self: center; color: var(--color-text-tertiary); opacity: .6; }
+
+/* ===== Router bridge (02-03): canvas pending state + generic Purview
+   toolkit page shell. 02-04 owns the real shell chrome/tokens this content
+   sits inside of; these rules are deliberately minimal. ===== */
+.canvas-skeleton { flex: 1; display: flex; align-items: center; justify-content: center;
+  color: var(--color-text-tertiary); font-size: var(--text-base);
+  background-image: radial-gradient(var(--color-grid-dot) 1.1px, transparent 1.1px); background-size: 24px 24px; }
+
+.purview-page { flex: 1; overflow: auto; padding: var(--spacing-8); max-width: 640px; }
+.purview-page .page-title { margin: 0 0 var(--spacing-3); font-size: var(--text-display); line-height: var(--text-display--line-height); letter-spacing: var(--text-display--letter-spacing); font-weight: 600; }
+.purview-page .page-lead { margin: 0 0 var(--spacing-4); color: var(--color-text-secondary); font-size: var(--text-base); line-height: 1.5; }
+.purview-table-list { display: flex; flex-direction: column; gap: var(--spacing-2); list-style: none; margin: 0; padding: 0; }

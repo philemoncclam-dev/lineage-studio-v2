@@ -14,7 +14,15 @@ import { modeFromPathname, railConfig } from './railConfig'
 import '../styles/components.css'
 import '../styles/shell.css'
 
-export default function AppShell({ children }: { children: ReactNode }) {
+// `overlays` (default true) gates Inspector/CommandPalette — both read
+// router match context (useMatch/useSearch/useLoaderData) via useSelection()
+// and getRouteApi('__root__').useLoaderData(). The router's Suspense
+// pendingComponent fallback slot never receives match context (CR-01), so
+// RootPending renders with `overlays={false}` to mount the chrome
+// (ModeMenu/Rail/RailBottomCluster, all router-*state*-only, never match
+// context) without those two overlays. The normal, matched render path is
+// unaffected — overlays defaults to true.
+export default function AppShell({ children, overlays = true }: { children: ReactNode; overlays?: boolean }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const mode = modeFromPathname(pathname)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -43,10 +51,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
         <div className="shell-canvas">
           {children}
-          <Inspector />
+          {overlays && <Inspector />}
         </div>
       </div>
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      {overlays && <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />}
     </Tooltip.Provider>
   )
 }

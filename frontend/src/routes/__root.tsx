@@ -33,9 +33,16 @@ function RootComponent() {
 // Canvas-region pending state (UI-SPEC "loading" consideration): the shell
 // around it stays interactive/mounted, only the content area shows a subtle
 // skeleton while fetchGraph() resolves.
+//
+// overlays={false} (CR-01 fix): the Suspense pendingComponent fallback slot
+// never receives router match context, so Inspector/CommandPalette (both of
+// which read match context via useSelection()/useLoaderData()) would throw
+// "Could not find a nearest match!" if mounted here. AppShell's chrome
+// (ModeMenu/Rail/RailBottomCluster) reads only router *state* (useRouterState),
+// never match context, so it stays mounted and interactive.
 function RootPending() {
   return (
-    <AppShell>
+    <AppShell overlays={false}>
       <div className="canvas-skeleton" role="status" aria-live="polite">
         Loading graph…
       </div>

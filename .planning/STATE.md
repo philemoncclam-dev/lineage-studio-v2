@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 02
 current_phase_name: app-shell-routing-canvas-infrastructure
-status: executing
-stopped_at: Completed 02-05-PLAN.md
-last_updated: "2026-07-22T06:38:23.457Z"
+status: verifying
+stopped_at: Completed 02-06-PLAN.md
+last_updated: "2026-07-22T07:00:33.242Z"
 last_activity: 2026-07-21
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 
 Phase: 02 (app-shell-routing-canvas-infrastructure) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-21 — Phase 02 execution started
 
-Progress: [█████████░] 90%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [█████████░] 90%
 | Phase 02 P03 | 28min | 2 tasks | 25 files |
 | Phase 02 P04 | 55min | 2 tasks | 12 files |
 | Phase 02 P05 | 14min | 2 tasks | 5 files |
+| Phase 02 P06 | 20min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,9 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: Purview Push/Data Products placeholder pages needed no changes — 02-03 already shipped the locked Copywriting Contract text through existing tokens (including --text-display)
 - [Phase ?]: 02-05: table.layer reused as the D-12 workspace/lakehouse location field (no separate workspace field exists on Table)
 - [Phase ?]: 02-05: GraphView selection write scoped to TableDetail's table header only (table/detail level), not the force-directed constellation nodes
+- [Phase ?]: 02-06: hl() uses createElement not JSX since search.ts is a .ts (not .tsx) module per plan
+- [Phase ?]: 02-06: getRouteApi('__root__') used instead of importing the root Route object, avoiding a __root.tsx -> AppShell -> CommandPalette circular import
+- [Phase ?]: 02-06: notebook/code palette results resolve to their written table via model.ops writes edge, else fall back to a selection-only useSelection().select()
 
 ### Pending Todos
 
@@ -114,6 +118,7 @@ yet. Watch items carried from research, to revisit as their phases start:
 - Phase 4: real Fabric-tenant node/edge scale is unknown — test against a synthesized large graph, not just the bundled demo dataset
 - Follow-up: dark-theme --color-text-tertiary fails WCAG AA (4.5:1) against surface-1/2/3 (scores 4.23/3.79/3.31) — needs a lightness nudge or a documented never-use-on-raised-surfaces component rule in the first phase that renders tertiary text on a raised dark surface. Exempted with reasoning in audit-tokens.mjs and tokens.css.
 - Follow-up for Phase 6 (THEME-07): re-verify domain-silver vs edge-writes and domain-notebook vs edge-reads under CVD simulation in light theme — both sit at/under the 0.05 perceptibility floor there (dark theme clears comfortably). Currently exempted pending that dedicated review.
+- Pre-existing (not caused by 02-06): Suspense pendingComponent in routes/__root.tsx renders AppShell/Inspector outside router match context, crashing the app on load in both dev and production builds. Blocks all live-browser verification. See .planning/phases/02-app-shell-routing-canvas-infrastructure/deferred-items.md for root cause and suggested fix. Must be resolved before phase 02 sign-off / both-themes UAT.
 
 ## Deferred Items
 
@@ -124,6 +129,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-22T06:38:23.447Z
-Stopped at: Completed 02-05-PLAN.md
+Last session: 2026-07-22T07:00:33.233Z
+Stopped at: Completed 02-06-PLAN.md
 Resume file: None

@@ -101,9 +101,9 @@ Backend safety architecture already exists in `WriteSession` — dry-run by defa
 
 ### Search & Navigation (`NAV`)
 
-- [ ] **NAV-01**: Cmd+K opens a command palette searching tables, columns, and notebook code
+- [x] **NAV-01**: Cmd+K opens a command palette searching tables, columns, and notebook code
 - [ ] **NAV-02**: Selecting a search result focuses and reveals that node on the active canvas
-- [ ] **NAV-03**: The palette is fully keyboard-operable
+- [x] **NAV-03**: The palette is fully keyboard-operable
 
 ### Motion (`MOT`)
 
@@ -211,9 +211,9 @@ dependencies, parallelization, and pitfall guards.
 | CAT-02 | Phase 5 | Pending |
 | CAT-03 | Phase 5 | Pending |
 | CAT-04 | Phase 5 | Pending |
-| NAV-01 | Phase 2 | Pending |
+| NAV-01 | Phase 2 | Complete |
 | NAV-02 | Phase 7 | Pending |
-| NAV-03 | Phase 2 | Pending |
+| NAV-03 | Phase 2 | Complete |
 | MOT-01 | Phase 7 | Pending |
 | MOT-02 | Phase 7 | Pending |
 | MOT-03 | Phase 7 | Pending |

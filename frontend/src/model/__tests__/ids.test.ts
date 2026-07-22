@@ -12,6 +12,21 @@ describe('tid/nid (collision-free short ids)', () => {
     expect(nid('notebook.clean.orders')).not.toBe(nid('notebook.clean_orders'))
   })
 
+  // WR-03 v2 guards: the first fix only covered interior "." vs literal "_". These
+  // pin the two residual collision classes the re-verification reproduced.
+  it('does not collide an interior "." with a literal "__" (dbt-style stg__/dim__ names)', () => {
+    // Previously both -> 'raw__orders' because '.' was encoded as '__'.
+    expect(tid('table.raw.orders')).not.toBe(tid('table.raw__orders'))
+    expect(nid('notebook.stg.orders')).not.toBe(nid('notebook.stg__orders'))
+  })
+
+  it('does not collapse two distinct punctuation characters onto the same id', () => {
+    // Previously '/' and '_' both fell through the generic [^\w-] -> '_' rule.
+    expect(tid('table.raw/orders')).not.toBe(tid('table.raw_orders'))
+    // Two different non-word punctuation chars must also stay distinct from each other.
+    expect(tid('table.a/b')).not.toBe(tid('table.a.b'))
+  })
+
   it('every produced id is DOM-id/CSS-selector safe ([A-Za-z0-9_-] only)', () => {
     const ids = [
       tid('table.raw.orders'),

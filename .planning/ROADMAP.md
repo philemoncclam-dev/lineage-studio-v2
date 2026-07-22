@@ -145,6 +145,12 @@ alone:
 - [x] 02-05-PLAN.md — Non-modal overlay inspector + canvas selection wiring (SHELL-03)
 - [x] 02-06-PLAN.md — cmdk command palette rebuild, retire SearchPalette (NAV-01/03)
 
+**Gap Closure** *(post-verification; plans parallelize — disjoint files)*
+
+- [ ] 02-07-PLAN.md — Fix root pendingComponent crash (CR-01/Gap #1); pending state mounts no match-context hooks; regression test + live both-theme paint (SHELL-07)
+- [ ] 02-08-PLAN.md — Real-data correctness: collision-free tid/nid (WR-03) + id-based notebookIndex (WR-04) with coverage (NAV-01)
+- [ ] 02-09-PLAN.md — Honest re-scope of SHELL-05/06 graph-mode drill to Phase 4 + carry-forward todo; resolvePathSegments left staged (SHELL-05/06)
+
 **UI hint**: yes
 
 ### Phase 3: Lineage DAG Canvas Rebuild

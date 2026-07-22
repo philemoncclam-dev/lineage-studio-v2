@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: app-shell-routing-canvas-infrastructure
 status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-07-22T06:22:49.981Z"
+stopped_at: Completed 02-05-PLAN.md
+last_updated: "2026-07-22T06:38:23.457Z"
 last_activity: 2026-07-21
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 10
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 ## Current Position
 
 Phase: 02 (app-shell-routing-canvas-infrastructure) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-07-21 — Phase 02 execution started
 
-Progress: [████████░░] 80%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [████████░░] 80%
 | Phase 02 P02 | 15min | 2 tasks | 11 files |
 | Phase 02 P03 | 28min | 2 tasks | 25 files |
 | Phase 02 P04 | 55min | 2 tasks | 12 files |
+| Phase 02 P05 | 14min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,8 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: GraphView.tsx drill state stays internal (not URL-driven) in 02-03 — resolveSegment/resolvePathSegments delivered as tested utilities, ready for the Phase 3/4 canvas rebuild to wire in once GraphView's drill state itself becomes URL-driven
 - [Phase ?]: LineageView.tsx/GraphView.tsx required zero code changes for container-fit — Phase-1 flex-based CSS already fills whatever ancestor provides real height; verified via Playwright screenshots + scroll-dimension parity rather than assumed
 - [Phase ?]: Purview Push/Data Products placeholder pages needed no changes — 02-03 already shipped the locked Copywriting Contract text through existing tokens (including --text-display)
+- [Phase ?]: 02-05: table.layer reused as the D-12 workspace/lakehouse location field (no separate workspace field exists on Table)
+- [Phase ?]: 02-05: GraphView selection write scoped to TableDetail's table header only (table/detail level), not the force-directed constellation nodes
 
 ### Pending Todos
 
@@ -121,6 +124,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-22T06:22:49.971Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-07-22T06:38:23.447Z
+Stopped at: Completed 02-05-PLAN.md
 Resume file: None

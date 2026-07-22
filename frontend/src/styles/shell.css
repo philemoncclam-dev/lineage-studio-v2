@@ -139,10 +139,11 @@
   overflow: hidden;
 }
 
-/* ===== Inspector overlay (D-10, D-13) — z-index 20, above canvas content,
-   below tooltips/menus/palette. Absolute so its presence/absence never
-   reflows the canvas beneath it (currently unused: Inspector.tsx is a stub
-   returning null until 02-05, rule kept here so 02-05 needs no layout work). ===== */
+/* ===== Inspector overlay (D-10, D-12, D-13) — z-index 20, above canvas
+   content, below tooltips/menus/palette. Absolute so its presence/absence
+   never reflows the canvas beneath it. Fixed header (.inspector-head) +
+   internally-scrolling body (.inspector-body), per the "overflow" UI
+   consideration — the panel itself never grows past the viewport height. */
 .inspector-overlay {
   position: absolute;
   top: 0;
@@ -152,9 +153,66 @@
   background: var(--inspector-bg);
   border-left: var(--border-width) solid var(--inspector-border);
   box-shadow: var(--inspector-shadow);
-  overflow-y: auto;
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
+
+.inspector-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-2);
+  padding: var(--spacing-4) var(--spacing-4) var(--spacing-3);
+  border-bottom: var(--border-width) solid var(--inspector-border);
+}
+.inspector-head-text { min-width: 0; }
+.inspector-kind {
+  font-size: var(--text-micro);
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: var(--spacing-1);
+}
+.inspector-title {
+  margin: 0;
+  font-size: var(--text-heading);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  /* long-text consideration: a pathologically long node/column name can
+     never break the panel layout. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector-close {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font: inherit;
+  font-size: var(--text-heading);
+  line-height: 1;
+  cursor: pointer;
+  border-radius: var(--radius-control);
+  /* Padding + negative top/right margin gives a >=44x44px hit target (the
+     inspector-close touch-target exception, 02-UI-SPEC Spacing Scale)
+     without inflating the visible header layout — same pattern as .di-x. */
+  padding: var(--spacing-4);
+  margin: calc(-1 * var(--spacing-4)) calc(-1 * var(--spacing-4)) 0 0;
+}
+.inspector-close:hover { color: var(--color-text-primary); }
+
+.inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.inspector-location { font-size: var(--text-micro); font-family: var(--font-mono); color: var(--color-text-secondary); }
+.inspector-cols { display: flex; flex-direction: column; }
 
 /* ===== Command palette (cmdk Command.Dialog) — z-index 100, topmost =====
    cmdk's `className` prop reaches the inner [cmdk-root] Command element;

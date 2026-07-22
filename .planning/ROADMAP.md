@@ -127,11 +127,21 @@ alone:
   6. At every commit within this phase, the running app remains usable and demoable — the old canvases, temporarily bridged onto the new tokens, keep working inside the new shell until Phases 3-4 replace them outright
 
 **Plans**: 6 plans
+**Wave 1**
 
 - [ ] 02-01-PLAN.md — Toolchain foundation: deps + Vitest/jsdom test infra (blocking package-legitimacy gate)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 02-02-PLAN.md — model.tsx decomposition into adapt/lineageLayout/graphLayout/domainColor (pure, parallel)
 - [ ] 02-03-PLAN.md — TanStack Router + root loader + name→GUID resolver + selection search-param store
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 02-04-PLAN.md — Mode-based shell chrome: logo menu, data-driven rail, rail-bottom cluster, tier-3 tokens, canvas bridge, Purview placeholders
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 02-05-PLAN.md — Non-modal overlay inspector + canvas selection wiring (SHELL-03)
 - [ ] 02-06-PLAN.md — cmdk command palette rebuild, retire SearchPalette (NAV-01/03)
 

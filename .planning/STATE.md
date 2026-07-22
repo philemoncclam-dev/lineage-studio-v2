@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 02
 current_phase_name: app-shell-routing-canvas-infrastructure
-status: verifying
-stopped_at: Completed 02-06-PLAN.md
-last_updated: "2026-07-22T07:00:33.242Z"
-last_activity: 2026-07-21
+status: executing
+stopped_at: Completed 02-07-PLAN.md
+last_updated: "2026-07-22T15:11:48.516Z"
+last_activity: 2026-07-22
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
-  completed_phases: 2
-  total_plans: 10
-  completed_plans: 10
+  completed_phases: 1
+  total_plans: 13
+  completed_plans: 11
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 ## Current Position
 
 Phase: 02 (app-shell-routing-canvas-infrastructure) — EXECUTING
-Plan: 6 of 6
-Status: Phase complete — ready for verification
-Last activity: 2026-07-21 — Phase 02 execution started
+Plan: 2 of 9
+Status: Ready to execute
+Last activity: 2026-07-22 — Phase 02 execution started
 
-Progress: [██████████] 100%
+Progress: [█████████░] 85%
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [██████████] 100%
 | Phase 02 P04 | 55min | 2 tasks | 12 files |
 | Phase 02 P05 | 14min | 2 tasks | 5 files |
 | Phase 02 P06 | 20min | 2 tasks | 6 files |
+| Phase 02 P07 | 12min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,8 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: 02-06: hl() uses createElement not JSX since search.ts is a .ts (not .tsx) module per plan
 - [Phase ?]: 02-06: getRouteApi('__root__') used instead of importing the root Route object, avoiding a __root.tsx -> AppShell -> CommandPalette circular import
 - [Phase ?]: 02-06: notebook/code palette results resolve to their written table via model.ops writes edge, else fall back to a selection-only useSelection().select()
+- [Phase ?]: 02-07: AppShell gains an optional overlays prop (default true) so RootPending can mount shell chrome without Inspector/CommandPalette in the Suspense pending fallback slot, fixing CR-01 (router matchContext is never provided to the fallback slot)
+- [Phase ?]: 02-07: Added routeFileIgnorePattern to vite.config.ts's tanstackRouter plugin to exclude *.test.tsx from route-tree generation, since the CR-01 regression test now lives under src/routes/__tests__/
 
 ### Pending Todos
 
@@ -129,6 +132,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-22T07:00:33.233Z
-Stopped at: Completed 02-06-PLAN.md
+Last session: 2026-07-22T15:11:48.507Z
+Stopped at: Completed 02-07-PLAN.md
 Resume file: None

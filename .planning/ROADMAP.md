@@ -126,7 +126,7 @@ alone:
   5. Cmd+K opens a fully keyboard-operable command palette searching tables, columns, and notebook code
   6. At every commit within this phase, the running app remains usable and demoable — the old canvases, temporarily bridged onto the new tokens, keep working inside the new shell until Phases 3-4 replace them outright
 
-**Plans**: 3/6 plans executed
+**Plans**: 4/6 plans executed
 **Wave 1**
 
 - [x] 02-01-PLAN.md — Toolchain foundation: deps + Vitest/jsdom test infra (blocking package-legitimacy gate)
@@ -138,7 +138,7 @@ alone:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-04-PLAN.md — Mode-based shell chrome: logo menu, data-driven rail, rail-bottom cluster, tier-3 tokens, canvas bridge, Purview placeholders
+- [x] 02-04-PLAN.md — Mode-based shell chrome: logo menu, data-driven rail, rail-bottom cluster, tier-3 tokens, canvas bridge, Purview placeholders
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -259,7 +259,7 @@ everything (3, 4, 5, 6) and closes the milestone.
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
 | 1. Design Tokens & Typography Foundation | 4/4 | In Progress|  |
-| 2. App Shell, Routing & Canvas Infrastructure | 3/6 | In Progress|  |
+| 2. App Shell, Routing & Canvas Infrastructure | 4/6 | In Progress|  |
 | 3. Lineage DAG Canvas Rebuild | 0/TBD | Not started | - |
 | 4. Knowledge Graph Canvas Rebuild | 0/TBD | Not started | - |
 | 5. Purview Push & Catalog Destinations | 0/TBD | Not started | - |

@@ -39,10 +39,10 @@ Resolved before requirements, recorded so they aren't relitigated:
 
 ### App Shell (`SHELL`)
 
-- [ ] **SHELL-01**: A persistent left icon rail lists top-level destinations; adding a fifth destination requires no structural change
-- [ ] **SHELL-02**: The canvas fills the remaining viewport; chrome recedes visually
+- [x] **SHELL-01**: A persistent left icon rail lists top-level destinations; adding a fifth destination requires no structural change
+- [x] **SHELL-02**: The canvas fills the remaining viewport; chrome recedes visually
 - [ ] **SHELL-03**: A contextual right-hand inspector opens on selection and closes without disturbing canvas layout
-- [ ] **SHELL-04**: The existing top-bar button and segmented-control treatment is carried forward — it is explicitly liked
+- [x] **SHELL-04**: The existing top-bar button and segmented-control treatment is carried forward — it is explicitly liked
 - [x] **SHELL-05**: Routes are URL-addressable and shareable: destination, drill path, and selected node/column all survive a refresh and a paste into someone else's browser
 - [x] **SHELL-06**: Browser back/forward moves through drill-down levels correctly
 - [x] **SHELL-07**: The app remains usable and demoable at every commit — no window in which the rebuild leaves it broken or half-migrated
@@ -169,10 +169,10 @@ dependencies, parallelization, and pitfall guards.
 | THEME-06 | Phase 1 | Complete |
 | THEME-07 | Phase 6 | Pending |
 | THEME-08 | Phase 1 | Complete |
-| SHELL-01 | Phase 2 | Pending |
-| SHELL-02 | Phase 2 | Pending |
+| SHELL-01 | Phase 2 | Complete |
+| SHELL-02 | Phase 2 | Complete |
 | SHELL-03 | Phase 2 | Pending |
-| SHELL-04 | Phase 2 | Pending |
+| SHELL-04 | Phase 2 | Complete |
 | SHELL-05 | Phase 2 | Complete |
 | SHELL-06 | Phase 2 | Complete |
 | SHELL-07 | Phase 2 | Complete |

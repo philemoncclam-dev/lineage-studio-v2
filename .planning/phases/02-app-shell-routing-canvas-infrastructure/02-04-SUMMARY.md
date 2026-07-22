@@ -191,3 +191,8 @@ None - no external service configuration required.
 ---
 *Phase: 02-app-shell-routing-canvas-infrastructure*
 *Completed: 2026-07-21*
+
+## Self-Check: PASSED
+
+All 10 created shell files + this SUMMARY.md verified present on disk; both
+task commits (`1353781`, `9824e16`) verified present in git log.

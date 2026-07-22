@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GNode, Level } from '../data'
 import { useModel } from '../model'
+import { useSelection } from '../selection/useSelection'
 import { canvasFont, DOMAIN_TOKEN, getCanvasTokens, invalidateCanvasTokens } from '../tokens/canvasTokens'
 import DefinitionsImport from './DefinitionsImport'
 import './graph.css'
@@ -209,6 +210,7 @@ function GraphCanvas({ levelKey, level, onDrill, query }: { levelKey: string; le
 
 function TableDetail({ levelKey, onOpenLineage }: { levelKey: string; onOpenLineage: (tableId: string, colKey?: string) => void }) {
   const model = useModel()
+  const { select, clear } = useSelection()
   const tableId = model.levelTable[levelKey]
   const table = tableId ? model.tables.find((t) => t.id === tableId) : undefined
   const level = model.levels[levelKey]
@@ -248,7 +250,14 @@ function TableDetail({ levelKey, onOpenLineage }: { levelKey: string; onOpenLine
   }
 
   return (
-    <div className="td-wrap on">
+    <div
+      className="td-wrap on"
+      onClick={(e) => {
+        // Empty-canvas click clears selection (D-11) — only when the click
+        // lands on the wrap's own background, not a node/column/button.
+        if (e.target === e.currentTarget) clear()
+      }}
+    >
       {ctx && (
         <div className="td-side">
           <div className="td-sidehead">Upstream</div>
@@ -256,7 +265,7 @@ function TableDetail({ levelKey, onOpenLineage }: { levelKey: string; onOpenLine
         </div>
       )}
       <div className="td-panel">
-        <div className="td-head">
+        <div className="td-head" onClick={() => select(tableId)} title={`Select ${table.name}`}>
           <i className="td-dot" style={{ background: `var(--${table.c})` }} />
           <div>
             <div className="td-name">{table.name}</div>

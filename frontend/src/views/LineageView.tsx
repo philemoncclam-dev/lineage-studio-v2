@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useModel } from '../model'
+import { useSelection } from '../selection/useSelection'
 
 const Caret = () => <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg>
 
@@ -21,8 +22,13 @@ function trace(colEdges: [string, string][], id: string): Set<string> {
 
 export default function LineageView({ focusTable, focusColumn }: { focusTable?: string; focusColumn?: string }) {
   const { tables: TABLES, notebooks: NOTEBOOKS, colEdges: COL_EDGES, ops: OPS } = useModel()
+  const { select, clear } = useSelection()
   const canvasRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<Set<string>>(() => new Set(TABLES.map((t) => t.id)))
+  // Local highlight/trace state, unchanged from before this plan (Phase 3/4
+  // own the DAG's hover-trace rebuild — out of scope here). Column clicks
+  // additionally write through useSelection().select() below so the shell
+  // Inspector (D-10/D-12) picks up the same selection via ?sel/?col.
   const [selected, setSelected] = useState<string | null>(focusColumn ?? null)
 
   useEffect(() => { if (focusColumn) setSelected(focusColumn) }, [focusColumn])
@@ -83,7 +89,19 @@ export default function LineageView({ focusTable, focusColumn }: { focusTable?: 
   return (
     <div className="ls-body">
       <div className="ls-stage">
-        <div className="ls-canvas" ref={canvasRef}>
+        <div
+          className="ls-canvas"
+          ref={canvasRef}
+          onClick={(e) => {
+            // Empty-canvas click clears selection (D-11) — only fires when
+            // the click target is the canvas background itself, never a
+            // node/column (those stopPropagation or are distinct targets).
+            if (e.target === e.currentTarget) {
+              setSelected(null)
+              clear()
+            }
+          }}
+        >
           <svg className="ls-edges">
             {paths.map((p, i) => {
               const isCol = !!p.from
@@ -117,7 +135,7 @@ export default function LineageView({ focusTable, focusColumn }: { focusTable?: 
                     <div className={`col ${traced?.has(c.key) && c.key !== active ? 'hot' : ''} ${c.key === selected ? 'sel' : ''}`}
                       key={c.key} data-col={c.key}
                       onMouseEnter={() => setHover(c.key)} onMouseLeave={() => setHover(null)}
-                      onClick={(e) => { e.stopPropagation(); setSelected(c.key) }}>
+                      onClick={(e) => { e.stopPropagation(); setSelected(c.key); select(t.id, c.key) }}>
                       <span className="name">{c.name}</span>
                       {c.pk && <span className="pk">PK</span>}
                       <span className="type">{c.type}</span>
@@ -129,51 +147,6 @@ export default function LineageView({ focusTable, focusColumn }: { focusTable?: 
           })}
         </div>
       </div>
-
-      <Inspector colKey={selected} onSelect={setSelected} />
     </div>
-  )
-}
-
-function Inspector({ colKey, onSelect }: { colKey: string | null; onSelect: (k: string) => void }) {
-  const { tables: TABLES, colEdges: COL_EDGES, xform: XFORM } = useModel()
-  if (!colKey) return <aside className="ls-inspector" />
-  const table = TABLES.find((t) => t.columns.some((c) => c.key === colKey))
-  const col = table?.columns.find((c) => c.key === colKey)
-  if (!table || !col) return <aside className="ls-inspector" />
-  const ups = COL_EDGES.filter(([, t]) => t === colKey).map(([s]) => s)
-  const downs = COL_EDGES.filter(([s]) => s === colKey).map(([, t]) => t)
-  const xf = XFORM[colKey]
-  const info = (k: string) => {
-    const tb = TABLES.find((t) => t.columns.some((c) => c.key === k))!
-    return { name: tb.columns.find((c) => c.key === k)!.name, tbl: `${tb.layer}.${tb.name}` }
-  }
-  const Row = ({ k }: { k: string }) => {
-    const i = info(k)
-    return (
-      <div className="flow-item" onClick={() => onSelect(k)}>
-        <svg className="dir" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg>
-        <div><div className="fcol">{i.name}</div><div className="ftbl">{i.tbl}</div></div>
-      </div>
-    )
-  }
-  return (
-    <aside className="ls-inspector">
-      <div className="insp-head">
-        <div className="insp-crumb">{table.layer}.{table.name}</div>
-        <div className="insp-title">
-          <div><h2>{col.name}</h2><div className="ttype">{col.type}{col.pk ? ' · primary key' : ''}</div></div>
-        </div>
-        {col.pk && <span className="pill verified">verified</span>}
-      </div>
-      {xf && (
-        <div className="sec"><div className="sec-t">Transformation</div>
-          <div className="xform"><code>{xf[0]}</code><p>{xf[1]}</p></div></div>
-      )}
-      <div className="sec"><div className="sec-t">Inputs <span className="n">{ups.length}</span></div>
-        <div className="flow">{ups.length ? ups.map((k) => <Row key={k} k={k} />) : <div className="empty">Source column — no upstream.</div>}</div></div>
-      <div className="sec"><div className="sec-t">Outputs <span className="n">{downs.length}</span></div>
-        <div className="flow">{downs.length ? downs.map((k) => <Row key={k} k={k} />) : <div className="empty">Terminal column — no downstream.</div>}</div></div>
-    </aside>
   )
 }

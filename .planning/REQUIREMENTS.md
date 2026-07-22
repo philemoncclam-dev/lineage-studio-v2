@@ -45,7 +45,7 @@ Resolved before requirements, recorded so they aren't relitigated:
 - [ ] **SHELL-04**: The existing top-bar button and segmented-control treatment is carried forward — it is explicitly liked
 - [ ] **SHELL-05**: Routes are URL-addressable and shareable: destination, drill path, and selected node/column all survive a refresh and a paste into someone else's browser
 - [ ] **SHELL-06**: Browser back/forward moves through drill-down levels correctly
-- [ ] **SHELL-07**: The app remains usable and demoable at every commit — no window in which the rebuild leaves it broken or half-migrated
+- [x] **SHELL-07**: The app remains usable and demoable at every commit — no window in which the rebuild leaves it broken or half-migrated
 
 ### Lineage DAG (`DAG`)
 
@@ -175,7 +175,7 @@ dependencies, parallelization, and pitfall guards.
 | SHELL-04 | Phase 2 | Pending |
 | SHELL-05 | Phase 2 | Pending |
 | SHELL-06 | Phase 2 | Pending |
-| SHELL-07 | Phase 2 | Pending |
+| SHELL-07 | Phase 2 | Complete |
 | DAG-01 | Phase 3 | Pending |
 | DAG-02 | Phase 3 | Pending |
 | DAG-03 | Phase 3 | Pending |

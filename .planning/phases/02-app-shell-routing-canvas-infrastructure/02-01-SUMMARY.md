@@ -133,3 +133,7 @@ None - no external service configuration required.
 ---
 *Phase: 02-app-shell-routing-canvas-infrastructure*
 *Completed: 2026-07-22*
+
+## Self-Check: PASSED
+
+All claimed files verified present on disk; both commit hashes (`0f62361`, `23fb8a1`) verified in git log.

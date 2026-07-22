@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 01
-current_phase_name: design-tokens-typography-foundation
+current_phase: 02
+current_phase_name: app-shell-routing-canvas-infrastructure
 status: executing
-stopped_at: Phase 2 UI-SPEC approved
-last_updated: "2026-07-22T05:04:58.707Z"
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-07-22T05:22:52.173Z"
 last_activity: 2026-07-21
-last_activity_desc: Phase 01 execution started
+last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 10
+  completed_plans: 5
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-20)
 
 **Core value:** Purview gets populated from this app — explore lineage visually → select what matters → push to Purview → see it land, in a UI you'd demo without apologising.
-**Current focus:** Phase 01 — design-tokens-typography-foundation
+**Current focus:** Phase 02 — app-shell-routing-canvas-infrastructure
 
 ## Current Position
 
-Phase: 01 (design-tokens-typography-foundation) — EXECUTING
-Plan: 4 of 4
+Phase: 02 (app-shell-routing-canvas-infrastructure) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-07-21 — Phase 01 execution started
+Last activity: 2026-07-21 — Phase 02 execution started
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [██████████] 100%
 | Phase 01 P02 | 35min | 2 tasks | 3 files |
 | Phase 01 P03 | 20min | 2 tasks | 3 files |
 | Phase 01 P04 | 35min | 2 tasks | 6 files |
+| Phase 02 P01 | 2min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,7 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: Spacing snaps to the nearest DECLARED spacing token (not an arbitrary 4px multiple) — e.g. 40px has no exact token and rounds down to --spacing-8 (32px) on a tie
 - [Phase ?]: Uppercase micro-labels keep letter-spacing via 0.08em (matching search.css's pre-existing convention) instead of losing tracking outright, to avoid a visible inconsistency across uppercase labels
 - [Phase ?]: Corrected purview's 2px tab-indicator border to var(--border-width) (1px) as a Rule 2 fix — DS-04/UI-SPEC forbids any component introducing a 2px structural border
+- [Phase ?]: Added passWithNoTests: true to vitest.config.ts (Rule 3) so an empty Vitest suite exits 0 as the plan's acceptance criteria require
 
 ### Pending Todos
 
@@ -111,6 +113,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-22T04:29:42.298Z
-Stopped at: Phase 2 UI-SPEC approved
-Resume file: .planning/phases/02-app-shell-routing-canvas-infrastructure/02-UI-SPEC.md
+Last session: 2026-07-22T05:22:52.164Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: None

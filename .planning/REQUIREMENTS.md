@@ -43,8 +43,8 @@ Resolved before requirements, recorded so they aren't relitigated:
 - [x] **SHELL-02**: The canvas fills the remaining viewport; chrome recedes visually
 - [x] **SHELL-03**: A contextual right-hand inspector opens on selection and closes without disturbing canvas layout
 - [x] **SHELL-04**: The existing top-bar button and segmented-control treatment is carried forward — it is explicitly liked
-- [x] **SHELL-05**: Routes are URL-addressable and shareable: destination, drill path, and selected node/column all survive a refresh and a paste into someone else's browser
-- [x] **SHELL-06**: Browser back/forward moves through drill-down levels correctly
+- [x] **SHELL-05**: Routes are URL-addressable and shareable: destination, drill path, and selected node/column all survive a refresh and a paste into someone else's browser — satisfied for mode routes, `/lineage/$workspace/$lakehouse/$table`, and selection (`?sel`/`?col`); the Knowledge-Graph drill hierarchy (`/graph/$workspace/$lakehouse/$table` params + `resolvePathSegments` wiring) is deferred to Phase 4, which rebuilds `GraphView` (see ROADMAP.md Phase 2 SC#3)
+- [x] **SHELL-06**: Browser back/forward moves through drill-down levels correctly — true for selection; graph-mode drill-down never pushes history yet, deferred to Phase 4 alongside SHELL-05's graph-mode gap
 - [x] **SHELL-07**: The app remains usable and demoable at every commit — no window in which the rebuild leaves it broken or half-migrated
 
 ### Lineage DAG (`DAG`)
@@ -173,8 +173,8 @@ dependencies, parallelization, and pitfall guards.
 | SHELL-02 | Phase 2 | Complete |
 | SHELL-03 | Phase 2 | Complete |
 | SHELL-04 | Phase 2 | Complete |
-| SHELL-05 | Phase 2 | Complete |
-| SHELL-06 | Phase 2 | Complete |
+| SHELL-05 | Phase 2 | Partial — graph-mode drill hierarchy + resolvePathSegments wiring deferred to Phase 4 |
+| SHELL-06 | Phase 2 | Partial — graph-mode drill hierarchy + resolvePathSegments wiring deferred to Phase 4 |
 | SHELL-07 | Phase 2 | Complete |
 | DAG-01 | Phase 3 | Pending |
 | DAG-02 | Phase 3 | Pending |

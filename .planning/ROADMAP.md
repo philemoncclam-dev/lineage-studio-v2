@@ -122,6 +122,7 @@ alone:
   1. A persistent left icon rail lists top-level destinations; the canvas fills the remaining viewport and chrome recedes visually; adding a fifth destination requires no structural change
   2. A contextual right-hand inspector opens on selection and closes without disturbing canvas layout
   3. Destination, drill path, and selected node/column are all URL-addressable: they survive a refresh and a paste into another browser, and browser back/forward moves correctly through drill-down levels
+     - **Deferred (SHELL-05/SHELL-06, gap closure 02-09):** satisfied for mode routes, `/lineage/$workspace/$lakehouse/$table`, and selection (`?sel`/`?col`); the Knowledge-Graph drill hierarchy (`/graph/$workspace/$lakehouse/$table` params + `resolvePathSegments` wiring, D-07/D-09) is deferred to Phase 4 — GRAPH-02 rebuilds `GraphView` on sigma.js/graphology and wires the drill URL then, since wiring the throwaway canvas now would be discardable work.
   4. The existing, explicitly-liked top-bar button and segmented-control visual treatment is carried forward unchanged into the new shell
   5. Cmd+K opens a fully keyboard-operable command palette searching tables, columns, and notebook code
   6. At every commit within this phase, the running app remains usable and demoable — the old canvases, temporarily bridged onto the new tokens, keep working inside the new shell until Phases 3-4 replace them outright
@@ -178,6 +179,7 @@ alone:
 **Depends on**: Phase 2
 **Can run parallel with**: Phase 3 (Lineage DAG Canvas Rebuild) — neither depends on the other, both depend only on Phase 2's shared infrastructure.
 **Requirements**: GRAPH-01, GRAPH-02, GRAPH-03, GRAPH-04, GRAPH-05, GRAPH-06, GRAPH-07, GRAPH-08, GRAPH-09
+**Carried forward from Phase 2 (gap closure 02-09):** SHELL-05/SHELL-06's graph-mode drill hierarchy is not URL-addressable yet — wire `resolvePathSegments` (already built + unit-tested at `frontend/src/resolve/resolvePathSegments.ts`) into a `beforeLoad` on `/graph/$workspace*`, and drive the rebuilt drill-down from the URL via `navigate()`. See `.planning/todos/pending/phase4-graph-mode-drill-url-wiring.md`.
 **Guards against (pitfalls)**: #15 (hairball onset well below rendering-performance limits — protect the Estate→Workspace→Lakehouse→Table drill-down and hop-depth control as load-bearing, test against a synthesized large graph, not just the bundled demo dataset), #16 (unstable/re-jumping force layout — warm-start from prior positions, deterministic cold-start seed, tuned damping so layout doesn't recompute on unrelated re-renders like hover), #17 (illegible drill-in — anchor every transition to the clicked node's screen position using sigma's own camera-easing APIs, keep drill-out symmetric with drill-in), #19 (keyboard reachability and an accessible text alternative to the visual graph). Continues the standing light-mode-review discipline (#12).
 **Success Criteria** (what must be TRUE):
 

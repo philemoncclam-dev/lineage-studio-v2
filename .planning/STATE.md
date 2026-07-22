@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: app-shell-routing-canvas-infrastructure
 status: executing
-stopped_at: Completed 02-08-PLAN.md
-last_updated: "2026-07-22T15:16:04.026Z"
+stopped_at: Completed 02-09-PLAN.md
+last_updated: "2026-07-22T15:20:16.981Z"
 last_activity: 2026-07-22
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 13
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 ## Current Position
 
 Phase: 02 (app-shell-routing-canvas-infrastructure) — EXECUTING
-Plan: 3 of 9
+Plan: 4 of 9
 Status: Ready to execute
 Last activity: 2026-07-22 — Phase 02 execution started
 
-Progress: [█████████░] 92%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -70,6 +70,7 @@ Progress: [█████████░] 92%
 | Phase 02 P06 | 20min | 2 tasks | 6 files |
 | Phase 02 P07 | 12min | 3 tasks | 4 files |
 | Phase 02 P08 | 5min | 2 tasks | 4 files |
+| Phase 02 P09 | 5min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,9 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: 02-07: AppShell gains an optional overlays prop (default true) so RootPending can mount shell chrome without Inspector/CommandPalette in the Suspense pending fallback slot, fixing CR-01 (router matchContext is never provided to the fallback slot)
 - [Phase ?]: 02-07: Added routeFileIgnorePattern to vite.config.ts's tanstackRouter plugin to exclude *.test.tsx from route-tree generation, since the CR-01 regression test now lives under src/routes/__tests__/
 - [Phase ?]: Took the plan's recommended default (distinct '.'->'__' encoding) for tid/nid over the hash alternative, producing zero churn in adapt.test.ts/graphLayout.test.ts/lineageLayout.test.ts
+- [Phase ?]: 02-09: SHELL-05/SHELL-06 re-scoped from unqualified Complete to Partial in REQUIREMENTS.md, naming the graph-mode drill hierarchy + resolvePathSegments wiring deferral to Phase 4 (locked scope decision B)
+- [Phase ?]: 02-09: resolvePathSegments.ts and its 9 passing unit tests stay in-tree untouched, documented as intentionally staged for Phase 4 to consume
+- [Phase ?]: 02-09: Phase-4 carry-forward todo also captures WR-02/WR-05 (canvas-rebuild-absorbed) and WR-06 (separately deferred UX item) as known-deferred notes
 
 ### Pending Todos
 
@@ -134,6 +138,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-22T15:16:04.017Z
-Stopped at: Completed 02-08-PLAN.md
+Last session: 2026-07-22T15:20:16.973Z
+Stopped at: Completed 02-09-PLAN.md
 Resume file: None

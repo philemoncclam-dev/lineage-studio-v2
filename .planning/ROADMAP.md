@@ -127,7 +127,7 @@ alone:
   5. Cmd+K opens a fully keyboard-operable command palette searching tables, columns, and notebook code
   6. At every commit within this phase, the running app remains usable and demoable — the old canvases, temporarily bridged onto the new tokens, keep working inside the new shell until Phases 3-4 replace them outright
 
-**Plans**: 8/9 plans executed
+**Plans**: 9/9 plans executed
 **Wave 1**
 
 - [x] 02-01-PLAN.md — Toolchain foundation: deps + Vitest/jsdom test infra (blocking package-legitimacy gate)
@@ -150,7 +150,7 @@ alone:
 
 - [x] 02-07-PLAN.md — Fix root pendingComponent crash (CR-01/Gap #1); pending state mounts no match-context hooks; regression test + live both-theme paint (SHELL-07)
 - [x] 02-08-PLAN.md — Real-data correctness: collision-free tid/nid (WR-03) + id-based notebookIndex (WR-04) with coverage (NAV-01)
-- [ ] 02-09-PLAN.md — Honest re-scope of SHELL-05/06 graph-mode drill to Phase 4 + carry-forward todo; resolvePathSegments left staged (SHELL-05/06)
+- [x] 02-09-PLAN.md — Honest re-scope of SHELL-05/06 graph-mode drill to Phase 4 + carry-forward todo; resolvePathSegments left staged (SHELL-05/06)
 
 **UI hint**: yes
 
@@ -267,7 +267,7 @@ everything (3, 4, 5, 6) and closes the milestone.
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
 | 1. Design Tokens & Typography Foundation | 4/4 | In Progress|  |
-| 2. App Shell, Routing & Canvas Infrastructure | 8/9 | In Progress|  |
+| 2. App Shell, Routing & Canvas Infrastructure | 9/9 | In Progress|  |
 | 3. Lineage DAG Canvas Rebuild | 0/TBD | Not started | - |
 | 4. Knowledge Graph Canvas Rebuild | 0/TBD | Not started | - |
 | 5. Purview Push & Catalog Destinations | 0/TBD | Not started | - |

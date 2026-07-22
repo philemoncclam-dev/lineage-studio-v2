@@ -271,7 +271,9 @@ recoverable case, not an error.
 > are Phase 3/4's contract; this phase only owns whether they *fit* their
 > new container without visual regression (Pitfall 3).
 
-Resolved: **9 covered, 0 backstop, 6 dismissed (owned by a later phase), 0 unresolved**.
+Resolved: **12 covered, 0 backstop, 7 dismissed, 0 unresolved** — validated by
+the ui-consideration probe (36 applicable considerations across 8 surfaces;
+element-kind classification and all resolutions user-confirmed 2026-07-21).
 
 ### Covered — states Phase 2 actually introduces
 
@@ -286,6 +288,9 @@ Resolved: **9 covered, 0 backstop, 6 dismissed (owned by a later phase), 0 unres
 | long-text | Node/table/column names in rail tooltips, inspector title, command-palette rows | ✅ covered | Tooltips: no truncation (Radix Tooltip sizes to content, desktop-only so no viewport risk). Inspector title/palette rows: existing `text-overflow: ellipsis` + `white-space: nowrap` pattern (`.sp-ctx`/`.sp-code` in `search.css`) carries forward unchanged |
 | overflow (container) | Bridged `LineageView`/`GraphView` inside the new canvas region | ✅ covered | D-15's token-bridge-only mitigation: both views switch from fixed-viewport assumptions to flex/grid sizing against their new container; verified visually (no double-scrollbar, no cut-off edges) as an explicit check before this phase's shell-wiring plan is marked done (Pitfall 3, `02-RESEARCH.md`) |
 | interaction states | Rail item hover/active/focus; mode-menu open/closed; inspector open/close | ✅ covered | Rail: `--rail-item-fg` (default) → `--rail-item-fg-hover`/`--rail-item-bg-hover` (hover) → `--rail-item-fg-active`/`--rail-item-bg-active` (current destination, accent). Mode menu/inspector: instant show/hide this phase (no transition) — Phase 7 (MOT-02) adds the transition-not-snap treatment; instant show/hide is not a regression, it is this phase's honest baseline |
+| long-text | D-09 notice: failed `{segment}` name | ✅ covered | The interpolated segment is ellipsized via the existing chip `text-overflow: ellipsis` pattern so a pathological URL segment can never break the banner layout (probe-surfaced, user-confirmed) |
+| overflow | Inspector metadata body / column list | ✅ covered | Inspector body scrolls internally (`overflow-y: auto`) below a fixed header; the panel never grows past the viewport height (probe-surfaced, user-confirmed) |
+| partial | Inspector metadata with missing fields | ✅ covered | A missing field omits its row entirely — never a rendered-blank value; a table with zero columns omits the column section rather than showing an empty list (probe-surfaced, user-confirmed) |
 
 ### Dismissed — owned by a later phase
 
@@ -297,6 +302,7 @@ Resolved: **9 covered, 0 backstop, 6 dismissed (owned by a later phase), 0 unres
 | populated (Definitions Import) | `DefinitionsImport.tsx` is bridged unchanged into the new Purview rail (its own pre-existing states carry over as-is, not re-specified here) | Already shipped; re-audited only if Phase 5 touches it |
 | motion (transitions, not snaps) | Inspector/palette/menu open-close currently snap instantly (see "interaction states" above) — deliberate, honest baseline for this phase | Phase 7 (MOT-02) |
 | light-mode dedicated review | Standing discipline #12 (check every new component in both themes before a plan is done) applies now; the *deep, comparison-free* pass is a separate, later commitment | Phase 6 (THEME-07) |
+| data-state categories on rail & mode menu (empty/loading/error/partial/populated/zero-one-many/overflow) | Static navigation chrome — items are fixed per-mode config, not data-bound. The one genuinely stateful element (connection-status dot) is already covered by the `--status-dot-{ok,off,err}` tri-state tokens; rail growth is covered by roadmap success criterion 1 (fifth destination, no structural change). Probe classification confirmed by user | Not applicable (this phase, by shape) |
 
 > **Note for the planner:** dismissals above are scoped to this phase only —
 > each has a named owner, not a decision that the state is unnecessary.

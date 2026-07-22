@@ -1,0 +1,187 @@
+/* ===== Shell layout (SHELL-01, SHELL-02, D-01-D-05, D-10, D-17) =====
+   Structural/layout rules for the new mode-based shell chrome. Colour,
+   spacing, and radius all flow through tokens.css / components.css's tier-3
+   block — component geometry (fixed widths, icon sizes) is the sanctioned
+   literal exception per components.css's own documented convention.
+   Overlay z-index values follow 02-UI-SPEC.md's stacking table verbatim. */
+
+.shell { height: 100vh; display: flex; overflow: hidden; }
+
+/* ===== Rail column: logo/mode-menu, rail, rail-bottom cluster ===== */
+.shell-rail-col {
+  width: var(--rail-width);
+  flex: none;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) 0;
+  background: var(--rail-bg);
+  border-right: var(--border-width) solid var(--rail-border);
+  z-index: 5; /* rail + top-bar chrome tier, 02-UI-SPEC overlay table */
+}
+
+.mode-menu-trigger {
+  display: grid;
+  place-items: center;
+  width: var(--rail-item-size);
+  height: var(--rail-item-size);
+  border: 0;
+  border-radius: var(--rail-item-radius);
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.mode-menu-trigger:hover { background: var(--rail-item-bg-hover); }
+.mode-menu-trigger svg { width: var(--rail-item-icon-size); height: var(--rail-item-icon-size); stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-1);
+  margin-top: var(--spacing-2);
+}
+
+.rail-item {
+  display: grid;
+  place-items: center;
+  width: var(--rail-item-size);
+  height: var(--rail-item-size);
+  border-radius: var(--rail-item-radius);
+  color: var(--rail-item-fg);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color .15s, background-color .15s;
+}
+.rail-item svg { width: var(--rail-item-icon-size); height: var(--rail-item-icon-size); stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.rail-item:hover { color: var(--rail-item-fg-hover); background: var(--rail-item-bg-hover); }
+.rail-item.active { color: var(--rail-item-fg-active); background: var(--rail-item-bg-active); }
+
+.rail-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--rail-bottom-gap);
+  padding-top: var(--spacing-2);
+}
+
+.rail-bottom-btn {
+  display: grid;
+  place-items: center;
+  width: var(--theme-toggle-size);
+  height: var(--theme-toggle-size);
+  border: 0;
+  border-radius: var(--rail-item-radius);
+  background: transparent;
+  color: var(--rail-item-fg);
+  cursor: pointer;
+  transition: color .15s, background-color .15s;
+}
+.rail-bottom-btn:hover { color: var(--rail-item-fg-hover); background: var(--rail-item-bg-hover); }
+.rail-bottom-btn svg { width: var(--rail-item-icon-size); height: var(--rail-item-icon-size); stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+.status-dot-wrap { display: grid; place-items: center; width: var(--theme-toggle-size); height: var(--theme-toggle-size); }
+.status-dot { width: var(--status-dot-size); height: var(--status-dot-size); border-radius: 50%; background: var(--status-dot-off); }
+.status-dot-ok { background: var(--status-dot-ok); }
+.status-dot-off { background: var(--status-dot-off); }
+.status-dot-err { background: var(--status-dot-err); }
+
+/* ===== Rail tooltip (Radix Tooltip) — z-index 50, above the inspector ===== */
+.rail-tooltip {
+  background: var(--mode-menu-bg);
+  color: var(--color-text-primary);
+  border: var(--border-width) solid var(--mode-menu-border);
+  border-radius: var(--radius-control);
+  box-shadow: var(--mode-menu-shadow);
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--text-micro);
+  z-index: 50;
+}
+.rail-tooltip-arrow { fill: var(--mode-menu-bg); }
+
+/* ===== Mode menu (Radix DropdownMenu) — z-index 60, above tooltips ===== */
+.mode-menu {
+  min-width: 200px;
+  background: var(--mode-menu-bg);
+  border: var(--border-width) solid var(--mode-menu-border);
+  border-radius: var(--mode-menu-radius);
+  box-shadow: var(--mode-menu-shadow);
+  padding: var(--spacing-1);
+  z-index: 60;
+}
+.mode-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--mode-menu-item-radius);
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+  outline: none;
+}
+.mode-menu-item:hover, .mode-menu-item:focus-visible { background: var(--color-surface-2); color: var(--color-text-primary); }
+.mode-menu-item[data-current="true"] { color: var(--mode-menu-item-fg-active); font-weight: 600; }
+.mode-menu-item-check { display: grid; place-items: center; width: 14px; height: 14px; flex: none; }
+.mode-menu-check { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ===== Canvas region: fills 100% of the remaining viewport (SHELL-02) ===== */
+.shell-canvas {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative; /* Inspector overlay positions against this edge, D-10 */
+  overflow: hidden;
+}
+
+/* ===== Inspector overlay (D-10, D-13) — z-index 20, above canvas content,
+   below tooltips/menus/palette. Absolute so its presence/absence never
+   reflows the canvas beneath it (currently unused: Inspector.tsx is a stub
+   returning null until 02-05, rule kept here so 02-05 needs no layout work). ===== */
+.inspector-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--inspector-width);
+  background: var(--inspector-bg);
+  border-left: var(--border-width) solid var(--inspector-border);
+  box-shadow: var(--inspector-shadow);
+  overflow-y: auto;
+  z-index: 20;
+}
+
+/* ===== Command palette (cmdk Command.Dialog) — z-index 100, topmost =====
+   cmdk's `className` prop reaches the inner [cmdk-root] Command element;
+   `overlayClassName`/`contentClassName` reach the Radix Dialog primitives
+   Command.Dialog wraps (Command.Dialog itself renders no positioning CSS,
+   so the fixed/centered layout below is this shell's own, carried-forward
+   verbatim from search.css's --palette-width/--palette-max-height values,
+   per 02-UI-SPEC.md). */
+.palette-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-scrim);
+  z-index: 100;
+}
+.palette-content {
+  position: fixed;
+  top: 18vh;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+}
+.palette {
+  width: var(--palette-width);
+  max-height: var(--palette-max-height);
+  background: var(--palette-bg);
+  border: var(--border-width) solid var(--palette-border);
+  border-radius: var(--mode-menu-radius);
+  box-shadow: var(--palette-shadow);
+  overflow: hidden;
+}

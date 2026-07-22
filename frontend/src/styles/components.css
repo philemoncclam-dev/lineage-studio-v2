@@ -59,6 +59,54 @@
 
   /* Overlay scrim */
   --overlay-scrim: color-mix(in oklch, var(--color-text-primary) 18%, transparent);
+
+  /* ===== Phase 2 shell tokens (SHELL-01/02, D-01-D-05, D-10-D-13, D-17) =====
+     Every value below resolves to a Phase-1 tier-2 semantic already declared
+     above/in tokens.css — no new primitive, no raw hex. Source: 02-UI-SPEC.md
+     "New Tier-3 Component Tokens". */
+
+  /* Rail */
+  --rail-width: var(--spacing-12); /* 48px, = --space-12 per D-04 */
+  --rail-bg: var(--color-surface-1);
+  --rail-border: var(--color-border);
+  --rail-item-size: 44px; /* touch-target exception, 01-UI-SPEC Spacing */
+  --rail-item-icon-size: 20px;
+  --rail-item-radius: var(--radius-control);
+  --rail-item-fg: var(--color-text-tertiary);
+  --rail-item-fg-hover: var(--color-text-secondary);
+  --rail-item-bg-hover: var(--color-surface-2);
+  --rail-item-fg-active: var(--color-accent); /* current destination only */
+  --rail-item-bg-active: var(--color-accent-dim);
+
+  /* Mode menu — app-logo dropdown (D-02) */
+  --mode-menu-bg: var(--color-surface-3);
+  --mode-menu-border: var(--color-border);
+  --mode-menu-shadow: var(--shadow-overlay);
+  --mode-menu-radius: var(--radius-card);
+  --mode-menu-item-radius: var(--radius-control);
+  --mode-menu-item-fg-active: var(--color-accent);
+
+  /* Inspector overlay (D-10, D-12, D-13) */
+  --inspector-width: 384px; /* D-13's 360-400px band; component geometry is
+                                the sanctioned exception to the 4px-multiple rule */
+  --inspector-bg: var(--color-surface-2);
+  --inspector-border: var(--color-border);
+  --inspector-shadow: var(--shadow-overlay);
+
+  /* Command palette rebuild (D-17) */
+  --palette-width: min(640px, calc(100vw - 32px));
+  --palette-max-height: 60vh;
+  --palette-bg: var(--color-surface-3);
+  --palette-border: var(--color-border);
+  --palette-shadow: var(--shadow-overlay);
+
+  /* Rail-bottom cluster (D-05) */
+  --rail-bottom-gap: var(--spacing-2);
+  --theme-toggle-size: 44px;
+  --status-dot-size: 8px;
+  --status-dot-ok: var(--color-success);
+  --status-dot-off: var(--color-text-tertiary);
+  --status-dot-err: var(--color-destructive);
 }
 
 /* ===== Base additions (margin/font-family/font-size/line-height already

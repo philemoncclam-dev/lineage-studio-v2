@@ -79,6 +79,48 @@ describe('search (NAV-01, ported from SearchPalette.tsx)', () => {
       context: 'spark.read.table("bronze.raw_orders")',
     })
   })
+
+  it('WR-04: two same-named notebooks with distinct ids are BOTH searchable (dedupe is by id, not name)', () => {
+    const model = baseModel()
+    // One DAG notebook already resolved into model.notebooks...
+    model.notebooks = [{ id: 'nb_clean_orders', name: 'clean_orders', x: 0, y: 0 }]
+    // ...and a second, differently-workspaced notebook that only shows up as
+    // a graph-level node, sharing the same display name but a distinct raw id.
+    model.levels = {
+      'ws:ws2': {
+        level: 'Workspace', type: 'graph',
+        nodes: [{ id: 'notebook.clean_orders_ws2', label: 'clean_orders', c: 'notebook', r: 11, sub: 'notebook' }],
+        links: [],
+      },
+    }
+
+    const results = search(model, 'clean_orders')
+    const notebookResults = results.filter((r) => r.kind === 'notebook')
+    expect(notebookResults).toHaveLength(2)
+    const ids = notebookResults.map((r) => r.notebookId).sort()
+    expect(ids).toEqual(['nb_clean_orders', 'nb_clean_orders_ws2'])
+  })
+
+  it('WR-04: a graph-only notebook resolves to its nid()-mapped id, matching model.notebookCode/model.ops keys', () => {
+    const model = baseModel()
+    model.levels = {
+      'ws:ws1': {
+        level: 'Workspace', type: 'graph',
+        nodes: [{ id: 'notebook.foo', label: 'foo', c: 'notebook', r: 11, sub: 'notebook' }],
+        links: [],
+      },
+    }
+    model.notebookCode = { nb_foo: 'print(1)' }
+    model.ops = [['nb_foo', 't1', 'writes']]
+
+    const results = search(model, 'foo')
+    const notebookResult = results.find((r) => r.kind === 'notebook')
+    expect(notebookResult?.notebookId).toBe('nb_foo')
+    // resolvable against the rest of the model — never the raw 'notebook.foo' id
+    expect(notebookResult?.notebookId).not.toBe('notebook.foo')
+    expect(model.notebookCode[notebookResult!.notebookId!]).toBe('print(1)')
+    expect(model.ops.some(([src]) => src === notebookResult!.notebookId)).toBe(true)
+  })
 })
 
 describe('hl (highlight helper)', () => {

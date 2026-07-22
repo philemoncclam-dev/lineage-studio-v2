@@ -8,6 +8,7 @@
 // never be able to inject markup into the palette.
 import { createElement, type ReactNode } from 'react'
 import type { AppModel } from '../model'
+import { nid } from '../model/ids'
 
 export interface SearchResult {
   kind: 'table' | 'column' | 'notebook' | 'code'
@@ -25,19 +26,24 @@ export const GROUP_LABEL: Record<SearchResult['kind'], string> = {
 }
 export const MAX_PER_GROUP = 8
 
-// All notebooks known by name (LEVELS notebook nodes + DAG notebooks), deduped.
+// All notebooks known by NODE ID (LEVELS notebook nodes + DAG notebooks),
+// deduped by id (not display name) so two same-named notebooks from
+// different workspaces are both indexed (WR-04). Graph-only notebook nodes
+// carry the RAW graph id (e.g. 'notebook.clean_orders'); resolve them through
+// the same nid() used everywhere else in AppModel (model.notebooks,
+// model.notebookCode, model.ops) so the returned id is always resolvable —
+// never a raw id the rest of the model can't look up.
 function notebookIndex(m: AppModel): { id: string; name: string }[] {
-  const seen = new Map<string, string>()
-  for (const nb of m.notebooks) seen.set(nb.name, nb.id)
+  const seen = new Map<string, string>() // id -> name
+  for (const nb of m.notebooks) seen.set(nb.id, nb.name)
   for (const lvl of Object.values(m.levels)) {
     for (const n of lvl.nodes ?? []) {
-      if (n.sub?.includes('notebook') && !seen.has(n.label)) {
-        // code is keyed by name-like id when not the DAG notebook
-        seen.set(n.label, n.label in m.notebookCode ? n.label : n.id)
-      }
+      if (!n.sub?.includes('notebook')) continue
+      const id = nid(n.id)
+      if (!seen.has(id)) seen.set(id, n.label)
     }
   }
-  return [...seen.entries()].map(([name, id]) => ({ id, name }))
+  return [...seen.entries()].map(([id, name]) => ({ id, name }))
 }
 
 function rawSearch(m: AppModel, query: string): SearchResult[] {

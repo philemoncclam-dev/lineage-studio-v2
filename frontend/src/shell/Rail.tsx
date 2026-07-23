@@ -34,6 +34,9 @@ const ICONS: Record<RailIconName, ReactNode> = {
   products: (
     <svg viewBox="0 0 24 24"><path d="M3.5 7.5 12 3l8.5 4.5L12 12z" /><path d="M3.5 7.5V16l8.5 4.5V12M20.5 7.5V16L12 20.5" /></svg>
   ),
+  layers: (
+    <svg viewBox="0 0 24 24"><path d="M12 3.5 3.5 8l8.5 4.5L20.5 8z" /><path d="M3.5 12 12 16.5 20.5 12M3.5 16 12 20.5 20.5 16" /></svg>
+  ),
 }
 
 export default function Rail({ items }: { items: RailItem[] }) {

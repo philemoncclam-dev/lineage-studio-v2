@@ -1,0 +1,325 @@
+/* Modeling-mode styles. Token-only (no raw hex/px beyond structural sizing),
+   consistent with the Phase 1 design system and the shell chrome. */
+
+.ms-root {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-surface-canvas);
+}
+
+.ms-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-4);
+  padding: var(--spacing-6) var(--spacing-8) var(--spacing-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+.ms-title {
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--text-display);
+  line-height: var(--text-display--line-height);
+  letter-spacing: var(--text-display--letter-spacing);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.ms-lead {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--color-text-secondary);
+  font-size: var(--text-micro);
+  line-height: 1.5;
+}
+.ms-toolbar-actions {
+  display: flex;
+  gap: var(--spacing-2);
+  flex-shrink: 0;
+}
+.ms-danger:hover:not(:disabled) {
+  border-color: var(--color-destructive);
+  color: var(--color-destructive);
+}
+
+/* ---- empty state ---- */
+.ms-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-3);
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+.ms-empty-title {
+  margin: 0;
+  font-size: var(--text-heading);
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+.ms-empty-sub {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--text-base);
+}
+
+/* ---- board of layer columns ---- */
+.ms-board {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: var(--spacing-4);
+  padding: var(--spacing-6) var(--spacing-8);
+  overflow-x: auto;
+  overflow-y: hidden;
+  align-items: flex-start;
+}
+
+.ms-layer {
+  flex: 0 0 320px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface-1);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.ms-layer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-bottom: var(--border-width) solid var(--color-border);
+  background: var(--color-surface-2);
+}
+.ms-layer-name {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-weight: 600;
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
+  background: transparent;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-input);
+  padding: var(--spacing-1) var(--spacing-2);
+}
+.ms-layer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--spacing-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+.ms-empty-hint {
+  margin: 0;
+  padding: var(--spacing-3);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro);
+  text-align: center;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+}
+.ms-layer-add {
+  padding: var(--spacing-2) var(--spacing-3);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+/* ---- nodes (objects + groups) ---- */
+.ms-node {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-2);
+}
+.ms-group {
+  background: var(--color-surface-1);
+  border-style: dashed;
+}
+.ms-node-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: var(--spacing-1) var(--spacing-2);
+}
+.ms-node-name {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
+  background: transparent;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-input);
+  padding: var(--spacing-1) var(--spacing-2);
+}
+.ms-node-name:hover,
+.ms-layer-name:hover,
+.ms-attr-name:hover,
+.ms-attr-type:hover {
+  border-color: var(--color-border);
+}
+.ms-node-name:focus,
+.ms-layer-name:focus,
+.ms-attr-name:focus,
+.ms-attr-type:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: var(--color-surface-3);
+}
+
+.ms-kind-badge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px var(--spacing-1);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-tertiary);
+  background: var(--color-surface-3);
+}
+.ms-kind-badge[data-kind='object'] {
+  color: var(--color-accent-hi);
+}
+
+.ms-group-body {
+  padding: 0 var(--spacing-2) var(--spacing-2) var(--spacing-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  border-left: 2px solid var(--color-border);
+  margin-left: var(--spacing-3);
+}
+
+/* ---- attributes ---- */
+.ms-attrs {
+  padding: 0 var(--spacing-2) var(--spacing-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ms-attr {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+}
+.ms-attr-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  flex-shrink: 0;
+  margin: 0 var(--spacing-1);
+}
+.ms-attr-name {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--text-micro);
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-input);
+  padding: 2px var(--spacing-1);
+}
+.ms-attr-type {
+  flex: 0 0 84px;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-input);
+  padding: 2px var(--spacing-1);
+}
+
+/* ---- controls ---- */
+.ms-add-row {
+  display: flex;
+  gap: var(--spacing-2);
+}
+.ms-add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  font: inherit;
+  font-size: var(--text-micro);
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--spacing-1) var(--spacing-2);
+  cursor: pointer;
+}
+.ms-add:hover {
+  color: var(--color-accent-hi);
+  border-color: var(--color-accent);
+}
+.ms-add-attr {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.ms-collapse,
+.ms-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+.ms-collapse:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-3);
+}
+.ms-x:hover {
+  color: var(--color-destructive);
+  background: var(--color-surface-3);
+}
+
+.ms-icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 120ms ease;
+}
+
+.ms-add-layer-col {
+  flex: 0 0 180px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  font-size: var(--text-base);
+}
+.ms-add-layer-col:hover {
+  color: var(--color-accent-hi);
+  border-color: var(--color-accent);
+}
+.ms-add-layer-col .ms-icon {
+  width: 22px;
+  height: 22px;
+}

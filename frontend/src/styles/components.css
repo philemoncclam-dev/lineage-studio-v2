@@ -107,6 +107,31 @@
   --status-dot-ok: var(--color-success);
   --status-dot-off: var(--color-text-tertiary);
   --status-dot-err: var(--color-destructive);
+
+  /* ===== Phase 3 lineage-DAG tokens (DAG-01/02/07, TRUST-01, D-03..D-14) =====
+     Every value below resolves to a Phase-1 tier-2 semantic already declared
+     above/in tokens.css — no new primitive, no raw hex. Source: 03-UI-SPEC.md
+     "New Tier-3 Component Tokens". */
+
+  /* Lineage toolbar strip (D-14, D-03) */
+  --lineage-toolbar-bg: var(--color-surface-1);
+  --lineage-toolbar-border: var(--color-border);
+
+  /* DAG node/card geometry (DAG-01, DAG-02, DAG-07) */
+  --dag-node-width: 240px;
+  --dag-node-header-height: 40px;
+  --dag-node-row-height: var(--row-height); /* 28px, reused verbatim */
+  --dag-node-max-height: 320px;
+
+  /* Provenance channel (TRUST-01, D-08) */
+  --dag-edge-dasharray-inferred: 5 4; /* carried forward, unchanged literal */
+  --dag-edge-dasharray-declared: none;
+
+  /* Trace/selection (D-05, D-06) */
+  --dag-dim-opacity: 0.15;
+  --dag-trace-stroke-width: 2.5px;
+  --dag-base-stroke-width: 1.5px; /* unchanged base, carried forward */
+  --dag-trace-transition: 180ms; /* carried forward, unchanged literal */
 }
 
 /* ===== Base additions (margin/font-family/font-size/line-height already

@@ -170,7 +170,27 @@ alone:
   5. Edges are visually differentiated by provenance (declared by Purview vs. inferred by regex parsing); the inspector explains why an inferred edge exists, showing the parsed evidence behind it; the UI shows when lineage data was last refreshed
   6. Every node and edge reachable by mouse is also reachable and operable via keyboard alone, and carries semantic labelling for assistive technology
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Backend evidence thread (D-12) + api.ts mirror + backward-compat tests (TRUST-02)
+- [ ] 03-02-PLAN.md — Frontend toolchain: @xyflow/react + dagre swap, xyflow jsdom mocks, tier-3 tokens
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 03-03-PLAN.md — Deterministic dagre layout + toXyflow handle mapping + ported trace (DAG-01/02/03/06/07)
+- [ ] 03-04-PLAN.md — Inspector ColumnCard + adapt evidence thread (DAG-05/TRUST-02)
+- [ ] 03-06-PLAN.md — Keyboard/AT roving-tabindex nav + freshness indicator (DAG-08/TRUST-03)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 03-05-PLAN.md — Custom TableNode/NotebookNode/LineageEdge components + ported CSS (DAG-01/02/TRUST-01)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 03-07-PLAN.md — LineageDagView integration + route swap + delete legacy SVG view (DAG-03/04/06/08/TRUST-03)
+
 **UI hint**: yes
 
 ### Phase 4: Knowledge Graph Canvas Rebuild
@@ -268,7 +288,7 @@ everything (3, 4, 5, 6) and closes the milestone.
 |-------|-----------------|--------|-----------|
 | 1. Design Tokens & Typography Foundation | 4/4 | In Progress|  |
 | 2. App Shell, Routing & Canvas Infrastructure | 9/9 | Complete    | 2026-07-22 |
-| 3. Lineage DAG Canvas Rebuild | 0/TBD | Not started | - |
+| 3. Lineage DAG Canvas Rebuild | 0/7 | Not started | - |
 | 4. Knowledge Graph Canvas Rebuild | 0/TBD | Not started | - |
 | 5. Purview Push & Catalog Destinations | 0/TBD | Not started | - |
 | 6. Light Theme Dedicated Review | 0/TBD | Not started | - |

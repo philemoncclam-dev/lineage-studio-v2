@@ -89,7 +89,7 @@ Backend safety architecture already exists in `WriteSession` — dry-run by defa
 ### Provenance & Trust (`TRUST`)
 
 - [ ] **TRUST-01**: Edges are visually differentiated by provenance — declared by Purview vs inferred by regex parsing
-- [ ] **TRUST-02**: The inspector explains why an inferred edge exists, showing the parsed evidence behind it
+- [x] **TRUST-02**: The inspector explains why an inferred edge exists, showing the parsed evidence behind it
 - [ ] **TRUST-03**: The UI shows when lineage data was last refreshed
 
 ### Definitions & Data Products (`CAT`)
@@ -185,7 +185,7 @@ dependencies, parallelization, and pitfall guards.
 | DAG-07 | Phase 3 | Pending |
 | DAG-08 | Phase 3 | Pending |
 | TRUST-01 | Phase 3 | Pending |
-| TRUST-02 | Phase 3 | Pending |
+| TRUST-02 | Phase 3 | Complete |
 | TRUST-03 | Phase 3 | Pending |
 | GRAPH-01 | Phase 4 | Pending |
 | GRAPH-02 | Phase 4 | Pending |

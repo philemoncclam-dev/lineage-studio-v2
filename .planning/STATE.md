@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 3
-current_phase_name: Lineage DAG Canvas Rebuild
+current_phase: 03
+current_phase_name: lineage-dag-canvas-rebuild
 status: executing
-stopped_at: Phase 3 UI-SPEC approved
-last_updated: "2026-07-23T19:10:53.242Z"
-last_activity: 2026-07-22
-last_activity_desc: Phase 02 complete, transitioned to Phase 3
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-07-23T23:22:44.050Z"
+last_activity: 2026-07-23
+last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 13
-  completed_plans: 13
+  total_plans: 20
+  completed_plans: 14
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-20)
 
 **Core value:** Purview gets populated from this app — explore lineage visually → select what matters → push to Purview → see it land, in a UI you'd demo without apologising.
-**Current focus:** Phase 02 — app-shell-routing-canvas-infrastructure
+**Current focus:** Phase 03 — lineage-dag-canvas-rebuild
 
 ## Current Position
 
-Phase: 3 — Lineage DAG Canvas Rebuild
-Plan: Not started
+Phase: 03 (lineage-dag-canvas-rebuild) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-07-22 — Phase 02 complete, transitioned to Phase 3
+Last activity: 2026-07-23 — Phase 03 execution started
 
-Progress: [██████████] 100%
+Progress: [███████░░░] 70%
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [██████████] 100%
 | Phase 02 P07 | 12min | 3 tasks | 4 files |
 | Phase 02 P08 | 5min | 2 tasks | 4 files |
 | Phase 02 P09 | 5min | 2 tasks | 3 files |
+| Phase 03 P01 | 12min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,7 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: 02-09: SHELL-05/SHELL-06 re-scoped from unqualified Complete to Partial in REQUIREMENTS.md, naming the graph-mode drill hierarchy + resolvePathSegments wiring deferral to Phase 4 (locked scope decision B)
 - [Phase ?]: 02-09: resolvePathSegments.ts and its 9 passing unit tests stay in-tree untouched, documented as intentionally staged for Phase 4 to consume
 - [Phase ?]: 02-09: Phase-4 carry-forward todo also captures WR-02/WR-05 (canvas-rebuild-absorbed) and WR-06 (separately deferred UX item) as known-deferred notes
+- [Phase ?]: 03-01: Merged the shared-evidence-across-columns assertion into test_column_map_carries_evidence rather than a separate test, so pytest -k evidence collects exactly the two named tests
 
 ### Pending Todos
 
@@ -138,6 +140,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-23T06:28:45.864Z
-Stopped at: Phase 3 UI-SPEC approved
-Resume file: .planning/phases/03-lineage-dag-canvas-rebuild/03-UI-SPEC.md
+Last session: 2026-07-23T23:22:44.042Z
+Stopped at: Completed 03-01-PLAN.md
+Resume file: None

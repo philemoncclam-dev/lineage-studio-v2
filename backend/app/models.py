@@ -36,12 +36,24 @@ class Node(BaseModel):
     meta: dict = Field(default_factory=dict)
 
 
+class ColumnMapEvidence(BaseModel):
+    """Verbatim provenance for a ColumnMap: the cell + SELECT match it came from."""
+
+    notebook: str
+    cell_index: int
+    line: int
+    snippet: str
+
+
 class ColumnMap(BaseModel):
     """A single source-column -> target-column derivation."""
 
     from_column: str
     to_column: str
     transform: str | None = Field(None, description="Human-readable transform, e.g. 'upper(x)'")
+    evidence: ColumnMapEvidence | None = Field(
+        None, description="Verbatim cell/line/snippet provenance, when derived from a static parse (D-12)"
+    )
 
 
 EdgeKind = Literal["reads", "writes", "calls", "derives"]

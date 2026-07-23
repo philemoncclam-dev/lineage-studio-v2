@@ -16,10 +16,18 @@ export interface LineageNode {
   meta: Record<string, unknown>
 }
 
+export interface ColumnMapEvidence {
+  notebook: string
+  cell_index: number
+  line: number
+  snippet: string
+}
+
 export interface ColumnMap {
   from_column: string
   to_column: string
   transform?: string | null
+  evidence?: ColumnMapEvidence | null
 }
 
 export interface LineageEdge {

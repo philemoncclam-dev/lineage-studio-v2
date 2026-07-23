@@ -66,6 +66,63 @@ function baseModel(): AppModel {
   }
 }
 
+// ---- ColumnCard fixtures (DAG-05, TRUST-02) ----
+
+const rawTable: Table = {
+  id: 'raw',
+  name: 'raw_orders',
+  layer: 'bronze',
+  c: 'bronze',
+  x: 0,
+  y: 0,
+  columns: [
+    { key: 'raw.customer', name: 'customer', type: 'string' },
+    { key: 'raw.order_id', name: 'order_id', type: 'long', pk: true },
+  ],
+}
+
+const cleanTable: Table = {
+  id: 'clean',
+  name: 'orders_clean',
+  layer: 'silver',
+  c: 'silver',
+  x: 0,
+  y: 0,
+  columns: [
+    { key: 'clean.customer_name', name: 'customer_name', type: 'string' },
+    { key: 'clean.order_id', name: 'order_id', type: 'long' },
+  ],
+}
+
+function columnModel(): AppModel {
+  return {
+    source: 'sample',
+    tables: [rawTable, cleanTable],
+    notebooks: [],
+    colEdges: [
+      ['raw.customer', 'clean.customer_name'],
+      ['raw.order_id', 'clean.order_id'],
+    ],
+    ops: [],
+    xform: {
+      'clean.customer_name': ['upper(customer)', 'Computed as upper(customer) in clean_orders.'],
+      'clean.order_id': ['order_id', 'Passed through from raw · order_id by clean_orders.'],
+    },
+    evidence: {
+      'clean.customer_name': {
+        notebook: 'clean_orders',
+        cell_index: 2,
+        line: 12,
+        snippet: 'SELECT UPPER(customer) AS customer_name FROM raw_orders',
+      },
+    },
+    levels: {},
+    levelTable: {},
+    notebookCode: {},
+    context: {},
+  }
+}
+
 describe('Inspector (SHELL-03, D-10/D-11/D-12)', () => {
   it('renders null when sel is unset (D-11: visibility == selection)', () => {
     mockSearch = {}
@@ -108,5 +165,42 @@ describe('Inspector (SHELL-03, D-10/D-11/D-12)', () => {
     const closeBtn = screen.getByRole('button', { name: 'Close inspector' })
     closeBtn.click()
     expect(mockClear).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Inspector ColumnCard (DAG-05, TRUST-02)', () => {
+  it('renders Transform code + sentence, Source→Target, Evidence snippet + locked caption, and Upstream/Downstream counts for a column with evidence', () => {
+    mockSearch = { sel: 'clean', col: 'clean.customer_name' }
+    mockModel = columnModel()
+    render(<Inspector />)
+
+    expect(screen.getByText('customer_name')).toBeInTheDocument()
+    expect(screen.getByText('column')).toBeInTheDocument()
+    expect(screen.getByText('Inferred')).toBeInTheDocument()
+
+    // Transform
+    expect(screen.getByText('upper(customer)')).toBeInTheDocument()
+    expect(screen.getByText('Computed as upper(customer) in clean_orders.')).toBeInTheDocument()
+
+    // Source → Target
+    expect(screen.getByText('customer')).toBeInTheDocument()
+    expect(screen.getByText('raw_orders')).toBeInTheDocument()
+
+    // Evidence
+    expect(screen.getByText('SELECT UPPER(customer) AS customer_name FROM raw_orders')).toBeInTheDocument()
+    expect(screen.getByText(/clean_orders.*cell 2.*line 12/)).toBeInTheDocument()
+    expect(screen.getByText('Inferred from static pattern-matching — not executed.')).toBeInTheDocument()
+
+    // Connections
+    expect(screen.getByText(/Upstream 1.*Downstream 0/)).toBeInTheDocument()
+  })
+
+  it('omits the .xform code block for a pass-through column, rendering only the plain-English sentence', () => {
+    mockSearch = { sel: 'clean', col: 'clean.order_id' }
+    mockModel = columnModel()
+    const { container } = render(<Inspector />)
+
+    expect(container.querySelector('.xform code')).not.toBeInTheDocument()
+    expect(screen.getByText('Passed through from raw · order_id by clean_orders.')).toBeInTheDocument()
   })
 })

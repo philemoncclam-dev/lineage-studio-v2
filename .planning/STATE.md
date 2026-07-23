@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: lineage-dag-canvas-rebuild
 status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-07-23T23:34:57.306Z"
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-07-23T23:44:14.130Z"
 last_activity: 2026-07-23
 last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 20
-  completed_plans: 16
+  completed_plans: 17
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 ## Current Position
 
 Phase: 03 (lineage-dag-canvas-rebuild) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-07-23 — Phase 03 execution started
 
-Progress: [████████░░] 80%
+Progress: [█████████░] 85%
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [████████░░] 80%
 | Phase 03 P01 | 12min | 3 tasks | 4 files |
 | Phase 03 P02 | 15min | 3 tasks | 4 files |
 | Phase 03 P03 | 3min | 3 tasks | 7 files |
+| Phase 03 P04 | 25min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -122,6 +123,8 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: 03-03: Single toXyflow(...) function returning { nodes, edges } instead of separate toXyflowNodes/toXyflowEdges — simpler single call site for 03-07
 - [Phase ?]: 03-03: Column-level colEdges emitted with data.kind:'derives' (third LineageEdgeData kind alongside reads/writes)
 - [Phase ?]: 03-03: Exported TABLE_NODE_TYPE/NOTEBOOK_NODE_TYPE/LINEAGE_EDGE_TYPE constants from toXyflow.ts so 03-05's nodeTypes/edgeTypes registration can't drift from the literal type-name strings
+- [Phase ?]: 03-04: Connections counts use direct model.colEdges neighbours, not a full transitive trace() walk
+- [Phase ?]: 03-04: Provenance line and Evidence header/caption use inline style with CSS custom properties instead of new components.css selectors, since the plan's files_modified scope excludes the stylesheet
 
 ### Pending Todos
 
@@ -146,6 +149,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-23T23:34:57.295Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-07-23T23:44:14.121Z
+Stopped at: Completed 03-04-PLAN.md
 Resume file: None

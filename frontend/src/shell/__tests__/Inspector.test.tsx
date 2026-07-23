@@ -174,7 +174,7 @@ describe('Inspector ColumnCard (DAG-05, TRUST-02)', () => {
     mockModel = columnModel()
     render(<Inspector />)
 
-    expect(screen.getByText('customer_name')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'customer_name' })).toBeInTheDocument()
     expect(screen.getByText('column')).toBeInTheDocument()
     expect(screen.getByText('Inferred')).toBeInTheDocument()
 

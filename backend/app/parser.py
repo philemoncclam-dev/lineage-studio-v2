@@ -15,6 +15,7 @@ import re
 
 from .models import (
     ColumnMap,
+    ColumnMapEvidence,
     Edge,
     IngestRequest,
     LineageGraph,
@@ -71,11 +72,19 @@ def _find(patterns: list[re.Pattern[str]], text: str) -> set[str]:
     return found
 
 
-def _column_maps(cell: str) -> list[ColumnMap]:
-    """Best-effort column derivation from a single flat SELECT list."""
+def _column_maps(cell: str, notebook: str, cell_index: int) -> list[ColumnMap]:
+    """Best-effort column derivation from a single flat SELECT list.
+
+    Evidence is per-cell/per-SELECT granularity: every ColumnMap produced from
+    this one match shares the same ColumnMapEvidence instance (RESEARCH
+    Pitfall 4 — no narrower per-column snippet computation).
+    """
     m = _SELECT_RE.search(cell)
     if not m:
         return []
+    line = cell[: m.start()].count("\n") + 1
+    snippet = m.group(0).strip()
+    evidence = ColumnMapEvidence(notebook=notebook, cell_index=cell_index, line=line, snippet=snippet)
     maps: list[ColumnMap] = []
     for raw in m.group(1).split(","):
         expr = raw.strip()
@@ -85,7 +94,14 @@ def _column_maps(cell: str) -> list[ColumnMap]:
         target = alias_m.group(1) if alias_m else expr.split(".")[-1]
         target = re.sub(r"[^\w]", "", target) or expr
         transform = None if re.fullmatch(r"[\w.]+", expr) else expr
-        maps.append(ColumnMap(from_column=expr.split(" AS ")[0].strip(), to_column=target, transform=transform))
+        maps.append(
+            ColumnMap(
+                from_column=expr.split(" AS ")[0].strip(),
+                to_column=target,
+                transform=transform,
+                evidence=evidence,
+            )
+        )
     return maps
 
 
@@ -97,11 +113,11 @@ def parse_notebook(nb: NotebookSource) -> tuple[Node, list[Edge]]:
     reads: set[str] = set()
     writes: set[str] = set()
     col_maps: list[ColumnMap] = []
-    for cell in nb.cells:
+    for cell_index, cell in enumerate(nb.cells):
         scannable = _without_python_imports(cell)
         reads |= _find(_READ_PATTERNS, scannable)
         writes |= _find(_WRITE_PATTERNS, scannable)
-        col_maps.extend(_column_maps(scannable))
+        col_maps.extend(_column_maps(scannable, nb.name, cell_index))
 
     # A read that is also written in the same notebook is treated as a write target.
     reads -= writes

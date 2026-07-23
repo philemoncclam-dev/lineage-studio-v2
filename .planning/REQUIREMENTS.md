@@ -49,7 +49,7 @@ Resolved before requirements, recorded so they aren't relitigated:
 
 ### Lineage DAG (`DAG`)
 
-- [ ] **DAG-01**: Column-level lineage renders left-to-right with expandable table cards and column rows
+- [x] **DAG-01**: Column-level lineage renders left-to-right with expandable table cards and column rows
 - [ ] **DAG-02**: Column-to-column edges connect to the correct column rows, not merely to node boundaries
 - [ ] **DAG-03**: Hovering a column traces its full upstream and downstream path; unrelated nodes and edges dim
 - [ ] **DAG-04**: Clicking a column selects it persistently; selection survives hovering elsewhere
@@ -88,7 +88,7 @@ Backend safety architecture already exists in `WriteSession` — dry-run by defa
 
 ### Provenance & Trust (`TRUST`)
 
-- [ ] **TRUST-01**: Edges are visually differentiated by provenance — declared by Purview vs inferred by regex parsing
+- [x] **TRUST-01**: Edges are visually differentiated by provenance — declared by Purview vs inferred by regex parsing
 - [x] **TRUST-02**: The inspector explains why an inferred edge exists, showing the parsed evidence behind it
 - [ ] **TRUST-03**: The UI shows when lineage data was last refreshed
 
@@ -176,7 +176,7 @@ dependencies, parallelization, and pitfall guards.
 | SHELL-05 | Phase 2 | Partial — graph-mode drill hierarchy + resolvePathSegments wiring deferred to Phase 4 |
 | SHELL-06 | Phase 2 | Partial — graph-mode drill hierarchy + resolvePathSegments wiring deferred to Phase 4 |
 | SHELL-07 | Phase 2 | Complete |
-| DAG-01 | Phase 3 | Pending |
+| DAG-01 | Phase 3 | Complete |
 | DAG-02 | Phase 3 | Pending |
 | DAG-03 | Phase 3 | Pending |
 | DAG-04 | Phase 3 | Pending |
@@ -184,7 +184,7 @@ dependencies, parallelization, and pitfall guards.
 | DAG-06 | Phase 3 | Pending |
 | DAG-07 | Phase 3 | Pending |
 | DAG-08 | Phase 3 | Pending |
-| TRUST-01 | Phase 3 | Pending |
+| TRUST-01 | Phase 3 | Complete |
 | TRUST-02 | Phase 3 | Complete |
 | TRUST-03 | Phase 3 | Pending |
 | GRAPH-01 | Phase 4 | Pending |

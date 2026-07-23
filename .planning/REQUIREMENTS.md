@@ -50,12 +50,12 @@ Resolved before requirements, recorded so they aren't relitigated:
 ### Lineage DAG (`DAG`)
 
 - [x] **DAG-01**: Column-level lineage renders left-to-right with expandable table cards and column rows
-- [ ] **DAG-02**: Column-to-column edges connect to the correct column rows, not merely to node boundaries
-- [ ] **DAG-03**: Hovering a column traces its full upstream and downstream path; unrelated nodes and edges dim
+- [x] **DAG-02**: Column-to-column edges connect to the correct column rows, not merely to node boundaries
+- [x] **DAG-03**: Hovering a column traces its full upstream and downstream path; unrelated nodes and edges dim
 - [ ] **DAG-04**: Clicking a column selects it persistently; selection survives hovering elsewhere
 - [ ] **DAG-05**: The inspector shows a selected column's transformation expression, plain-English explanation, inputs, and outputs
-- [ ] **DAG-06**: The view toggles between table-level and column-level detail
-- [ ] **DAG-07**: Layout is deterministic — the same graph produces the same positions across renders
+- [x] **DAG-06**: The view toggles between table-level and column-level detail
+- [x] **DAG-07**: Layout is deterministic — the same graph produces the same positions across renders
 - [ ] **DAG-08**: Nodes and edges carry semantic labelling for assistive technology
 
 ### Knowledge Graph (`GRAPH`)
@@ -177,12 +177,12 @@ dependencies, parallelization, and pitfall guards.
 | SHELL-06 | Phase 2 | Partial — graph-mode drill hierarchy + resolvePathSegments wiring deferred to Phase 4 |
 | SHELL-07 | Phase 2 | Complete |
 | DAG-01 | Phase 3 | Complete |
-| DAG-02 | Phase 3 | Pending |
-| DAG-03 | Phase 3 | Pending |
+| DAG-02 | Phase 3 | Complete |
+| DAG-03 | Phase 3 | Complete |
 | DAG-04 | Phase 3 | Pending |
 | DAG-05 | Phase 3 | Pending |
-| DAG-06 | Phase 3 | Pending |
-| DAG-07 | Phase 3 | Pending |
+| DAG-06 | Phase 3 | Complete |
+| DAG-07 | Phase 3 | Complete |
 | DAG-08 | Phase 3 | Pending |
 | TRUST-01 | Phase 3 | Complete |
 | TRUST-02 | Phase 3 | Complete |

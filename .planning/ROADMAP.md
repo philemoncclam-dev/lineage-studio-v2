@@ -170,7 +170,7 @@ alone:
   5. Edges are visually differentiated by provenance (declared by Purview vs. inferred by regex parsing); the inspector explains why an inferred edge exists, showing the parsed evidence behind it; the UI shows when lineage data was last refreshed
   6. Every node and edge reachable by mouse is also reachable and operable via keyboard alone, and carries semantic labelling for assistive technology
 
-**Plans**: 2/7 plans executed
+**Plans**: 3/7 plans executed
 
 **Wave 1**
 
@@ -179,7 +179,7 @@ alone:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 03-03-PLAN.md — Deterministic dagre layout + toXyflow handle mapping + ported trace (DAG-01/02/03/06/07)
+- [x] 03-03-PLAN.md — Deterministic dagre layout + toXyflow handle mapping + ported trace (DAG-01/02/03/06/07)
 - [ ] 03-04-PLAN.md — Inspector ColumnCard + adapt evidence thread (DAG-05/TRUST-02)
 - [ ] 03-06-PLAN.md — Keyboard/AT roving-tabindex nav + freshness indicator (DAG-08/TRUST-03)
 
@@ -288,7 +288,7 @@ everything (3, 4, 5, 6) and closes the milestone.
 |-------|-----------------|--------|-----------|
 | 1. Design Tokens & Typography Foundation | 4/4 | In Progress|  |
 | 2. App Shell, Routing & Canvas Infrastructure | 9/9 | Complete    | 2026-07-22 |
-| 3. Lineage DAG Canvas Rebuild | 2/7 | In Progress|  |
+| 3. Lineage DAG Canvas Rebuild | 3/7 | In Progress|  |
 | 4. Knowledge Graph Canvas Rebuild | 0/TBD | Not started | - |
 | 5. Purview Push & Catalog Destinations | 0/TBD | Not started | - |
 | 6. Light Theme Dedicated Review | 0/TBD | Not started | - |

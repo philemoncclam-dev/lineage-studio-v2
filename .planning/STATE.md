@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: lineage-dag-canvas-rebuild
 status: executing
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-07-23T23:26:56.991Z"
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-07-23T23:34:57.306Z"
 last_activity: 2026-07-23
 last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 20
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 ## Current Position
 
 Phase: 03 (lineage-dag-canvas-rebuild) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-07-23 — Phase 03 execution started
 
-Progress: [████████░░] 75%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -73,6 +73,7 @@ Progress: [████████░░] 75%
 | Phase 02 P09 | 5min | 2 tasks | 3 files |
 | Phase 03 P01 | 12min | 3 tasks | 4 files |
 | Phase 03 P02 | 15min | 3 tasks | 4 files |
+| Phase 03 P03 | 3min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -118,6 +119,9 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: 02-09: Phase-4 carry-forward todo also captures WR-02/WR-05 (canvas-rebuild-absorbed) and WR-06 (separately deferred UX item) as known-deferred notes
 - [Phase ?]: 03-01: Merged the shared-evidence-across-columns assertion into test_column_map_carries_evidence rather than a separate test, so pytest -k evidence collects exactly the two named tests
 - [Phase ?]: getBBox jsdom polyfill assigned to SVGGraphicsElement.prototype (not SVGElement.prototype as plan text loosely described) — SVGElement has no getBBox member in the TS DOM lib
+- [Phase ?]: 03-03: Single toXyflow(...) function returning { nodes, edges } instead of separate toXyflowNodes/toXyflowEdges — simpler single call site for 03-07
+- [Phase ?]: 03-03: Column-level colEdges emitted with data.kind:'derives' (third LineageEdgeData kind alongside reads/writes)
+- [Phase ?]: 03-03: Exported TABLE_NODE_TYPE/NOTEBOOK_NODE_TYPE/LINEAGE_EDGE_TYPE constants from toXyflow.ts so 03-05's nodeTypes/edgeTypes registration can't drift from the literal type-name strings
 
 ### Pending Todos
 
@@ -142,6 +146,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-23T23:26:56.982Z
-Stopped at: Completed 03-02-PLAN.md
+Last session: 2026-07-23T23:34:57.295Z
+Stopped at: Completed 03-03-PLAN.md
 Resume file: None

@@ -1,7 +1,7 @@
 ---
 phase: 3
 slug: lineage-dag-canvas-rebuild
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-07-22
@@ -662,42 +662,87 @@ theme hex values, not just checked in dark mode where it was designed.
 
 ## UI Considerations
 
-> Populated by the ui-phase UI-consideration probe against this phase's
-> surfaces: the xyflow canvas (table/notebook cards, column rows, edges),
-> the lineage toolbar strip (toggle + freshness), and the Inspector's new
-> column-detail content. The bridged shell/Inspector *mechanics* (overlay
-> positioning, Esc-to-clear, close button) are Phase 2's contract and are
-> not re-probed here — only this phase's new content inside them is.
+> Populated by the ui-phase UI-consideration probe (`ui-consideration-probe.cjs`)
+> against this phase's six surfaces — **E1** xyflow canvas region, **E2**
+> table/notebook card, **E3** column row, **E4** lineage edge, **E5** lineage
+> toolbar strip (toggle + freshness), **E6** Inspector column-detail panel. The
+> probe enumerated **44 applicable (surface × state) considerations**; every one
+> is dispositioned below with no silent drops. The bridged shell/Inspector
+> *mechanics* (overlay positioning, Esc-to-clear, close button) are Phase 2's
+> contract and are not re-probed here — only this phase's new content inside
+> them is.
 
-Resolved: **10 covered, 0 backstop, 5 dismissed, 0 unresolved**.
+Resolved: **31 covered, 0 backstop, 13 dismissed, 0 unresolved** (44 total).
 
-### Covered — states this phase actually introduces
+### Covered — states this phase specifies
 
-| Category | Element(s) | Status | Resolution |
-|----------|------------|--------|------------|
-| empty | Lineage canvas with zero tables/notebooks | ✅ covered | Locked heading + body copy above; renders centered in the canvas region, replacing the xyflow instance entirely (no empty dot-grid-with-nothing-on-it) |
-| loading | Canvas region during `fetchGraph()` | ✅ covered | Unchanged, inherited from Phase 2's `RootPending`/`canvas-skeleton` — this phase adds no new loading state, the xyflow canvas simply doesn't mount until `graph` resolves |
-| populated | Table/notebook cards + column rows + edges | ✅ covered | Full node/edge component contract specified above (geometry, handles, dagre tuning) |
-| partial | A column with no resolvable Evidence (pass-through with unidentifiable source) | ✅ covered | Evidence section omitted entirely — same "missing field omits its row" rule as Phase 2's Inspector, not a blank block |
-| partial | A table with zero columns while in Column mode | ✅ covered | Card renders header only, `.cols` container is simply empty — dagre still gives it the collapsed 40px height since `min(0, 10) × 28 = 0` |
-| zero-one-many | Table cards with 1 column vs. 40+ columns | ✅ covered | D-04: scroll-inside-card past 10 rows (`--dag-node-max-height: 320px`), no virtualization, no truncate-with-count — explicit v1 scope boundary |
-| overflow | Column list inside an expanded card exceeding `--dag-node-max-height` | ✅ covered | `overflow-y: auto` on the column-row container, capped card height, dagre treats the capped height as the node's true layout footprint (no layout-breaking overgrowth) |
-| overflow | Long column/table/notebook names | ✅ covered | `text-overflow: ellipsis; white-space: nowrap` on card titles and row names, same pattern as `02-UI-SPEC.md`'s Inspector title/palette-row treatment — carried forward, not reinvented |
-| interaction states | Column row hover / active-hover-trace / persistent-selection / focus-visible / dimmed-unrelated | ✅ covered | Fully specified in Trace & Selection Interaction Contract and Keyboard & AT sections above |
-| long-text | Evidence snippet (a full matched SQL/PySpark line) inside the Inspector's fixed 384px width | ✅ covered | `.xform code`'s existing `word-break: break-word` treatment (already in `components.css`) carries forward unchanged — long snippets wrap, never overflow the panel |
+Each row is a state-coverage truth the planner must carry into `must_haves`.
 
-### Dismissed — owned by a later phase or already resolved elsewhere
+| Surface · Category | Resolution (truth) |
+|--------------------|--------------------|
+| E1 canvas · empty | Zero tables **and** zero notebooks renders the centered "No lineage to show yet" + body copy in place of the xyflow instance — no empty dot-grid |
+| E1 canvas · loading | Inherited Phase-2 `RootPending`/`canvas-skeleton`; the xyflow canvas does not mount until `graph` resolves — no new loading state added |
+| E1 canvas · populated | Full node/edge contract renders: dagre LR layout, table/notebook cards, column-row handles, bezier edges (geometry + tuning specified above) |
+| E1 canvas · partial | A table with zero columns in Column mode renders header-only (`min(0,10)×28 = 0`), dagre giving it the collapsed 40px height — never a broken card |
+| E1 canvas · overflow | Content beyond the viewport is reachable via xyflow pan/zoom + `fitView` (no minimap); the canvas never clips lineage unreachably |
+| E1 canvas · zero-one-many | dagre lays out 1 table through many deterministically; DAG scale risk is bounded per-table (columns), not estate-scale (that is E-below dismissed to Phase 4) |
+| E2 card · empty | Zero-column table in Column mode → header-only card, empty `.cols` container (not a blank body block) |
+| E2 card · populated | Header (domain tick + name + sub-label) + column-row list (Column mode) / header-only (Table mode), per the node-type table above |
+| E2 card · partial | A missing sub-label/layer omits gracefully ("missing field omits its row" rule); zero-column table → header-only |
+| E2 card · overflow | D-04: column list scrolls inside the card past 10 rows (`--dag-node-max-height: 320px`, `overflow-y: auto`), no virtualization; dagre uses the capped height as the true footprint |
+| E2 card · zero-one-many | 1 column vs 40+ both handled by scroll-in-card; long column/table/notebook names `text-overflow: ellipsis; white-space: nowrap` |
+| E3 row · populated | Row renders name + type (+ PK pill), fixed `--dag-node-row-height` 28px; hover/active-trace/persistent-selection/focus-visible/dimmed states fully specified in Trace & Selection + Keyboard sections |
+| E3 row · partial | Missing type/PK omits that cell gracefully; a row always represents exactly one real column |
+| E3 row · overflow | Long column name ellipsis-truncates within the 240px card width; row height stays fixed at 28px |
+| E3 row · zero-one-many | A row's own upstream/downstream connection count (0/1/many) is surfaced in the Inspector's "Upstream N · Downstream N" line |
+| E4 edge · populated | Bezier curve with edge-type hue (reads/writes/derives) + inferred/dashed provenance; traced (`--color-accent`, 2.5px) vs dimmed (0.15) states specified |
+| E4 edge · partial | Phase-3 reality (D-09): every edge is `inferred`/dashed; the `declared`/solid style is built and test-exercised but has no live data path until Phase 5 — honestly surfaced, not hidden |
+| E4 edge · overflow | Edges route through dagre rank spacing to clear intervening cards; edge label/provenance shown via on-demand `<title>`/`aria-label`, never a persistent overlay |
+| E4 edge · zero-one-many | 0 edges → empty canvas (E1); 1 vs many laid out by dagre; the `sr-only` edge-summary list enumerates every edge in reading order for AT |
+| E5 toolbar · empty | Toggle is always present; when no live data was fetched, the freshness indicator reads "Showing bundled sample data" (the honest no-real-data analog), never a fabricated time |
+| E5 toolbar · error | Freshness fallback "Showing bundled sample data" **is** the honest error-adjacent signal for an unreachable backend (`AppModel.source === 'sample'`) — no blocking error chrome in this strip |
+| E5 toolbar · populated | Table/Column segmented toggle with `.on` active-tab state + right-aligned "Refreshed {relative}" freshness text |
+| E5 toolbar · partial | With no `fetchedAt` yet, freshness shows the sample-data copy rather than a partial/placeholder timestamp |
+| E5 toolbar · overflow | Single-line strip: toggle left, freshness right; freshness relative-time copy stays short, absolute ISO moved to the `title` tooltip |
+| E5 toolbar · long-text | Freshness uses bounded `Intl.RelativeTimeFormat` output; the precise (potentially long) absolute timestamp lives only in the hover `title` |
+| E6 inspector · empty | The panel renders only when a table/column is selected; the no-selection (closed overlay) state is Phase 2's contract, unchanged |
+| E6 inspector · populated | Full `ColumnCard`: provenance line + Transform + Source→Target + Evidence + Connections, in the existing `.sec` shape |
+| E6 inspector · partial | Missing-evidence fallback omits the Evidence section entirely; a null `transform` omits the code block and renders only the plain-English sentence ("missing field omits its row") |
+| E6 inspector · overflow | Panel content stacks and scrolls vertically within the fixed 384px overlay; never reflows the canvas |
+| E6 inspector · zero-one-many | 0/1/many resolved source→target flow rows render one per source column; counts summarized in "Upstream N · Downstream N" |
+| E6 inspector · long-text | Evidence snippet and plain-English copy use `.xform code`'s existing `word-break: break-word` — long matched SQL/PySpark lines wrap, never overflow the 384px panel |
+
+### Dismissed — owned by a later phase or resolved elsewhere (no silent drops)
+
+| Surface · Category | Dismissal reason | Owned by |
+|--------------------|------------------|----------|
+| E1 canvas · error | True fetch failure is handled upstream by Phase 2's root-loader silent-fallback-to-sample; this phase's only new tie-in is the freshness "sample data" signal (covered under E5) | Phase 2 (shipped) |
+| E2 card · loading | Cards do not load independently — whole-canvas loading is E1/Phase 2's concern | Phase 2 (shipped) |
+| E2 card · error | No per-card fetch exists; failure is the root loader's concern | Phase 2 (shipped) |
+| E3 row · empty | A row always represents exactly one real column — there is no empty single-row state | n/a (structural) |
+| E3 row · loading | Rows appear with their card; no independent async load | Phase 2 (shipped) |
+| E3 row · error | No per-row fetch exists | Phase 2 (shipped) |
+| E4 edge · empty | An edge always connects two real endpoints — no empty-edge state exists | n/a (structural) |
+| E4 edge · loading | Edges render with the graph, not independently | Phase 2 (shipped) |
+| E4 edge · error | No per-edge fetch exists | Phase 2 (shipped) |
+| E5 toolbar · loading | The toolbar is chrome that renders immediately; freshness reflects `fetchedAt` once the model resolves, no independent load state | Phase 2 (shipped) |
+| E5 toolbar · zero-one-many | The toggle is a fixed two-option control, not a variable-count surface | n/a (structural) |
+| E6 inspector · loading | Inspector content is synchronous from the already-loaded model — no async load inside the panel | Phase 2 (shipped) |
+| E6 inspector · error | No fetch happens inside the Inspector; its data is already present in the loaded model | Phase 2 (shipped) |
+
+**Cross-phase state dismissals** (state categories that belong to sibling/later phases, recorded so the planner does not attempt them here):
 
 | Category | Dismissal reason | Owned by |
 |----------|------------------|----------|
-| error (true fetch failure / backend unreachable) | Already handled by Phase 2's root-loader silent-fallback-to-sample behaviour; this phase's only new surface tied to it is the freshness indicator's fallback copy (covered above) | Phase 2 (shipped); this phase adds the honest "sample data" signal on top |
 | partial (Purview push half-succeeded) | No write path exists in this phase | Phase 5 (PUSH-07) |
-| zero-one-many (estate/tenant-scale node counts, hairball onset) | Hairball mitigation and hop-depth control are the Knowledge Graph's concern; the DAG canvas's scale risk is bounded per-table (columns), addressed by D-04's scroll-in-card | Phase 4 (GRAPH-04, GRAPH-08) |
-| motion (animated edge tracing, panel transitions) | Explicitly deferred — this phase's transitions are the same 180ms opacity/stroke-width carry-forward already in production, not new choreography | Phase 7 (MOT-01/02) |
-| light-mode dedicated review | Standing discipline #12's incremental check is covered above (Color section); the deep, comparison-free pass is separate | Phase 6 (THEME-07) |
+| zero-one-many (estate/tenant-scale node counts, hairball onset) | Hairball mitigation + hop-depth control are the Knowledge Graph's concern; DAG scale risk is bounded per-table by D-04's scroll-in-card | Phase 4 (GRAPH-04, GRAPH-08) |
+| motion (animated edge tracing, panel transitions) | Explicitly deferred — this phase's 180ms opacity/stroke-width transitions are a production carry-forward, not new choreography | Phase 7 (MOT-01/02) |
+| light-mode dedicated review | Standing discipline #12's incremental check is covered above (Color section); the deep comparison-free pass is separate | Phase 6 (THEME-07) |
 
-> **Note for the planner:** dismissals above are scoped to this phase only —
-> each has a named owner, not a decision that the state is unnecessary.
+> **Note for the planner:** every dismissal above is scoped to this phase only —
+> each names an owner (or is structurally inapplicable), not a decision that the
+> state is unnecessary. The 31 covered rows are state-coverage truths to lift
+> into `must_haves`.
 
 ---
 
@@ -718,14 +763,14 @@ not the shadcn registry-vetting gate.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** APPROVED by gsd-ui-checker (6/6 dimensions PASS, no recommendations). UI-consideration probe: 44 applicable considerations resolved (31 covered, 13 dismissed, 0 unresolved).
 
 **Pre-populated from:**
 - `03-CONTEXT.md` (D-01 through D-14, "Claude's Discretion" block) — locked

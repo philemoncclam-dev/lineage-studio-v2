@@ -203,4 +203,14 @@ describe('Inspector ColumnCard (DAG-05, TRUST-02)', () => {
     expect(container.querySelector('.xform code')).not.toBeInTheDocument()
     expect(screen.getByText('Passed through from raw · order_id by clean_orders.')).toBeInTheDocument()
   })
+
+  it('omits the Evidence section entirely for a column with no model.evidence entry (missing-evidence fallback)', () => {
+    // clean.order_id has an xform entry but no evidence entry in the fixture.
+    mockSearch = { sel: 'clean', col: 'clean.order_id' }
+    mockModel = columnModel()
+    render(<Inspector />)
+
+    expect(screen.queryByText('Evidence')).not.toBeInTheDocument()
+    expect(screen.queryByText('Inferred from static pattern-matching — not executed.')).not.toBeInTheDocument()
+  })
 })

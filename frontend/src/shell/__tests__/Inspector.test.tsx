@@ -50,6 +50,7 @@ function baseModel(): AppModel {
     colEdges: [],
     ops: [],
     xform: {},
+    evidence: {},
     levels: {},
     levelTable: {},
     notebookCode: {},

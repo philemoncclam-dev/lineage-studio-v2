@@ -2,7 +2,7 @@
 // backend/app/models.py) into the concrete shapes the views render.
 // Composes the pure layout/topology/colour modules alongside it.
 
-import type { LineageGraph } from '../api'
+import type { ColumnMapEvidence, LineageGraph } from '../api'
 import type { Table } from '../data'
 import type { AppModel, TableContext } from './index'
 import { buildGraphLevels } from './graphLayout'
@@ -27,6 +27,7 @@ export function adapt(g: LineageGraph): AppModel {
   // ---- column-level edges + transforms from write-edge column maps ----
   const colEdges: [string, string][] = []
   const xform: Record<string, [string, string]> = {}
+  const evidence: Record<string, ColumnMapEvidence> = {}
   for (const e of g.edges) {
     if (e.kind !== 'writes' || !e.columns.length) continue
     const nb = byId.get(e.source)
@@ -52,6 +53,7 @@ export function adapt(g: LineageGraph): AppModel {
       xform[toCol.key] = m.transform
         ? [m.transform, `Computed as ${m.transform} in ${nb.name}.`]
         : [m.from_column, `Passed through from ${srcLabel.replace('.', ' · ')} by ${nb.name}.`]
+      if (m.evidence) evidence[toCol.key] = m.evidence
     }
   }
 
@@ -82,5 +84,5 @@ export function adapt(g: LineageGraph): AppModel {
     if (typeof src === 'string' && src) notebookCode[nid(n.id)] = src
   }
 
-  return { source: 'live', tables, notebooks, colEdges, ops, xform, levels, levelTable, notebookCode, context }
+  return { source: 'live', tables, notebooks, colEdges, ops, xform, evidence, levels, levelTable, notebookCode, context }
 }

@@ -4,6 +4,7 @@
 // single stable import surface for all four view consumers.
 
 import { createContext, useContext } from 'react'
+import type { ColumnMapEvidence } from '../api'
 import {
   COL_EDGES, LEVELS, LEVEL_TABLE, NOTEBOOKS, NOTEBOOK_CODE, OPS, TABLES, XFORM,
   type NB, type Level, type Table,
@@ -21,6 +22,7 @@ export interface AppModel {
   colEdges: [string, string][]
   ops: [string, string, 'reads' | 'writes'][]
   xform: Record<string, [string, string]>
+  evidence: Record<string, ColumnMapEvidence>
   levels: Record<string, Level>
   levelTable: Record<string, string>
   notebookCode: Record<string, string>
@@ -30,7 +32,7 @@ export interface AppModel {
 export function sampleModel(): AppModel {
   return {
     source: 'sample',
-    tables: TABLES, notebooks: NOTEBOOKS, colEdges: COL_EDGES, ops: OPS, xform: XFORM,
+    tables: TABLES, notebooks: NOTEBOOKS, colEdges: COL_EDGES, ops: OPS, xform: XFORM, evidence: {},
     levels: LEVELS, levelTable: LEVEL_TABLE, notebookCode: NOTEBOOK_CODE,
     context: {
       clean: {

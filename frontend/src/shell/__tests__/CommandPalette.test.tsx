@@ -62,6 +62,7 @@ function baseModel(): AppModel {
     colEdges: [],
     ops: [],
     xform: {},
+    evidence: {},
     levels: {},
     levelTable: {},
     notebookCode: { nb1: 'print("order total")' },

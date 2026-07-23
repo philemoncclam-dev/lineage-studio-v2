@@ -56,7 +56,7 @@ Resolved before requirements, recorded so they aren't relitigated:
 - [x] **DAG-05**: The inspector shows a selected column's transformation expression, plain-English explanation, inputs, and outputs
 - [x] **DAG-06**: The view toggles between table-level and column-level detail
 - [x] **DAG-07**: Layout is deterministic — the same graph produces the same positions across renders
-- [ ] **DAG-08**: Nodes and edges carry semantic labelling for assistive technology
+- [x] **DAG-08**: Nodes and edges carry semantic labelling for assistive technology
 
 ### Knowledge Graph (`GRAPH`)
 
@@ -90,7 +90,7 @@ Backend safety architecture already exists in `WriteSession` — dry-run by defa
 
 - [x] **TRUST-01**: Edges are visually differentiated by provenance — declared by Purview vs inferred by regex parsing
 - [x] **TRUST-02**: The inspector explains why an inferred edge exists, showing the parsed evidence behind it
-- [ ] **TRUST-03**: The UI shows when lineage data was last refreshed
+- [x] **TRUST-03**: The UI shows when lineage data was last refreshed
 
 ### Definitions & Data Products (`CAT`)
 
@@ -183,10 +183,10 @@ dependencies, parallelization, and pitfall guards.
 | DAG-05 | Phase 3 | Complete |
 | DAG-06 | Phase 3 | Complete |
 | DAG-07 | Phase 3 | Complete |
-| DAG-08 | Phase 3 | Pending |
+| DAG-08 | Phase 3 | Complete |
 | TRUST-01 | Phase 3 | Complete |
 | TRUST-02 | Phase 3 | Complete |
-| TRUST-03 | Phase 3 | Pending |
+| TRUST-03 | Phase 3 | Complete |
 | GRAPH-01 | Phase 4 | Pending |
 | GRAPH-02 | Phase 4 | Pending |
 | GRAPH-03 | Phase 4 | Pending |

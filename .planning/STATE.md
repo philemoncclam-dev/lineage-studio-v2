@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: lineage-dag-canvas-rebuild
 status: executing
-stopped_at: Completed 03-04-PLAN.md
-last_updated: "2026-07-23T23:44:14.130Z"
+stopped_at: Completed 03-06-PLAN.md
+last_updated: "2026-07-23T23:51:18.850Z"
 last_activity: 2026-07-23
 last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 20
-  completed_plans: 17
+  completed_plans: 18
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 ## Current Position
 
 Phase: 03 (lineage-dag-canvas-rebuild) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-07-23 — Phase 03 execution started
 
-Progress: [█████████░] 85%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -75,6 +75,7 @@ Progress: [█████████░] 85%
 | Phase 03 P02 | 15min | 3 tasks | 4 files |
 | Phase 03 P03 | 3min | 3 tasks | 7 files |
 | Phase 03 P04 | 25min | 3 tasks | 6 files |
+| Phase 03 P06 | 12min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -125,6 +126,9 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: 03-03: Exported TABLE_NODE_TYPE/NOTEBOOK_NODE_TYPE/LINEAGE_EDGE_TYPE constants from toXyflow.ts so 03-05's nodeTypes/edgeTypes registration can't drift from the literal type-name strings
 - [Phase ?]: 03-04: Connections counts use direct model.colEdges neighbours, not a full transitive trace() walk
 - [Phase ?]: 03-04: Provenance line and Evidence header/caption use inline style with CSS custom properties instead of new components.css selectors, since the plan's files_modified scope excludes the stylesheet
+- [Phase ?]: 03-06: useLineageKeyboardNav reads document.activeElement's data-lineage-focus attribute as the roving-tabindex source of truth instead of a separate tracked ref
+- [Phase ?]: 03-06: resolveNextFocus trusts caller-supplied targets array ordering (rank/card/row) rather than re-deriving it — 03-07 owns building that list
+- [Phase ?]: 03-06: an unconnected row's ArrowRight/Left resolves to null (no rank fallback) — only headers rank-traverse, only connected rows path-walk, per UI-SPEC
 
 ### Pending Todos
 
@@ -149,6 +153,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-23T23:44:14.121Z
-Stopped at: Completed 03-04-PLAN.md
+Last session: 2026-07-23T23:51:18.842Z
+Stopped at: Completed 03-06-PLAN.md
 Resume file: None

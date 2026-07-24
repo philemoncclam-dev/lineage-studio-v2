@@ -144,6 +144,42 @@ describe('LineageDagView', () => {
     expect(items[0].textContent).toBe('raw_orders.order_id → orders_clean.order_id, derives, inferred via clean_orders')
   })
 
+  it('hovering a column previews the trace: sel on the anchor, hot on the traced peer, dim on unrelated cards/edges (DAG-03/DAG-04/D-05/D-06)', async () => {
+    await renderView(fixtureModel())
+    await screen.findByRole('group', { name: /Lineage graph:/ })
+
+    const rawRow = document.querySelector('[data-col="raw.order_id"]') as HTMLElement
+    const cleanRow = document.querySelector('[data-col="clean.order_id"]') as HTMLElement
+    expect(rawRow).toBeTruthy()
+    expect(cleanRow).toBeTruthy()
+
+    fireEvent.mouseEnter(rawRow)
+
+    // Anchor (hovered) column: 'sel', never 'dim'/'hot'.
+    expect(rawRow.className).toContain('sel')
+    expect(rawRow.className).not.toContain('dim')
+    // Traced peer (the other end of the derives edge), not the anchor: 'hot'.
+    expect(cleanRow.className).toContain('hot')
+    expect(cleanRow.className).not.toContain('sel')
+    // The notebook owns no columns, so it is never part of a column trace —
+    // its whole card dims as an unrelated unit while the trace is active.
+    const nbCard = document.querySelector('[data-node="nb"]')?.closest('.ls-node') as HTMLElement
+    expect(nbCard.className).toContain('dim')
+    // Note: xyflow only renders <path> elements for edges whose endpoint
+    // nodes have been measured (via ResizeObserver), which jsdom's no-op
+    // mock (test/setup.ts) never fires — so .react-flow__edges stays empty
+    // under this harness (same constraint LineageEdge.test.tsx works around
+    // by testing the edge component in isolation, not through a full
+    // <ReactFlow> mount). The edges[].data.traced 'on'/'dim' wiring itself
+    // is exercised directly in LineageDagView's edges useMemo and rendered
+    // by LineageEdge.test.tsx's lineageEdgeClass cases.
+
+    fireEvent.mouseLeave(rawRow)
+    // Hover ends -> no persisted selection in this fixture -> trace clears.
+    expect(rawRow.className).not.toContain('sel')
+    expect(cleanRow.className).not.toContain('hot')
+  })
+
   it('renders the empty state and mounts no xyflow canvas when tables and notebooks are both empty', async () => {
     await renderView(fixtureModel({ tables: [], notebooks: [], colEdges: [], ops: [] }))
 

@@ -1,0 +1,204 @@
+/* ============================================================
+   Design tokens — macOS-esque, light. Single source of truth.
+   ============================================================ */
+:root {
+  /* Surfaces */
+  --bg: #ffffff;
+  --bg-subtle: #f4f4f5;
+  --surface: #ffffff;
+  --surface-2: #f4f4f5;
+  --surface-3: #ececee;
+
+  /* Near-black primary (pill) button */
+  --btn-primary-bg: #1a1a1a;
+  --btn-primary-bg-hover: #2a2a2a;
+  --btn-primary-text: #ffffff;
+
+  /* Badge pastel tints */
+  --badge-success-bg: #e7f6ec;
+  --badge-success-text: #1a7f37;
+  --badge-purple-bg: #f0ebfd;
+  --badge-purple-text: #7c3aed;
+
+  /* Accent / interactive */
+  --accent: #4a90e2;
+  --accent-hover: #3a7bc8;
+  --accent-active: #5ac8fa;
+  --accent-tint: #e8f2fc;
+  --accent-ring: rgba(74, 144, 226, 0.35);
+
+  /* Text */
+  --text: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-tertiary: #aeaeb2;
+
+  /* Borders / dividers */
+  --border: #e5e5ea;
+  --border-strong: #d2d2d7;
+
+  /* Status */
+  --green: #34c759;
+  --red: #ff3b30;
+  --red-tint: #fff0ef;
+
+  /* Lineage edges */
+  --edge: #c7c7cc;
+  --edge-active: #5ac8fa;
+
+  /* Node-type hierarchy accents (desaturated, used as small dots) */
+  --t-layer: #6e7b8f;
+  --t-object: #4a90e2;
+  --t-group: #5aa9a0;
+  --t-attr: #8e8e93;
+
+  /* Radii — bumped up for a rounder, softer feel */
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  --r-card: 20px;
+  --r-modal: 22px;
+  --r-pill: 999px;
+
+  /* Shadows — soft, diffuse, low opacity */
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --sh-2: 0 6px 24px rgba(0, 0, 0, 0.05);
+  --sh-3: 0 18px 50px rgba(0, 0, 0, 0.10);
+
+  /* Motion */
+  --ease: 200ms cubic-bezier(0.2, 0.6, 0.2, 1);
+  --ease-fast: 150ms cubic-bezier(0.2, 0.6, 0.2, 1);
+
+  /* Glass */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-blur: saturate(180%) blur(20px);
+
+  /* Spacing scale (reference; used as literals 4/8/12/16/20/24/32) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* Canonical UI font — the same stack the shared Button (.ui-btn, which uses
+     font-family: inherit) renders in. Used everywhere so the whole app matches. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro", "SF Pro Text",
+    "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-sans);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ============================================================
+   Dark theme — overrides the token values above when
+   <html data-theme="dark"> is set (see src/theme.tsx). Only the
+   surface/text/border/accent-tint/shadow/glass tokens change; every
+   component reads them via var(), so no component CSS needs to change.
+   ============================================================ */
+:root[data-theme="dark"] {
+  --bg: #1c1c1e;
+  --bg-subtle: #151517;
+  --surface: #242426;
+  --surface-2: #2c2c2e;
+  --surface-3: #333335;
+
+  /* Near-white primary (pill) button in dark mode */
+  --btn-primary-bg: #f5f5f7;
+  --btn-primary-bg-hover: #ffffff;
+  --btn-primary-text: #1a1a1a;
+
+  /* Badge pastel tints (dark: muted tint bg, brighter text) */
+  --badge-success-bg: #16301f;
+  --badge-success-text: #4ade80;
+  --badge-purple-bg: #2a2140;
+  --badge-purple-text: #c4b5fd;
+
+  --accent: #4a90e2;
+  --accent-hover: #5a9ee8;
+  --accent-active: #5ac8fa;
+  --accent-tint: #22344a;
+  --accent-ring: rgba(90, 160, 240, 0.45);
+
+  --text: #f5f5f7;
+  --text-secondary: #a0a0a6;
+  --text-tertiary: #6e6e73;
+
+  --border: #3a3a3c;
+  --border-strong: #48484a;
+
+  --green: #34c759;
+  --red: #ff453a;
+  --red-tint: #3a1f1d;
+
+  --edge: #48484a;
+  --edge-active: #5ac8fa;
+
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sh-2: 0 6px 24px rgba(0, 0, 0, 0.5);
+  --sh-3: 0 18px 50px rgba(0, 0, 0, 0.6);
+
+  --glass-bg: rgba(30, 30, 32, 0.72);
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg-subtle);
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+/* Native form controls don't inherit font-family by default, so without this
+   they fall back to the UA font and look out of place next to the Button. Make
+   every control match the app font (monospace fields opt back out explicitly). */
+input,
+button,
+textarea,
+select {
+  font-family: inherit;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+/* Refined, quiet scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--r-pill);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+  background-clip: content-box;
+}
+
+/* Accessible focus ring */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}

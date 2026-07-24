@@ -12,11 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GraphRouteRouteImport } from './routes/graph/route'
 import { Route as LineageRouteRouteImport } from './routes/lineage/route'
-import { Route as ModelRouteRouteImport } from './routes/model/route'
 import { Route as PurviewRouteRouteImport } from './routes/purview/route'
 import { Route as GraphIndexRouteImport } from './routes/graph/index'
-import { Route as ModelIndexRouteImport } from './routes/model/index'
-import { Route as ModelModelIdRouteImport } from './routes/model/$modelId'
+import { Route as ModelIndexRouteImport } from './routes/model.index'
+import { Route as ModelSplatRouteImport } from './routes/model.$'
 import { Route as PurviewDataProductsRouteImport } from './routes/purview/data-products'
 import { Route as PurviewDefinitionsRouteImport } from './routes/purview/definitions'
 import { Route as PurviewPushRouteImport } from './routes/purview/push'
@@ -40,11 +39,6 @@ const LineageRouteRoute = LineageRouteRouteImport.update({
   path: '/lineage',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ModelRouteRoute = ModelRouteRouteImport.update({
-  id: '/model',
-  path: '/model',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PurviewRouteRoute = PurviewRouteRouteImport.update({
   id: '/purview',
   path: '/purview',
@@ -56,14 +50,14 @@ const GraphIndexRoute = GraphIndexRouteImport.update({
   getParentRoute: () => GraphRouteRoute,
 } as any)
 const ModelIndexRoute = ModelIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ModelRouteRoute,
+  id: '/model/',
+  path: '/model/',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ModelModelIdRoute = ModelModelIdRouteImport.update({
-  id: '/$modelId',
-  path: '/$modelId',
-  getParentRoute: () => ModelRouteRoute,
+const ModelSplatRoute = ModelSplatRouteImport.update({
+  id: '/model/$',
+  path: '/model/$',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const PurviewDataProductsRoute = PurviewDataProductsRouteImport.update({
   id: '/data-products',
@@ -108,9 +102,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/graph': typeof GraphRouteRouteWithChildren
   '/lineage': typeof LineageRouteRouteWithChildren
-  '/model': typeof ModelRouteRouteWithChildren
   '/purview': typeof PurviewRouteRouteWithChildren
-  '/model/$modelId': typeof ModelModelIdRoute
+  '/model/$': typeof ModelSplatRoute
   '/purview/data-products': typeof PurviewDataProductsRoute
   '/purview/definitions': typeof PurviewDefinitionsRoute
   '/purview/push': typeof PurviewPushRoute
@@ -125,7 +118,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/lineage': typeof LineageRouteRouteWithChildren
   '/purview': typeof PurviewRouteRouteWithChildren
-  '/model/$modelId': typeof ModelModelIdRoute
+  '/model/$': typeof ModelSplatRoute
   '/purview/data-products': typeof PurviewDataProductsRoute
   '/purview/definitions': typeof PurviewDefinitionsRoute
   '/purview/push': typeof PurviewPushRoute
@@ -141,9 +134,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/graph': typeof GraphRouteRouteWithChildren
   '/lineage': typeof LineageRouteRouteWithChildren
-  '/model': typeof ModelRouteRouteWithChildren
   '/purview': typeof PurviewRouteRouteWithChildren
-  '/model/$modelId': typeof ModelModelIdRoute
+  '/model/$': typeof ModelSplatRoute
   '/purview/data-products': typeof PurviewDataProductsRoute
   '/purview/definitions': typeof PurviewDefinitionsRoute
   '/purview/push': typeof PurviewPushRoute
@@ -160,9 +152,8 @@ export interface FileRouteTypes {
     | '/'
     | '/graph'
     | '/lineage'
-    | '/model'
     | '/purview'
-    | '/model/$modelId'
+    | '/model/$'
     | '/purview/data-products'
     | '/purview/definitions'
     | '/purview/push'
@@ -177,7 +168,7 @@ export interface FileRouteTypes {
     | '/'
     | '/lineage'
     | '/purview'
-    | '/model/$modelId'
+    | '/model/$'
     | '/purview/data-products'
     | '/purview/definitions'
     | '/purview/push'
@@ -192,9 +183,8 @@ export interface FileRouteTypes {
     | '/'
     | '/graph'
     | '/lineage'
-    | '/model'
     | '/purview'
-    | '/model/$modelId'
+    | '/model/$'
     | '/purview/data-products'
     | '/purview/definitions'
     | '/purview/push'
@@ -210,8 +200,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   GraphRouteRoute: typeof GraphRouteRouteWithChildren
   LineageRouteRoute: typeof LineageRouteRouteWithChildren
-  ModelRouteRoute: typeof ModelRouteRouteWithChildren
   PurviewRouteRoute: typeof PurviewRouteRouteWithChildren
+  ModelSplatRoute: typeof ModelSplatRoute
+  ModelIndexRoute: typeof ModelIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -237,13 +228,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LineageRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/model': {
-      id: '/model'
-      path: '/model'
-      fullPath: '/model'
-      preLoaderRoute: typeof ModelRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/purview': {
       id: '/purview'
       path: '/purview'
@@ -260,17 +244,17 @@ declare module '@tanstack/react-router' {
     }
     '/model/': {
       id: '/model/'
-      path: '/'
+      path: '/model'
       fullPath: '/model/'
       preLoaderRoute: typeof ModelIndexRouteImport
-      parentRoute: typeof ModelRouteRoute
+      parentRoute: typeof rootRouteImport
     }
-    '/model/$modelId': {
-      id: '/model/$modelId'
-      path: '/$modelId'
-      fullPath: '/model/$modelId'
-      preLoaderRoute: typeof ModelModelIdRouteImport
-      parentRoute: typeof ModelRouteRoute
+    '/model/$': {
+      id: '/model/$'
+      path: '/model/$'
+      fullPath: '/model/$'
+      preLoaderRoute: typeof ModelSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/purview/data-products': {
       id: '/purview/data-products'
@@ -354,20 +338,6 @@ const LineageRouteRouteWithChildren = LineageRouteRoute._addFileChildren(
   LineageRouteRouteChildren,
 )
 
-interface ModelRouteRouteChildren {
-  ModelModelIdRoute: typeof ModelModelIdRoute
-  ModelIndexRoute: typeof ModelIndexRoute
-}
-
-const ModelRouteRouteChildren: ModelRouteRouteChildren = {
-  ModelModelIdRoute: ModelModelIdRoute,
-  ModelIndexRoute: ModelIndexRoute,
-}
-
-const ModelRouteRouteWithChildren = ModelRouteRoute._addFileChildren(
-  ModelRouteRouteChildren,
-)
-
 interface PurviewRouteRouteChildren {
   PurviewDataProductsRoute: typeof PurviewDataProductsRoute
   PurviewDefinitionsRoute: typeof PurviewDefinitionsRoute
@@ -388,8 +358,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   GraphRouteRoute: GraphRouteRouteWithChildren,
   LineageRouteRoute: LineageRouteRouteWithChildren,
-  ModelRouteRoute: ModelRouteRouteWithChildren,
   PurviewRouteRoute: PurviewRouteRouteWithChildren,
+  ModelSplatRoute: ModelSplatRoute,
+  ModelIndexRoute: ModelIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,0 +1,230 @@
+/* ============================================================
+   Reusable component library (macOS-esque). Used app-wide.
+   ============================================================ */
+
+/* ---- Button ---- */
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--ease-fast), border-color var(--ease-fast),
+    box-shadow var(--ease-fast), transform var(--ease-fast), opacity var(--ease-fast);
+}
+.ui-btn:active {
+  transform: scale(0.97);
+}
+.ui-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+/* Loading: keep the button legible (not fully dimmed like a plain disabled
+   state) and show a spinner so async actions read as "working". */
+.ui-btn.is-loading {
+  opacity: 0.85;
+  cursor: progress;
+}
+.ui-btn-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: ui-btn-spin 0.6s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes ui-btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* primary — near-black pill */
+.ui-btn--primary {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-radius: var(--r-pill);
+  padding: 10px 18px;
+  box-shadow: var(--sh-2);
+}
+.ui-btn--primary:hover:not(:disabled) {
+  background: var(--btn-primary-bg-hover);
+}
+
+/* secondary (default surface) */
+.ui-btn--secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-strong);
+  box-shadow: var(--sh-1);
+}
+.ui-btn--secondary:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--text-tertiary);
+}
+
+/* subtle / tinted */
+.ui-btn--subtle {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.ui-btn--subtle:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+/* success / danger */
+.ui-btn--success {
+  background: var(--green);
+  color: #fff;
+}
+.ui-btn--success:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+.ui-btn--danger {
+  background: transparent;
+  color: var(--red);
+  border-color: transparent;
+}
+.ui-btn--danger:hover:not(:disabled) {
+  background: var(--red-tint);
+}
+
+/* on a dark/glass toolbar */
+.ui-btn--toolbar {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.ui-btn--toolbar:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+/* ---- Icon button ---- */
+.ui-iconbtn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--ease-fast), color var(--ease-fast),
+    transform var(--ease-fast);
+}
+.ui-iconbtn:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.ui-iconbtn:active {
+  transform: scale(0.92);
+}
+
+/* ---- Inputs ---- */
+.ui-input,
+.ui-select,
+.ui-textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  padding: 9px 12px;
+  transition: border-color var(--ease-fast), box-shadow var(--ease-fast);
+}
+.ui-input::placeholder,
+.ui-textarea::placeholder {
+  color: var(--text-tertiary);
+}
+.ui-input:focus,
+.ui-select:focus,
+.ui-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.ui-textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+.ui-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236e6e73' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+/* ---- Field (label + control) ---- */
+.ui-field {
+  display: block;
+  margin-bottom: 16px;
+}
+.ui-field > .ui-field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+/* ---- Badge / pill ---- */
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--surface-3);
+  border-radius: var(--r-pill);
+  padding: 2px 8px;
+  line-height: 1.4;
+}
+.ui-badge--accent {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+.ui-badge--success {
+  color: var(--badge-success-text);
+  background: var(--badge-success-bg);
+}
+.ui-badge--purple {
+  color: var(--badge-purple-text);
+  background: var(--badge-purple-bg);
+}
+
+/* ---- Panel ---- */
+.ui-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  box-shadow: var(--sh-2);
+}
+
+/* ---- Divider ---- */
+.ui-divider {
+  height: 1px;
+  background: var(--border);
+  border: none;
+  margin: 0;
+}

@@ -457,3 +457,43 @@ export async function fetchFabricTables(
   if (!res.ok) return detail(res, 'fabric tables')
   return res.json()
 }
+
+// --- Fabric toolkit: notebook sandbox (backend/app/sandbox/router.py) ------
+// Runs a notebook in an isolated subprocess — scrubbed env, no Fabric creds,
+// no writes to real Fabric. M2a returns a stub (static) result; M2b swaps in
+// real local-Spark execution behind the same shape.
+
+export interface SandboxCellResult {
+  index: number
+  status: 'ok' | 'error' | 'skipped'
+  reads: string[]
+  writes: string[]
+  stdout: string
+  error: string | null
+}
+
+export interface SandboxRunResult {
+  ok: boolean
+  engine: 'stub' | 'spark'
+  cells: SandboxCellResult[]
+  reads: string[]
+  writes: string[]
+  log: string[]
+  saw_credentials: boolean
+  error: string | null
+}
+
+export async function runSandbox(body: {
+  name?: string
+  workspace_id?: string
+  item_id?: string
+  cells?: string[]
+}): Promise<SandboxRunResult> {
+  const res = await fetch(`${BASE}/fabric/sandbox/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) return detail(res, 'sandbox run')
+  return res.json()
+}

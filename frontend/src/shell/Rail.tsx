@@ -22,11 +22,11 @@ const ICONS: Record<RailIconName, ReactNode> = {
   layout: (
     <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1.5" /><path d="M3.5 10h17M10 10v10.5" /></svg>
   ),
-  trace: (
-    <svg viewBox="0 0 24 24"><circle cx="5" cy="6" r="2" /><circle cx="19" cy="18" r="2" /><path d="M7 6h6a4 4 0 0 1 4 4v2a4 4 0 0 0 4 4h-2" /></svg>
+  explore: (
+    <svg viewBox="0 0 24 24"><path d="M4 6h4l2-2h10v14a2 2 0 0 1-2 2H4z" /><path d="M4 6v12" /></svg>
   ),
-  push: (
-    <svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
+  sandbox: (
+    <svg viewBox="0 0 24 24"><path d="m6 3 6 4 6-4M6 3v6l6 4 6-4V3M12 13v8" /><path d="m6 9-2 1.2v6L10 20" /></svg>
   ),
   definitions: (
     <svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z" /><path d="M15 3v4h4M9 12h6M9 16h6" /></svg>
@@ -47,11 +47,10 @@ const ICONS: Record<RailIconName, ReactNode> = {
 
 export default function Rail({ items }: { items: RailItem[] }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  // First-match-wins: graph/lineage items intentionally share a `to` this
-  // phase (no distinct sub-page exists yet, see railConfig.ts) — this keeps
-  // "current destination" a singular concept even when several config
-  // entries resolve to the same route, so accent never marks more than one
-  // item at once.
+  // First-match-wins: graph items intentionally share a `to` this phase (no
+  // distinct sub-page exists yet, see railConfig.ts) — this keeps "current
+  // destination" a singular concept even when several config entries resolve
+  // to the same route, so accent never marks more than one item at once.
   const activeKey = items.find((it) => it.to === pathname)?.key
 
   return (

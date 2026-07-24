@@ -25,7 +25,6 @@ const mockSelect = vi.fn()
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
-  getRouteApi: () => ({ useLoaderData: () => ({ graph: null }) }),
 }))
 
 vi.mock('../../selection/useSelection', () => ({
@@ -100,7 +99,7 @@ describe('CommandPalette (NAV-01, NAV-03)', () => {
     expect(screen.getByText('No matches for "zzzznomatch".')).toBeInTheDocument()
   })
 
-  it('selecting a table result performs a real navigation to the lineage route with sel set', () => {
+  it('selecting a table result performs a real navigation to the graph with sel set', () => {
     const onOpenChange = vi.fn()
     render(<CommandPalette open onOpenChange={onOpenChange} />)
     const input = screen.getByPlaceholderText('Search tables, columns, notebooks, code…')
@@ -110,8 +109,7 @@ describe('CommandPalette (NAV-01, NAV-03)', () => {
 
     expect(mockNavigate).toHaveBeenCalledTimes(1)
     const call = mockNavigate.mock.calls[0][0]
-    expect(call.to).toBe('/lineage/$workspace/$lakehouse/$table')
-    expect(call.params).toEqual({ workspace: 'sample', lakehouse: 'sample', table: 't1' })
+    expect(call.to).toBe('/graph')
     expect(call.search({})).toEqual({ sel: 't1', col: undefined })
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })

@@ -13,14 +13,10 @@
 // focus-restore-on-close (NAV-03, "Don't Hand-Roll").
 import { useEffect, useMemo, useState } from 'react'
 import { Command } from 'cmdk'
-import { getRouteApi, useNavigate } from '@tanstack/react-router'
-import type { LineageGraph } from '../api'
-import { lineageTarget } from '../routes/graph/-lineageLink'
+import { useNavigate } from '@tanstack/react-router'
 import { useModel, type AppModel } from '../model'
 import { useSelection } from '../selection/useSelection'
 import { GROUP_LABEL, GROUP_ORDER, hl, search, type SearchResult } from './search'
-
-const rootRoute = getRouteApi('__root__')
 
 export interface CommandPaletteProps {
   open: boolean
@@ -38,7 +34,6 @@ function firstWrittenTable(model: AppModel, notebookId: string): string | undefi
 
 export default function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const model = useModel()
-  const { graph } = rootRoute.useLoaderData() as { graph: LineageGraph | null }
   const navigate = useNavigate()
   const { select } = useSelection()
   const [query, setQuery] = useState('')
@@ -52,22 +47,20 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
 
   const results = useMemo(() => search(model, query), [model, query])
 
+  // The retired Lineage-mode DAG was the old jump target; picks now land in
+  // the graph with the result selected (?sel/?col).
   const pick = (r: SearchResult) => {
     if ((r.kind === 'table' || r.kind === 'column') && r.tableId) {
-      const target = lineageTarget(graph, r.tableId)
       const tableId = r.tableId
       void navigate({
-        to: '/lineage/$workspace/$lakehouse/$table',
-        params: { workspace: target.workspace, lakehouse: target.lakehouse, table: target.table },
+        to: '/graph',
         search: (prev: Record<string, unknown>) => ({ ...prev, sel: tableId, col: r.colKey }),
       })
     } else if ((r.kind === 'notebook' || r.kind === 'code') && r.notebookId) {
       const tableId = firstWrittenTable(model, r.notebookId)
       if (tableId) {
-        const target = lineageTarget(graph, tableId)
         void navigate({
-          to: '/lineage/$workspace/$lakehouse/$table',
-          params: { workspace: target.workspace, lakehouse: target.lakehouse, table: target.table },
+          to: '/graph',
           search: (prev: Record<string, unknown>) => ({ ...prev, sel: tableId, col: undefined }),
         })
       } else {

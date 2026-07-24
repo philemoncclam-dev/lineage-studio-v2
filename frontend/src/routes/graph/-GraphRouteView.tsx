@@ -5,19 +5,16 @@
 // what wires the drill state itself to the URL). This wrapper only adapts
 // its one real prop, onOpenLineage, to a router navigation.
 import { useNavigate } from '@tanstack/react-router'
-import { Route as RootRoute } from '../__root'
 import GraphView from '../../views/GraphView'
-import { lineageTarget } from './-lineageLink'
 
 export default function GraphRouteView() {
-  const { graph } = RootRoute.useLoaderData()
   const navigate = useNavigate()
 
+  // The retired Lineage-mode DAG was the old destination; "open lineage" now
+  // resolves in-place as a graph selection (?sel/?col).
   const onOpenLineage = (tableId: string, colKey?: string) => {
-    const target = lineageTarget(graph, tableId)
     void navigate({
-      to: '/lineage/$workspace/$lakehouse/$table',
-      params: { workspace: target.workspace, lakehouse: target.lakehouse, table: target.table },
+      to: '/graph',
       search: (prev: Record<string, unknown>) => ({ ...prev, sel: tableId, col: colKey }),
     })
   }

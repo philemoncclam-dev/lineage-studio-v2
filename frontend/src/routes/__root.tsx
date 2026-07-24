@@ -40,8 +40,7 @@ function RootComponent() {
   const model = graph ? adapt(graph) : sampleModel()
   // The snapshot banner is only meaningful in the views that render the graph;
   // hide it inside the modelling tab (where the snapshot came from) and purview.
-  const showBanner =
-    !!snapshotLabel && (pathname.startsWith('/graph') || pathname.startsWith('/lineage'))
+  const showBanner = !!snapshotLabel && pathname.startsWith('/graph')
   return (
     <ModelProvider value={model}>
       <AppShell>

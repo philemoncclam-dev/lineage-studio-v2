@@ -6,9 +6,9 @@
 // selection clicks never flood browser history (SHELL-06 vs D-08).
 //
 // Reads via the generic `useSearch({ strict: false })` rather than a
-// specific route's `Route.useSearch()` so this one hook works from both the
-// graph and lineage modes (both declare the identical selectionSchema on
-// their mode-level route, see routes/graph/route.tsx + routes/lineage/route.tsx).
+// specific route's `Route.useSearch()` so this one hook works from any mode
+// that declares the selectionSchema on its mode-level route (see
+// routes/graph/route.tsx).
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { z } from 'zod'
 
@@ -31,10 +31,9 @@ export function useSelection(): UseSelectionResult {
   const navigate = useNavigate()
 
   const select = (nodeId?: string, colKey?: string) => {
-    // `navigate()` without a `from` (this hook is used from both /graph and
-    // /lineage) can't statically narrow the search-param type across every
-    // route in the tree; the runtime shape is exactly `selectionSchema`,
-    // which both mode routes declare via validateSearch.
+    // `navigate()` without a `from` can't statically narrow the search-param
+    // type across every route in the tree; the runtime shape is exactly
+    // `selectionSchema`, which the graph mode route declares via validateSearch.
     void navigate({
       search: ((prev: Record<string, unknown>) => ({ ...prev, sel: nodeId, col: colKey })) as never,
       replace: true,

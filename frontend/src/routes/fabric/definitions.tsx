@@ -1,19 +1,18 @@
-// /purview/definitions — thin page wrapper hosting the existing
-// DefinitionsImport overlay (D-03: Definitions Import is the one Purview
-// toolkit destination with a real working view already). A table picker is
-// new here — the old entry point was buried inside GraphView's TableDetail
-// panel; this route surfaces it as its own first-class destination.
+// /fabric/definitions — hosts the DefinitionsImport overlay (rescued from the
+// retired Purview mode). A table picker matches a catalog-backed table's
+// columns against a spreadsheet of definitions.
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useModel } from '../../model'
 import DefinitionsImport from '../../views/DefinitionsImport'
+import '../../views/purview.css'
 
-export const Route = createFileRoute('/purview/definitions')({
+export const Route = createFileRoute('/fabric/definitions')({
   component: DefinitionsRoute,
 })
 
 // A table's id is its Purview GUID in the live model; sample ids are names
-// with nothing to write to (mirrors PurviewPanel.tsx's isGuid check).
+// with nothing to write to (mirrors the old PurviewPanel isGuid check).
 const isGuid = (id: string) => /^[0-9a-f-]{36}$/i.test(id)
 
 function DefinitionsRoute() {

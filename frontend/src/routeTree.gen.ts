@@ -10,10 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as FabricRouteRouteImport } from './routes/fabric/route'
 import { Route as GraphRouteRouteImport } from './routes/graph/route'
-import { Route as LineageRouteRouteImport } from './routes/lineage/route'
 import { Route as ProductsRouteRouteImport } from './routes/products/route'
-import { Route as PurviewRouteRouteImport } from './routes/purview/route'
+import { Route as FabricDefinitionsRouteImport } from './routes/fabric/definitions'
+import { Route as FabricExploreRouteImport } from './routes/fabric/explore'
+import { Route as FabricSandboxRouteImport } from './routes/fabric/sandbox'
 import { Route as GraphIndexRouteImport } from './routes/graph/index'
 import { Route as ModelIndexRouteImport } from './routes/model.index'
 import { Route as ModelSplatRouteImport } from './routes/model.$'
@@ -22,17 +24,18 @@ import { Route as ProductsProductIdRouteImport } from './routes/products/$produc
 import { Route as ProductsDomainsRouteImport } from './routes/products/domains'
 import { Route as ProductsNewRouteImport } from './routes/products/new'
 import { Route as ProductsRequestsRouteImport } from './routes/products/requests'
-import { Route as PurviewDataProductsRouteImport } from './routes/purview/data-products'
-import { Route as PurviewDefinitionsRouteImport } from './routes/purview/definitions'
-import { Route as PurviewPushRouteImport } from './routes/purview/push'
 import { Route as GraphWorkspaceIndexRouteImport } from './routes/graph/$workspace.index'
 import { Route as GraphWorkspaceLakehouseIndexRouteImport } from './routes/graph/$workspace.$lakehouse.index'
 import { Route as GraphWorkspaceLakehouseTableRouteImport } from './routes/graph/$workspace.$lakehouse.$table'
-import { Route as LineageWorkspaceLakehouseTableRouteImport } from './routes/lineage/$workspace.$lakehouse.$table'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FabricRouteRoute = FabricRouteRouteImport.update({
+  id: '/fabric',
+  path: '/fabric',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GraphRouteRoute = GraphRouteRouteImport.update({
@@ -40,20 +43,25 @@ const GraphRouteRoute = GraphRouteRouteImport.update({
   path: '/graph',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LineageRouteRoute = LineageRouteRouteImport.update({
-  id: '/lineage',
-  path: '/lineage',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ProductsRouteRoute = ProductsRouteRouteImport.update({
   id: '/products',
   path: '/products',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PurviewRouteRoute = PurviewRouteRouteImport.update({
-  id: '/purview',
-  path: '/purview',
-  getParentRoute: () => rootRouteImport,
+const FabricDefinitionsRoute = FabricDefinitionsRouteImport.update({
+  id: '/definitions',
+  path: '/definitions',
+  getParentRoute: () => FabricRouteRoute,
+} as any)
+const FabricExploreRoute = FabricExploreRouteImport.update({
+  id: '/explore',
+  path: '/explore',
+  getParentRoute: () => FabricRouteRoute,
+} as any)
+const FabricSandboxRoute = FabricSandboxRouteImport.update({
+  id: '/sandbox',
+  path: '/sandbox',
+  getParentRoute: () => FabricRouteRoute,
 } as any)
 const GraphIndexRoute = GraphIndexRouteImport.update({
   id: '/',
@@ -95,21 +103,6 @@ const ProductsRequestsRoute = ProductsRequestsRouteImport.update({
   path: '/requests',
   getParentRoute: () => ProductsRouteRoute,
 } as any)
-const PurviewDataProductsRoute = PurviewDataProductsRouteImport.update({
-  id: '/data-products',
-  path: '/data-products',
-  getParentRoute: () => PurviewRouteRoute,
-} as any)
-const PurviewDefinitionsRoute = PurviewDefinitionsRouteImport.update({
-  id: '/definitions',
-  path: '/definitions',
-  getParentRoute: () => PurviewRouteRoute,
-} as any)
-const PurviewPushRoute = PurviewPushRouteImport.update({
-  id: '/push',
-  path: '/push',
-  getParentRoute: () => PurviewRouteRoute,
-} as any)
 const GraphWorkspaceIndexRoute = GraphWorkspaceIndexRouteImport.update({
   id: '/$workspace/',
   path: '/$workspace/',
@@ -127,151 +120,132 @@ const GraphWorkspaceLakehouseTableRoute =
     path: '/$workspace/$lakehouse/$table',
     getParentRoute: () => GraphRouteRoute,
   } as any)
-const LineageWorkspaceLakehouseTableRoute =
-  LineageWorkspaceLakehouseTableRouteImport.update({
-    id: '/$workspace/$lakehouse/$table',
-    path: '/$workspace/$lakehouse/$table',
-    getParentRoute: () => LineageRouteRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/fabric': typeof FabricRouteRouteWithChildren
   '/graph': typeof GraphRouteRouteWithChildren
-  '/lineage': typeof LineageRouteRouteWithChildren
   '/products': typeof ProductsRouteRouteWithChildren
-  '/purview': typeof PurviewRouteRouteWithChildren
+  '/fabric/definitions': typeof FabricDefinitionsRoute
+  '/fabric/explore': typeof FabricExploreRoute
+  '/fabric/sandbox': typeof FabricSandboxRoute
   '/model/$': typeof ModelSplatRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/products/domains': typeof ProductsDomainsRoute
   '/products/new': typeof ProductsNewRoute
   '/products/requests': typeof ProductsRequestsRoute
-  '/purview/data-products': typeof PurviewDataProductsRoute
-  '/purview/definitions': typeof PurviewDefinitionsRoute
-  '/purview/push': typeof PurviewPushRoute
   '/graph/': typeof GraphIndexRoute
   '/model/': typeof ModelIndexRoute
   '/products/': typeof ProductsIndexRoute
   '/graph/$workspace/': typeof GraphWorkspaceIndexRoute
   '/graph/$workspace/$lakehouse/$table': typeof GraphWorkspaceLakehouseTableRoute
-  '/lineage/$workspace/$lakehouse/$table': typeof LineageWorkspaceLakehouseTableRoute
   '/graph/$workspace/$lakehouse/': typeof GraphWorkspaceLakehouseIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/lineage': typeof LineageRouteRouteWithChildren
-  '/purview': typeof PurviewRouteRouteWithChildren
+  '/fabric': typeof FabricRouteRouteWithChildren
+  '/fabric/definitions': typeof FabricDefinitionsRoute
+  '/fabric/explore': typeof FabricExploreRoute
+  '/fabric/sandbox': typeof FabricSandboxRoute
   '/model/$': typeof ModelSplatRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/products/domains': typeof ProductsDomainsRoute
   '/products/new': typeof ProductsNewRoute
   '/products/requests': typeof ProductsRequestsRoute
-  '/purview/data-products': typeof PurviewDataProductsRoute
-  '/purview/definitions': typeof PurviewDefinitionsRoute
-  '/purview/push': typeof PurviewPushRoute
   '/graph': typeof GraphIndexRoute
   '/model': typeof ModelIndexRoute
   '/products': typeof ProductsIndexRoute
   '/graph/$workspace': typeof GraphWorkspaceIndexRoute
   '/graph/$workspace/$lakehouse/$table': typeof GraphWorkspaceLakehouseTableRoute
-  '/lineage/$workspace/$lakehouse/$table': typeof LineageWorkspaceLakehouseTableRoute
   '/graph/$workspace/$lakehouse': typeof GraphWorkspaceLakehouseIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/fabric': typeof FabricRouteRouteWithChildren
   '/graph': typeof GraphRouteRouteWithChildren
-  '/lineage': typeof LineageRouteRouteWithChildren
   '/products': typeof ProductsRouteRouteWithChildren
-  '/purview': typeof PurviewRouteRouteWithChildren
+  '/fabric/definitions': typeof FabricDefinitionsRoute
+  '/fabric/explore': typeof FabricExploreRoute
+  '/fabric/sandbox': typeof FabricSandboxRoute
   '/model/$': typeof ModelSplatRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/products/domains': typeof ProductsDomainsRoute
   '/products/new': typeof ProductsNewRoute
   '/products/requests': typeof ProductsRequestsRoute
-  '/purview/data-products': typeof PurviewDataProductsRoute
-  '/purview/definitions': typeof PurviewDefinitionsRoute
-  '/purview/push': typeof PurviewPushRoute
   '/graph/': typeof GraphIndexRoute
   '/model/': typeof ModelIndexRoute
   '/products/': typeof ProductsIndexRoute
   '/graph/$workspace/': typeof GraphWorkspaceIndexRoute
   '/graph/$workspace/$lakehouse/$table': typeof GraphWorkspaceLakehouseTableRoute
-  '/lineage/$workspace/$lakehouse/$table': typeof LineageWorkspaceLakehouseTableRoute
   '/graph/$workspace/$lakehouse/': typeof GraphWorkspaceLakehouseIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/fabric'
     | '/graph'
-    | '/lineage'
     | '/products'
-    | '/purview'
+    | '/fabric/definitions'
+    | '/fabric/explore'
+    | '/fabric/sandbox'
     | '/model/$'
     | '/products/$productId'
     | '/products/domains'
     | '/products/new'
     | '/products/requests'
-    | '/purview/data-products'
-    | '/purview/definitions'
-    | '/purview/push'
     | '/graph/'
     | '/model/'
     | '/products/'
     | '/graph/$workspace/'
     | '/graph/$workspace/$lakehouse/$table'
-    | '/lineage/$workspace/$lakehouse/$table'
     | '/graph/$workspace/$lakehouse/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/lineage'
-    | '/purview'
+    | '/fabric'
+    | '/fabric/definitions'
+    | '/fabric/explore'
+    | '/fabric/sandbox'
     | '/model/$'
     | '/products/$productId'
     | '/products/domains'
     | '/products/new'
     | '/products/requests'
-    | '/purview/data-products'
-    | '/purview/definitions'
-    | '/purview/push'
     | '/graph'
     | '/model'
     | '/products'
     | '/graph/$workspace'
     | '/graph/$workspace/$lakehouse/$table'
-    | '/lineage/$workspace/$lakehouse/$table'
     | '/graph/$workspace/$lakehouse'
   id:
     | '__root__'
     | '/'
+    | '/fabric'
     | '/graph'
-    | '/lineage'
     | '/products'
-    | '/purview'
+    | '/fabric/definitions'
+    | '/fabric/explore'
+    | '/fabric/sandbox'
     | '/model/$'
     | '/products/$productId'
     | '/products/domains'
     | '/products/new'
     | '/products/requests'
-    | '/purview/data-products'
-    | '/purview/definitions'
-    | '/purview/push'
     | '/graph/'
     | '/model/'
     | '/products/'
     | '/graph/$workspace/'
     | '/graph/$workspace/$lakehouse/$table'
-    | '/lineage/$workspace/$lakehouse/$table'
     | '/graph/$workspace/$lakehouse/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  FabricRouteRoute: typeof FabricRouteRouteWithChildren
   GraphRouteRoute: typeof GraphRouteRouteWithChildren
-  LineageRouteRoute: typeof LineageRouteRouteWithChildren
   ProductsRouteRoute: typeof ProductsRouteRouteWithChildren
-  PurviewRouteRoute: typeof PurviewRouteRouteWithChildren
   ModelSplatRoute: typeof ModelSplatRoute
   ModelIndexRoute: typeof ModelIndexRoute
 }
@@ -285,18 +259,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/fabric': {
+      id: '/fabric'
+      path: '/fabric'
+      fullPath: '/fabric'
+      preLoaderRoute: typeof FabricRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/graph': {
       id: '/graph'
       path: '/graph'
       fullPath: '/graph'
       preLoaderRoute: typeof GraphRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/lineage': {
-      id: '/lineage'
-      path: '/lineage'
-      fullPath: '/lineage'
-      preLoaderRoute: typeof LineageRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/products': {
@@ -306,12 +280,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/purview': {
-      id: '/purview'
-      path: '/purview'
-      fullPath: '/purview'
-      preLoaderRoute: typeof PurviewRouteRouteImport
-      parentRoute: typeof rootRouteImport
+    '/fabric/definitions': {
+      id: '/fabric/definitions'
+      path: '/definitions'
+      fullPath: '/fabric/definitions'
+      preLoaderRoute: typeof FabricDefinitionsRouteImport
+      parentRoute: typeof FabricRouteRoute
+    }
+    '/fabric/explore': {
+      id: '/fabric/explore'
+      path: '/explore'
+      fullPath: '/fabric/explore'
+      preLoaderRoute: typeof FabricExploreRouteImport
+      parentRoute: typeof FabricRouteRoute
+    }
+    '/fabric/sandbox': {
+      id: '/fabric/sandbox'
+      path: '/sandbox'
+      fullPath: '/fabric/sandbox'
+      preLoaderRoute: typeof FabricSandboxRouteImport
+      parentRoute: typeof FabricRouteRoute
     }
     '/graph/': {
       id: '/graph/'
@@ -369,27 +357,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsRequestsRouteImport
       parentRoute: typeof ProductsRouteRoute
     }
-    '/purview/data-products': {
-      id: '/purview/data-products'
-      path: '/data-products'
-      fullPath: '/purview/data-products'
-      preLoaderRoute: typeof PurviewDataProductsRouteImport
-      parentRoute: typeof PurviewRouteRoute
-    }
-    '/purview/definitions': {
-      id: '/purview/definitions'
-      path: '/definitions'
-      fullPath: '/purview/definitions'
-      preLoaderRoute: typeof PurviewDefinitionsRouteImport
-      parentRoute: typeof PurviewRouteRoute
-    }
-    '/purview/push': {
-      id: '/purview/push'
-      path: '/push'
-      fullPath: '/purview/push'
-      preLoaderRoute: typeof PurviewPushRouteImport
-      parentRoute: typeof PurviewRouteRoute
-    }
     '/graph/$workspace/': {
       id: '/graph/$workspace/'
       path: '/$workspace'
@@ -411,15 +378,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GraphWorkspaceLakehouseTableRouteImport
       parentRoute: typeof GraphRouteRoute
     }
-    '/lineage/$workspace/$lakehouse/$table': {
-      id: '/lineage/$workspace/$lakehouse/$table'
-      path: '/$workspace/$lakehouse/$table'
-      fullPath: '/lineage/$workspace/$lakehouse/$table'
-      preLoaderRoute: typeof LineageWorkspaceLakehouseTableRouteImport
-      parentRoute: typeof LineageRouteRoute
-    }
   }
 }
+
+interface FabricRouteRouteChildren {
+  FabricDefinitionsRoute: typeof FabricDefinitionsRoute
+  FabricExploreRoute: typeof FabricExploreRoute
+  FabricSandboxRoute: typeof FabricSandboxRoute
+}
+
+const FabricRouteRouteChildren: FabricRouteRouteChildren = {
+  FabricDefinitionsRoute: FabricDefinitionsRoute,
+  FabricExploreRoute: FabricExploreRoute,
+  FabricSandboxRoute: FabricSandboxRoute,
+}
+
+const FabricRouteRouteWithChildren = FabricRouteRoute._addFileChildren(
+  FabricRouteRouteChildren,
+)
 
 interface GraphRouteRouteChildren {
   GraphIndexRoute: typeof GraphIndexRoute
@@ -437,18 +413,6 @@ const GraphRouteRouteChildren: GraphRouteRouteChildren = {
 
 const GraphRouteRouteWithChildren = GraphRouteRoute._addFileChildren(
   GraphRouteRouteChildren,
-)
-
-interface LineageRouteRouteChildren {
-  LineageWorkspaceLakehouseTableRoute: typeof LineageWorkspaceLakehouseTableRoute
-}
-
-const LineageRouteRouteChildren: LineageRouteRouteChildren = {
-  LineageWorkspaceLakehouseTableRoute: LineageWorkspaceLakehouseTableRoute,
-}
-
-const LineageRouteRouteWithChildren = LineageRouteRoute._addFileChildren(
-  LineageRouteRouteChildren,
 )
 
 interface ProductsRouteRouteChildren {
@@ -471,28 +435,11 @@ const ProductsRouteRouteWithChildren = ProductsRouteRoute._addFileChildren(
   ProductsRouteRouteChildren,
 )
 
-interface PurviewRouteRouteChildren {
-  PurviewDataProductsRoute: typeof PurviewDataProductsRoute
-  PurviewDefinitionsRoute: typeof PurviewDefinitionsRoute
-  PurviewPushRoute: typeof PurviewPushRoute
-}
-
-const PurviewRouteRouteChildren: PurviewRouteRouteChildren = {
-  PurviewDataProductsRoute: PurviewDataProductsRoute,
-  PurviewDefinitionsRoute: PurviewDefinitionsRoute,
-  PurviewPushRoute: PurviewPushRoute,
-}
-
-const PurviewRouteRouteWithChildren = PurviewRouteRoute._addFileChildren(
-  PurviewRouteRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  FabricRouteRoute: FabricRouteRouteWithChildren,
   GraphRouteRoute: GraphRouteRouteWithChildren,
-  LineageRouteRoute: LineageRouteRouteWithChildren,
   ProductsRouteRoute: ProductsRouteRouteWithChildren,
-  PurviewRouteRoute: PurviewRouteRouteWithChildren,
   ModelSplatRoute: ModelSplatRoute,
   ModelIndexRoute: ModelIndexRoute,
 }

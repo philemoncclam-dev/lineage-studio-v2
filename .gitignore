@@ -23,3 +23,4 @@ frontend/dist/
 .idea/
 .vscode/
 *.log
+backend/data/

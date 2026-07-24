@@ -66,6 +66,9 @@ class GovernanceDomain:
     type: str | None = None
     status: str | None = None
     description: str | None = None
+    #: Parent domain id when this is a sub-domain. Purview exposes the hierarchy
+    #: through this field; a top-level domain leaves it None.
+    parent_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -101,6 +104,7 @@ def _domain(raw: dict) -> GovernanceDomain:
         type=raw.get("type"),
         status=raw.get("status"),
         description=raw.get("description"),
+        parent_id=raw.get("parentId") or raw.get("parentDomain"),
     )
 
 

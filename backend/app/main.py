@@ -23,6 +23,7 @@ from .purview.client import PurviewError
 from .purview.actions import router as actions_router
 from .purview.definitions import router as definitions_router
 from .purview.ingest import build_graph_from_purview
+from .products.router import router as products_router
 from .sample import SAMPLE
 
 app = FastAPI(title="Lineage Studio API", version="0.1.0")
@@ -38,6 +39,7 @@ app.add_middleware(
 
 app.include_router(definitions_router)
 app.include_router(actions_router)
+app.include_router(products_router)
 
 # Trivial single-slot store; the last-built graph is what the UI reads.
 _last_graph: LineageGraph = build_graph(SAMPLE)

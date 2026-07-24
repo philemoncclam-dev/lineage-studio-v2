@@ -225,6 +225,166 @@ export async function catalogDataProduct(body: {
   return res.json()
 }
 
+// --- Data Products section ------------------------------------------------
+// Products, their metadata and the request workflow are served from the
+// backend's local store (always available); domains prefer live Purview.
+
+export interface ProductDomain {
+  id: string
+  name: string
+  parent_id: string | null
+  description?: string | null
+}
+
+export interface ProductOwner {
+  name: string
+  email: string
+  object_id?: string | null
+}
+
+export interface ProductColumn {
+  name: string
+  data_type?: string | null
+  description?: string | null
+}
+
+export type ProductAssetKind = 'table' | 'powerbi' | 'notebook' | 'lakehouse' | 'other'
+
+export interface ProductAsset {
+  id: string
+  name: string
+  kind: ProductAssetKind
+  node_id?: string | null
+  purview_guid?: string | null
+  columns: ProductColumn[]
+}
+
+export type ProductStatus = 'draft' | 'published' | 'deprecated'
+
+export interface ProductRecord {
+  id: string
+  name: string
+  domain_id: string
+  description: string
+  use_cases: string[]
+  owners: ProductOwner[]
+  assets: ProductAsset[]
+  workspace_id?: string | null
+  workspace_name?: string | null
+  model_id?: string | null
+  model_name?: string | null
+  status: ProductStatus
+  purview_id?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type AccessRequestStatus = 'pending' | 'approved' | 'denied'
+
+export interface GrantRecord {
+  applied: boolean
+  dry_run: boolean
+  describes: string
+  role: string
+  error?: string | null
+}
+
+export interface AccessRequest {
+  id: string
+  product_id: string
+  product_name: string
+  requester_name: string
+  requester_email: string
+  requester_object_id?: string | null
+  justification: string
+  status: AccessRequestStatus
+  created_at: string
+  decided_at?: string | null
+  decided_by?: string | null
+  grant?: GrantRecord | null
+}
+
+export interface ProductWrite {
+  name: string
+  domain_id: string
+  description?: string
+  use_cases?: string[]
+  owners?: ProductOwner[]
+  assets?: ProductAsset[]
+  workspace_id?: string | null
+  workspace_name?: string | null
+  model_id?: string | null
+  model_name?: string | null
+  status?: ProductStatus
+}
+
+export async function fetchProductDomains(): Promise<ProductDomain[]> {
+  const res = await fetch(`${BASE}/products/domains`)
+  if (!res.ok) return detail(res, 'product domains')
+  return res.json()
+}
+
+export async function fetchProducts(): Promise<ProductRecord[]> {
+  const res = await fetch(`${BASE}/products`)
+  if (!res.ok) return detail(res, 'products')
+  return res.json()
+}
+
+export async function fetchProduct(id: string): Promise<ProductRecord> {
+  const res = await fetch(`${BASE}/products/${id}`)
+  if (!res.ok) return detail(res, 'product')
+  return res.json()
+}
+
+export async function createProduct(body: ProductWrite): Promise<ProductRecord> {
+  const res = await fetch(`${BASE}/products`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) return detail(res, 'create product')
+  return res.json()
+}
+
+export async function fetchProductRequests(productId: string): Promise<AccessRequest[]> {
+  const res = await fetch(`${BASE}/products/${productId}/requests`)
+  if (!res.ok) return detail(res, 'product requests')
+  return res.json()
+}
+
+export async function fetchAllRequests(status?: AccessRequestStatus): Promise<AccessRequest[]> {
+  const qs = status ? `?status=${status}` : ''
+  const res = await fetch(`${BASE}/products/requests/all${qs}`)
+  if (!res.ok) return detail(res, 'requests')
+  return res.json()
+}
+
+export async function requestAccess(
+  productId: string,
+  body: { requester_name: string; requester_email: string; requester_object_id?: string; justification?: string },
+): Promise<AccessRequest> {
+  const res = await fetch(`${BASE}/products/${productId}/requests`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) return detail(res, 'request access')
+  return res.json()
+}
+
+export async function decideRequest(
+  requestId: string,
+  body: { approve: boolean; decided_by?: string; apply?: boolean },
+): Promise<AccessRequest> {
+  const res = await fetch(`${BASE}/products/requests/${requestId}/decide`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) return detail(res, 'decide request')
+  return res.json()
+}
+
 export async function ingest(payload: unknown): Promise<LineageGraph> {
   const res = await fetch(`${BASE}/ingest`, {
     method: 'POST',

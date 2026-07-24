@@ -1,17 +1,19 @@
-// /purview/data-products — honest placeholder (D-03). See push.tsx.
-import { createFileRoute } from '@tanstack/react-router'
+// /purview/data-products — superseded by the dedicated Data Products mode,
+// which owns the browse/detail/request experience. This Purview-toolkit slot
+// now just points there rather than duplicating it.
+import { createFileRoute, Link } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/purview/data-products')({
-  component: DataProductsPlaceholder,
+  component: DataProductsRedirectNote,
 })
 
-function DataProductsPlaceholder() {
+function DataProductsRedirectNote() {
   return (
     <div className="purview-page">
-      <h1 className="page-title">Data product cataloguing isn't built yet</h1>
+      <h1 className="page-title">Data products have their own section</h1>
       <p className="page-lead">
-        This toolkit page ships alongside Purview Push in Phase 5, using the same preview → confirm → results
-        pattern.
+        Browsing products by domain, the product pages, and the access-request workflow now live in the
+        Data Products mode. <Link to="/products">Open Data Products →</Link>
       </p>
     </div>
   )

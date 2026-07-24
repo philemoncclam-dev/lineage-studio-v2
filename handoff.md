@@ -1,117 +1,76 @@
 # Handoff — Lineage Studio v2
 
-_Last updated: 2026-07-20 — as of commit 2f6301b (master, pushed, tree clean)_
+_Last updated: 2026-07-24 — as of the "Data Products section" commit (master, pushed)_
 
 ## Where things stand
 
-The zero-edges gap is closed. Notebook source is fetched from Fabric, parsed to
-edges, and pushed to Purview; `/purview/graph` now returns real lineage
-(`00_seed_sources → raw_orders/raw_customers → Notebook_1build_customer_ltv`).
-All three write paths — lineage push, data-product cataloguing, column
-definitions — are implemented, wired into the UI, and **verified against the
-live catalog**. 95 tests pass; `npm run build` is clean.
+Shipped a full **Data Products section** — a new top-level mode (5th in the
+logo mode-switcher) alongside Graph / Lineage / Model / Purview. Backend and
+frontend both green: **105 pytest passed**, `npm run build` clean. The section
+is a product-catalogue surface layered on the Purview data map: browse products
+by domain (with nesting sub-domains), a per-product "contract" page, and a
+request → owner-approval → gated-Fabric-grant workflow.
 
-Every mutation goes through `backend/app/purview/writer.py`. Dry run is the
-default and builds the identical payload, so a preview cannot drift from the
-real send. Transmitting needs both an explicit `apply` and
-`PURVIEW_ALLOW_WRITE`.
+Note: the previous handoff (the 2026-07-21 Phase-1 design-tokens one) had been
+sitting **uncommitted** in the working tree and is now superseded — its CR-01
+dot-colour concern predates many later commits and was not re-verified this
+session. Don't trust that doc's "27 ahead / NOT pushed" line; the tree is level
+with `origin/master`.
 
 ## In flight / next step
 
-**Nothing is half-written.** The next action is deployment, which is blocked
-only on manual steps:
-
-1. Render → New + → Blueprint → pick the repo (`render.yaml` is at the root and
-   configures the service). Paste the four `PURVIEW_*` secrets.
-2. Set `VITE_API_BASE=<render url>` in Vercel and **redeploy** — Vite inlines it
-   at build time, so saving the variable alone does nothing.
-3. Set `CORS_ORIGINS=<vercel url>` in Render.
-
-**The UI has never been opened in a browser.** Every endpoint behind it is
-proven live and it type-checks, but layout and interaction are unverified.
-`npm run dev` before trusting it.
+Nothing half-written. The one thing **unverified against the live tenant**: the
+actual Fabric `POST /workspaces/{id}/roleAssignments` (Viewer grant) on
+approval. It needs `PURVIEW_ALLOW_WRITE=true`, the product's `workspace_id`, and
+the requester's Entra **object id** (an email cannot be assigned a role).
+Everything up to that gated send is tested; the send itself was never exercised
+live. `backend/app/products/grant.py` is the single place that call happens.
 
 ## Uncommitted work
 
-Clean. `master` is pushed and matches `origin/master`.
+Clean after this commit.
 
-Local tag `backup-before-rewrite` (30583eb) holds the pre-author-rewrite
-commits; never pushed, safe to delete.
+## New architecture (not repeated in CLAUDE.md yet)
 
-## Decisions & dead ends
-
-- **The classic lineage endpoint cannot see API-pushed lineage.**
-  `/atlas/v2/lineage/{guid}` reads a scan-populated index and stays empty
-  forever — polled 90s+ after a confirmed write while the relationships were
-  already ACTIVE. `/next` serves them immediately. This is the single most
-  expensive thing to rediscover: a successful push looks like a silent no-op,
-  and the obvious conclusion is a permissions problem that does not exist.
-- **No synthetic process entities.** `fabric_synapse_notebook` already inherits
-  `Process` with empty `inputs`/`outputs`, so a push *updates the notebook*.
-  One node in the UI, and a re-scan updates rather than racing a duplicate.
-- **Unified Catalog swagger is wrong in four places**, each found by being
-  refused, all now encoded in `dataproduct.py`: `contacts` is required; status
-  is Title case; onboarding needs `name`/`type` with `type` limited to
-  ADLSGen2Path/AzureSqlTable/General; and **the service assigns its own product
-  id and ignores the one we send** — linking against the proposed id 404s with
-  "does not exist" even though the product was created. That last one reads
-  exactly like a permissions failure and is not.
-- **Reached the governance plane without touching `client.py`** by escaping the
-  `/datamap/api` base with a relative prefix (`/../../datagovernance/catalog`).
-  Slightly cheeky, but it keeps the single-write-chokepoint rule intact.
-- **Purview account name ≠ app registration.** `Phil-purview-dev` is the
-  account; the app is `Lineage-Studio-Dev-2`
-  (app `da314ac2-…`, SP object `187b5830-…`). Searching workspace access for the
-  account name finds nothing.
-- Parallel subagents were partitioned by file ownership, with `main.py`,
-  `writer.py`, `ingest.py`, `client.py` reserved for the orchestrator. Agents
-  returned router objects instead of editing `main.py`. Worked well; the UI
-  ended up two features behind because they were told not to touch `frontend/`.
+- **`backend/app/products/`** — the section's own package, deliberately separate
+  from `purview/`:
+  - `store.py` — JSON persistence in `backend/data/` (gitignored): `products.json`
+    + `requests.json`. Pydantic models are both the on-disk shape and the API
+    contract. Seeds a domain tree + one sample product so the section renders
+    offline, the way `sample.py` seeds the graph. Atomic temp-file-rename writes.
+  - `grant.py` — Fabric Viewer role assignment, gated by `PURVIEW_ALLOW_WRITE`,
+    dry-run by default; returns a `GrantRecord` in every branch (approval never
+    fails just because the grant can't be sent).
+  - `router.py` — `/products/*` endpoints. `/products/requests/all` (not
+    `/products/requests`) is the inbox, named so it can't collide with a
+    `/products/{id}` path.
+- **Domains**: `/products/domains` prefers live Purview governance domains (now
+  mapping `parentId` → `parent_id` in `dataproduct.py`, which is what makes a
+  sub-domain a sub-domain), and falls back to the store's seed tree when Purview
+  is absent or returns empty (empty = "no permission" here). The frontend builds
+  the same tree from either source.
+- **Frontend**: new `products` mode in `shell/railConfig.ts` (+ `ModeMenu`,
+  `Rail` icons `plus`/`inbox`). Routes under `frontend/src/routes/products/`:
+  `index` (browse), `$productId` (detail: desc/use-cases/owners/asset column
+  drill-in/model link/request form), `new` (create), `requests` (owner inbox).
+  Styling in `views/products.css`, token-driven. Old `/purview/data-products`
+  placeholder now just links to the new section.
 
 ## Gotchas still live
 
-- **Empty means "no permission" in three different places.** Purview search
-  returns 0 instead of 403 without a collection role; Fabric `GET /v1/workspaces`
-  returns `200 {"value":[]}`; and `get_next_lineage` 404s for an entity with no
-  lineage. Never read emptiness as "configured correctly, nothing there."
-- **`uvicorn` has no `--reload` in the run commands here.** Two separate
-  debugging detours came from testing edits against a stale server; `pkill -f`
-  does not reach it on Windows — use `Stop-Process`.
-- **`/tmp` in the Bash tool is not visible to Windows Python.** Use the
-  scratchpad path for files handed between the two.
-- Column data types are spelled `dataType` on lakehouse table columns and
-  `data_type` on tabular_schema columns; view columns hang off a separate
-  `tabular_schema` entity; the container path segment is `lakewarehouses`.
-- A lakehouse and its SQL endpoint share a display name but are distinct GUIDs.
-  The endpoint is suffixed `(SQL endpoint)` in the UI so the graph does not show
-  two identical nodes.
-- **Live artefacts left behind, safe to delete:** data product
-  `LineageStudio Verified Product` (403422d3-…) with two linked assets, and
-  `raw_orders.order_date` carries a test `userDescription`.
-
-## Blocked on grants
-
-- `Dataproduct-P-S` workspace lacks the Contributor grant for the SP, so the
-  `Test` notebook cannot be read. `SalesLakehouse-P-S (TEST)` is done.
-- `gold_customer_ltv` and `silver_orders_enriched` are derived by the parser but
-  are not in Purview, so those two edges cannot push. Re-run the notebook and
-  re-scan and they should land with no code change.
+- **Grant needs an Entra object id, not an email.** The request form captures it
+  optionally; without it, approval still succeeds but records the grant as
+  blocked pending the id rather than guessing. This is by design.
+- **`backend/data/` is gitignored working state.** Deleting it just re-seeds on
+  next read. Tests isolate it via monkeypatch to `tmp_path` (see
+  `tests/test_products.py`) — don't let the store write into a dev's real
+  `backend/data/` during tests.
+- Live Purview domain ids are opaque GUIDs the seed tree doesn't contain, so
+  `store.get_domain_exists` trusts any id ≥12 chars on create — otherwise every
+  real domain would be rejected.
 
 ## Security posture
 
-The backend has **no authentication of its own** and holds a service principal
-that can write to the catalog. `render.yaml` therefore defaults to
-`PURVIEW_ALLOW_WRITE=false`, and CORS is an allow-list rather than a wildcard.
-Flip writes on deliberately, not by default, on any reachable URL.
-
-## Commands
-
-```bash
-# backend → http://localhost:8000
-cd backend && .venv/Scripts/uvicorn app.main:app --reload
-.venv/Scripts/python.exe -m pytest -q          # 95 tests
-
-# frontend → http://localhost:5173
-cd frontend && npm run dev
-npm run build                                   # tsc -b + vite build
-```
+Unchanged and respected: the approval grant is the only new external mutation,
+and it rides the existing `PURVIEW_ALLOW_WRITE` gate (default off), dry-run by
+default. A reachable deployment never grants workspace access by accident.

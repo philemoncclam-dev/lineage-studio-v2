@@ -14,7 +14,7 @@
 // view rather than a distinct sub-page. Only Purview's three items are real,
 // independently-navigable destinations this phase.
 
-export type ModeKey = 'graph' | 'lineage' | 'model' | 'purview'
+export type ModeKey = 'graph' | 'lineage' | 'model' | 'purview' | 'products'
 
 export type RailIconName =
   | 'scope'
@@ -25,6 +25,8 @@ export type RailIconName =
   | 'definitions'
   | 'products'
   | 'layers'
+  | 'plus'
+  | 'inbox'
 
 export interface RailItem {
   key: string
@@ -53,12 +55,18 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
     { key: 'definitions', label: 'Definitions import', icon: 'definitions', to: '/purview/definitions' },
     { key: 'data-products', label: 'Data products', icon: 'products', to: '/purview/data-products' },
   ],
+  products: [
+    { key: 'catalog', label: 'Product catalog', icon: 'products', to: '/products' },
+    { key: 'new-product', label: 'New data product', icon: 'plus', to: '/products/new' },
+    { key: 'requests', label: 'Access requests', icon: 'inbox', to: '/products/requests' },
+  ],
 }
 
 export function modeFromPathname(pathname: string): ModeKey {
   if (pathname.startsWith('/lineage')) return 'lineage'
   if (pathname.startsWith('/model')) return 'model'
   if (pathname.startsWith('/purview')) return 'purview'
+  if (pathname.startsWith('/products')) return 'products'
   return 'graph'
 }
 
@@ -70,6 +78,7 @@ export const MODE_LANDING: Record<ModeKey, string> = {
   // /purview has no index route (route.tsx is a pathless layout) — Definitions
   // is the one Purview destination with a real working view this phase.
   purview: '/purview/definitions',
+  products: '/products',
 }
 
 export const MODE_LABEL: Record<ModeKey, string> = {
@@ -77,4 +86,5 @@ export const MODE_LABEL: Record<ModeKey, string> = {
   lineage: 'Lineage',
   model: 'Modeling',
   purview: 'Purview',
+  products: 'Data Products',
 }

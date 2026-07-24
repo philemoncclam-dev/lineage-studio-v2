@@ -28,7 +28,7 @@ def client():
 
 
 def test_stub_run_derives_reads_and_writes():
-    result = run_sandbox(RunRequest(notebook_name="nb", cells=CELLS))
+    result = run_sandbox(RunRequest(notebook_name="nb", cells=CELLS), engine="stub")
     assert result.ok
     assert result.engine == "stub"
     assert result.reads == ["raw_orders"]
@@ -36,7 +36,7 @@ def test_stub_run_derives_reads_and_writes():
 
 
 def test_import_line_does_not_invent_a_read():
-    result = run_sandbox(RunRequest(notebook_name="nb", cells=CELLS))
+    result = run_sandbox(RunRequest(notebook_name="nb", cells=CELLS), engine="stub")
     assert "sql" not in result.reads
 
 
@@ -44,19 +44,28 @@ def test_child_cannot_see_a_parent_credential(monkeypatch):
     """The safety guarantee, made observable: a secret in the parent env is
     scrubbed before the child spawns, so the child reports saw_credentials=False."""
     monkeypatch.setenv("PURVIEW_CLIENT_SECRET", "super-secret-value")
-    result = run_sandbox(RunRequest(notebook_name="nb", cells=["df = spark.table('t')"]))
+    result = run_sandbox(RunRequest(notebook_name="nb", cells=["df = spark.table('t')"]), engine="stub")
     assert result.saw_credentials is False
 
 
 def test_a_cell_that_reads_and_writes_the_same_table_is_a_write():
     cells = ["df = spark.table('t'); df.write.saveAsTable('t')"]
-    result = run_sandbox(RunRequest(notebook_name="nb", cells=cells))
+    result = run_sandbox(RunRequest(notebook_name="nb", cells=cells), engine="stub")
     assert result.writes == ["t"]
     assert result.reads == []
 
 
 def test_run_endpoint_accepts_direct_cells(client):
-    resp = client.post("/fabric/sandbox/run", json={"name": "nb", "cells": CELLS})
+    # Schema provided so the run resolves under either engine (the Spark engine
+    # needs it to register the read view; the stub ignores it).
+    resp = client.post(
+        "/fabric/sandbox/run",
+        json={
+            "name": "nb",
+            "cells": CELLS,
+            "schemas": {"raw_orders": [{"name": "order_id", "type": "long"}]},
+        },
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["ok"] and body["reads"] == ["raw_orders"] and body["writes"] == ["vw_sales"]

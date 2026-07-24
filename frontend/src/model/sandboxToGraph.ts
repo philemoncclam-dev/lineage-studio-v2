@@ -7,7 +7,7 @@
 // Columns are not populated yet — the sandbox derives object-level lineage
 // (notebook ↔ tables). When the schema fetch lands (M2b), the same tables gain
 // their columns and the model gains attribute-level detail for free.
-import type { LineageGraph, LineageNode, LineageEdge, SandboxRunResult } from '../api'
+import type { LineageGraph, LineageNode, LineageEdge, SandboxRunResult, Column } from '../api'
 
 const tableId = (name: string) => `table.${name.toLowerCase()}`
 
@@ -24,9 +24,15 @@ export function sandboxRunToGraph(
     { id: nbId, kind: 'notebook', name: notebookName, parent_id: wsId, columns: [], meta: {} },
   ]
 
+  // The Spark engine resolves the real output schema of each written table;
+  // carry those columns onto the table node so the authored model gets
+  // attribute-level detail. Read-only tables have no schema here yet.
+  const columnsFor = (name: string): Column[] =>
+    (result.table_schemas[name] ?? []).map((c) => ({ name: c.name, data_type: c.type ?? null }))
+
   // One table node per distinct table the notebook touched, either side.
   for (const t of new Set([...result.reads, ...result.writes])) {
-    nodes.push({ id: tableId(t), kind: 'table', name: t, parent_id: null, columns: [], meta: {} })
+    nodes.push({ id: tableId(t), kind: 'table', name: t, parent_id: null, columns: columnsFor(t), meta: {} })
   }
 
   const edges: LineageEdge[] = [

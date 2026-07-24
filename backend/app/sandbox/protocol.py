@@ -57,6 +57,10 @@ class RunResult(BaseModel):
     cells: list[CellResult] = Field(default_factory=list)
     reads: list[str] = Field(default_factory=list)
     writes: list[str] = Field(default_factory=list)
+    #: Real output schema per written table, as Spark's analyzer resolved it —
+    #: the spark engine's payoff. Empty for the stub engine (static analysis
+    #: can't compute output types). Feeds attribute-level model creation.
+    table_schemas: dict[str, list[ColumnSchema]] = Field(default_factory=dict)
     log: list[str] = Field(default_factory=list)
     saw_credentials: bool = False
     error: str | None = None

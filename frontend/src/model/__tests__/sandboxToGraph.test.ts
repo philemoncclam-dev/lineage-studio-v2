@@ -8,9 +8,15 @@ const run = (reads: string[], writes: string[]): SandboxRunResult => ({
   cells: [],
   reads,
   writes,
+  table_schemas: {},
   log: [],
   saw_credentials: false,
   error: null,
+})
+
+const runWithSchema = (): SandboxRunResult => ({
+  ...run(['raw_orders'], ['gold']),
+  table_schemas: { gold: [{ name: 'region', type: 'string' }, { name: 'total', type: 'bigint' }] },
 })
 
 describe('sandboxRunToGraph', () => {
@@ -32,5 +38,12 @@ describe('sandboxRunToGraph', () => {
   it('emits one table node when a table is both read and written', () => {
     const g = sandboxRunToGraph(run(['t'], ['t']), 'nb')
     expect(g.nodes.filter((n) => n.kind === 'table')).toHaveLength(1)
+  })
+
+  it('carries the Spark output schema onto the written table node', () => {
+    const g = sandboxRunToGraph(runWithSchema(), 'nb')
+    const gold = g.nodes.find((n) => n.name === 'gold')!
+    expect(gold.columns.map((c) => c.name)).toEqual(['region', 'total'])
+    expect(gold.columns[1].data_type).toBe('bigint')
   })
 })

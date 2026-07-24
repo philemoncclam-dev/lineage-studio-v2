@@ -24,7 +24,16 @@ from pathlib import Path
 
 from .protocol import RunRequest, RunResult
 
-_CHILD_STUB = Path(__file__).resolve().parent / "child_stub.py"
+_SANDBOX_DIR = Path(__file__).resolve().parent
+_CHILD_STUB = _SANDBOX_DIR / "child_stub.py"
+_CHILD_SPARK = _SANDBOX_DIR / "child_spark.py"
+
+# The pinned Spark venv lives outside backend/ so uvicorn --reload never watches
+# it. Present on a machine set up for real execution; absent on Vercel/CI, where
+# the runner transparently falls back to the stub engine.
+_SPARK_PYTHON = (
+    Path(__file__).resolve().parents[3] / "sandbox" / ".venv312" / "Scripts" / "python.exe"
+)
 
 # Benign OS variables the child needs to start Python at all. Everything else —
 # crucially every PURVIEW_*/AZURE_* secret — is dropped. Names are matched
@@ -35,29 +44,41 @@ _KEEP_ENV = {
     "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS", "LANG", "LC_ALL",
 }
 
-_TIMEOUT = 120
+# Spark cold-start is ~15s; give the whole run generous headroom. The stub is
+# near-instant but shares the ceiling.
+_TIMEOUT = 240
 
 
 def _scrubbed_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k.upper() in _KEEP_ENV}
 
 
-def _executor_cmd(request_file: str) -> list[str]:
+def spark_available() -> bool:
+    return _SPARK_PYTHON.exists() and _CHILD_SPARK.exists()
+
+
+Engine = str  # "auto" | "spark" | "stub"
+
+
+def _executor_cmd(request_file: str, engine: Engine) -> list[str]:
     """The command that runs one sandbox request.
 
-    M2a: the backend interpreter running the standalone stub by path. M2b will
-    return the pinned Spark venv python + the Spark executor script here.
+    The pinned Spark venv + real executor when chosen and present; otherwise the
+    stub under the backend interpreter. This is the whole M2a → M2b seam.
     """
+    use_spark = engine == "spark" or (engine == "auto" and spark_available())
+    if use_spark:
+        return [str(_SPARK_PYTHON), str(_CHILD_SPARK), request_file]
     return [sys.executable, str(_CHILD_STUB), request_file]
 
 
-def run_sandbox(req: RunRequest, timeout: int = _TIMEOUT) -> RunResult:
+def run_sandbox(req: RunRequest, timeout: int = _TIMEOUT, engine: Engine = "auto") -> RunResult:
     workdir = tempfile.mkdtemp(prefix="lsbx_")
     request_file = Path(workdir) / "request.json"
     request_file.write_text(req.model_dump_json(), encoding="utf-8")
     try:
         proc = subprocess.run(
-            _executor_cmd(str(request_file)),
+            _executor_cmd(str(request_file), engine),
             cwd=workdir,
             env=_scrubbed_env(),
             capture_output=True,

@@ -24,3 +24,6 @@ frontend/dist/
 .vscode/
 *.log
 backend/data/
+
+# Pinned Spark venv for the notebook sandbox (M2b) — machine-local
+/sandbox/.venv312/

@@ -472,12 +472,19 @@ export interface SandboxCellResult {
   error: string | null
 }
 
+export interface SandboxColumn {
+  name: string
+  type?: string | null
+}
+
 export interface SandboxRunResult {
   ok: boolean
   engine: 'stub' | 'spark'
   cells: SandboxCellResult[]
   reads: string[]
   writes: string[]
+  /** Real output schema per written table (Spark engine only; empty for stub). */
+  table_schemas: Record<string, SandboxColumn[]>
   log: string[]
   saw_credentials: boolean
   error: string | null

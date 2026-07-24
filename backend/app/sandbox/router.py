@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from ..fabric.client import FabricClient, FabricError
 from ..fabric.notebooks import NotebookDecodeError, fetch_notebook_source
-from .protocol import RunRequest, RunResult
+from .protocol import ColumnSchema, RunRequest, RunResult
 from .runner import run_sandbox
 
 router = APIRouter(prefix="/fabric/sandbox", tags=["sandbox"])
@@ -25,6 +25,9 @@ class SandboxRunRequest(BaseModel):
     item_id: str | None = None
     #: When present, run these cells directly and skip the Fabric fetch.
     cells: list[str] | None = None
+    #: Empty-view schemas for the tables the notebook reads, so the Spark engine
+    #: can resolve them with zero data. Ignored by the stub engine.
+    schemas: dict[str, list[ColumnSchema]] | None = None
 
 
 @router.post("/run", response_model=RunResult)
@@ -44,4 +47,6 @@ def sandbox_run(req: SandboxRunRequest) -> RunResult:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         cells = source.cells
 
-    return run_sandbox(RunRequest(notebook_name=req.name, cells=cells))
+    return run_sandbox(
+        RunRequest(notebook_name=req.name, cells=cells, schemas=req.schemas or {})
+    )

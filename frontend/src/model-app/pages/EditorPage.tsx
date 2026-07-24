@@ -36,6 +36,7 @@ import { Button } from "../ui";
 import { ThemeToggle } from "../theme";
 import { Tour } from "../tour/Tour";
 import { hasSeenTour } from "../tour/tourSeen";
+import { publishModelRailState, subscribeModelRailActions } from "../railBridge";
 
 const PANEL_MIN = 200;
 const PANEL_MAX = 480;
@@ -339,6 +340,44 @@ export default function EditorPage() {
     () => (ed.model ? validateModel(ed.model) : null),
     [ed.model]
   );
+
+  // HOST INTEGRATION: mirror the activity-rail onto the host shell's shared
+  // mode rail. The in-page rail below is hidden by CSS; state flows out and
+  // actions flow back through railBridge. Re-runs every render (no dep array)
+  // so the host rail always sees fresh state and handlers.
+  useEffect(() => {
+    publishModelRailState({
+      panel,
+      filterActive: filterResult?.active ?? false,
+      addMenuOpen,
+      canUndo: ed.canUndo,
+      canRedo: ed.canRedo,
+      validationCount: validation?.issues.length ?? 0,
+      showHistory: ed.role !== "local",
+    });
+    return subscribeModelRailActions((action) => {
+      switch (action) {
+        case "home": navigate("/"); break;
+        case "overview": navigate(`/models/${id}/overview`); break;
+        case "history": navigate(`/models/${id}/versions`); break;
+        case "search": togglePanel("search"); break;
+        case "details": togglePanel("details"); break;
+        case "filter": togglePanel("filter"); break;
+        case "tags": togglePanel("tags"); break;
+        case "validate": togglePanel("validation"); break;
+        case "add": setAddMenuOpen((o) => !o); break;
+        case "map": setMapPreset({ src: null, tgt: null }); setModal("map"); break;
+        case "tidy": ed.applyTidy(); break;
+        case "import": setModal("importHub"); break;
+        case "export": setModal("exportHub"); break;
+        case "undo": undo(); break;
+        case "redo": redo(); break;
+        case "settings": setModal("settings"); break;
+      }
+    });
+  });
+  // Tell the host rail the editor is gone when this page unmounts.
+  useEffect(() => () => publishModelRailState(null), []);
 
   if (ed.error) return <div className="error">{ed.error}</div>;
   if (!ed.model) return <p style={{ padding: "2rem" }}>Loading…</p>;

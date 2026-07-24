@@ -761,20 +761,13 @@ span.editor-name:hover {
   position: relative; /* anchor for the auto-hide rail overlay */
 }
 
-/* Vertical rail of icon+label buttons */
+/* Vertical rail of icon+label buttons.
+   HOST INTEGRATION: hidden entirely — its buttons live in the host shell's
+   shared mode rail instead (src/shell/ModelEditorRail.tsx), wired through
+   src/model-app/railBridge.ts. The nav stays in the JSX so the editor's
+   handlers/keytips remain intact. */
 .activity-rail {
-  flex: 0 0 64px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
-  padding: 8px 6px;
-  background: var(--surface);
-  /* Trial: rail moved to the right edge. order pushes it past the main column;
-     border flips to the left side so it still reads as a divider. */
-  order: 99;
-  border-left: 1px solid var(--border);
-  z-index: 31; /* above canvas + layer headers so rail popovers sit on top */
+  display: none;
 }
 /* Pushes the buttons after it to the bottom of the rail (e.g. Settings). */
 .rail-spacer {
@@ -815,31 +808,36 @@ span.editor-name:hover {
 .activity-rail.is-autohide:focus-within::after {
   opacity: 0;
 }
+/* HOST INTEGRATION: mirrors the host shell's .rail-item (shell.css) — square
+   icon tile, host state colours, no visible label. */
 .rail-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 7px 2px;
+  display: grid;
+  place-items: center;
+  width: var(--rail-item-size, 36px);
+  height: var(--rail-item-size, 36px);
+  padding: 0;
   border: none;
-  border-radius: var(--r);
-  background: none;
-  color: var(--text-secondary);
+  border-radius: var(--rail-item-radius, var(--r));
+  background: transparent;
+  color: var(--rail-item-fg, var(--text-secondary));
   cursor: pointer;
-  transition: background var(--ease-fast), color var(--ease-fast);
+  transition: background-color 0.15s, color 0.15s;
 }
 .rail-btn:hover:not(:disabled) {
-  background: var(--surface-2);
-  color: var(--text);
+  background: var(--rail-item-bg-hover, var(--surface-2));
+  color: var(--rail-item-fg-hover, var(--text));
 }
 .rail-btn.is-active {
-  background: var(--accent-tint);
-  color: var(--accent);
+  background: var(--rail-item-bg-active, var(--accent-tint));
+  color: var(--rail-item-fg-active, var(--accent));
 }
 .rail-btn:disabled {
   color: var(--text-tertiary);
   opacity: 0.5;
   cursor: default;
+}
+.rail-btn-label {
+  display: none;
 }
 .rail-btn-icon {
   font-size: 17px;
@@ -994,7 +992,8 @@ span.editor-name:hover {
 /* Alt "Add" submenu — the keyboard equivalent of the right-click add menu. */
 .add-menu {
   position: fixed;
-  left: 70px;
+  /* HOST INTEGRATION: clear the host mode rail (the in-page rail is hidden). */
+  left: 60px;
   top: 110px;
   z-index: 500;
   min-width: 190px;

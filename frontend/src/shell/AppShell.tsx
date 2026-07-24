@@ -9,6 +9,7 @@ import CommandPalette from './CommandPalette'
 import Inspector from './Inspector'
 import ModeMenu from './ModeMenu'
 import Rail from './Rail'
+import ModelEditorRail from './ModelEditorRail'
 import RailBottomCluster from './RailBottomCluster'
 import { modeFromPathname, railConfig } from './railConfig'
 import '../styles/components.css'
@@ -46,7 +47,7 @@ export default function AppShell({ children, overlays = true }: { children: Reac
       <div className="shell">
         <div className="shell-rail-col">
           <ModeMenu />
-          <Rail items={railConfig[mode]} />
+          {mode === 'model' ? <ModelEditorRail /> : <Rail items={railConfig[mode]} />}
           <RailBottomCluster onOpenSearch={() => setPaletteOpen(true)} />
         </div>
         <div className="shell-canvas">

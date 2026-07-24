@@ -59,6 +59,40 @@
 .rail-item:hover { color: var(--rail-item-fg-hover); background: var(--rail-item-bg-hover); }
 .rail-item.active { color: var(--rail-item-fg-active); background: var(--rail-item-bg-active); }
 
+/* Model editor rail: the same items are <button>s (actions), not <Link>s, and
+   carry an optional validation badge. Reset button chrome to match .rail-item. */
+.rail-action {
+  position: relative;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  padding: 0;
+}
+.rail-action:disabled { opacity: .4; cursor: default; }
+.rail-action:disabled:hover { color: var(--rail-item-fg); background: transparent; }
+.rail-action-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: var(--radius-pill);
+  background: var(--color-destructive);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+.rail-model .rail-sep {
+  width: 18px;
+  height: 1px;
+  margin: var(--spacing-1) 0;
+  background: var(--color-border);
+}
+
 .rail-bottom {
   margin-top: auto;
   display: flex;

@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: lineage-dag-canvas-rebuild
 status: executing
-stopped_at: Completed 03-06-PLAN.md
-last_updated: "2026-07-23T23:51:18.850Z"
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-07-24T00:04:47.123Z"
 last_activity: 2026-07-23
 last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 20
-  completed_plans: 18
+  completed_plans: 19
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 ## Current Position
 
 Phase: 03 (lineage-dag-canvas-rebuild) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-07-23 — Phase 03 execution started
 
-Progress: [█████████░] 90%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -76,6 +76,7 @@ Progress: [█████████░] 90%
 | Phase 03 P03 | 3min | 3 tasks | 7 files |
 | Phase 03 P04 | 25min | 3 tasks | 6 files |
 | Phase 03 P06 | 12min | 2 tasks | 4 files |
+| Phase 03 P05 | 25min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -129,6 +130,9 @@ carried into the roadmap without re-litigation:
 - [Phase ?]: 03-06: useLineageKeyboardNav reads document.activeElement's data-lineage-focus attribute as the roving-tabindex source of truth instead of a separate tracked ref
 - [Phase ?]: 03-06: resolveNextFocus trusts caller-supplied targets array ordering (rank/card/row) rather than re-deriving it — 03-07 owns building that list
 - [Phase ?]: 03-06: an unconnected row's ArrowRight/Left resolves to null (no rank fallback) — only headers rank-traverse, only connected rows path-walk, per UI-SPEC
+- [Phase ?]: 03-05: interface-typed xyflow node/edge data needs a local & Record<string, unknown> intersection at NodeProps<Node<...>>/EdgeProps<Edge<...>> call sites (TS generic-constraint quirk, no runtime change)
+- [Phase ?]: 03-05: __node__* fallback Handle pair renders unconditionally on both node types in both table/column modes (not gated behind mode==='table' as RESEARCH.md's example showed) — object-level edges always target it
+- [Phase ?]: 03-05: traced edge state lives in a local TracedLineageEdgeData type extension in LineageEdge.tsx, not added to shared types.ts — 03-07 injects it per-render
 
 ### Pending Todos
 
@@ -153,6 +157,6 @@ yet. Watch items carried from research, to revisit as their phases start:
 
 ## Session Continuity
 
-Last session: 2026-07-23T23:51:18.842Z
-Stopped at: Completed 03-06-PLAN.md
+Last session: 2026-07-24T00:04:47.113Z
+Stopped at: Completed 03-05-PLAN.md
 Resume file: None

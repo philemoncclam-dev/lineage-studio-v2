@@ -9,6 +9,7 @@ const run = (reads: string[], writes: string[]): SandboxRunResult => ({
   reads,
   writes,
   table_schemas: {},
+  column_lineage: [],
   log: [],
   saw_credentials: false,
   error: null,
@@ -16,7 +17,14 @@ const run = (reads: string[], writes: string[]): SandboxRunResult => ({
 
 const runWithSchema = (): SandboxRunResult => ({
   ...run(['raw_orders'], ['gold']),
-  table_schemas: { gold: [{ name: 'region', type: 'string' }, { name: 'total', type: 'bigint' }] },
+  table_schemas: {
+    raw_orders: [{ name: 'region', type: 'string' }, { name: 'amount', type: 'bigint' }],
+    gold: [{ name: 'region', type: 'string' }, { name: 'total', type: 'bigint' }],
+  },
+  column_lineage: [
+    { to_table: 'gold', to_column: 'region', from_column: 'region', transform: null },
+    { to_table: 'gold', to_column: 'total', from_column: 'amount', transform: 'sum(amount)' },
+  ],
 })
 
 describe('sandboxRunToGraph', () => {
@@ -45,5 +53,12 @@ describe('sandboxRunToGraph', () => {
     const gold = g.nodes.find((n) => n.name === 'gold')!
     expect(gold.columns.map((c) => c.name)).toEqual(['region', 'total'])
     expect(gold.columns[1].data_type).toBe('bigint')
+  })
+
+  it('puts column maps on the write edge so the model gets column lineage', () => {
+    const g = sandboxRunToGraph(runWithSchema(), 'nb')
+    const write = g.edges.find((e) => e.kind === 'writes')!
+    expect(write.columns.map((c) => `${c.from_column}->${c.to_column}`)).toEqual(['region->region', 'amount->total'])
+    expect(write.columns[1].transform).toBe('sum(amount)')
   })
 })

@@ -33,6 +33,20 @@ class RunRequest(BaseModel):
     schemas: dict[str, list[ColumnSchema]] = Field(default_factory=dict)
 
 
+class ColumnFlow(BaseModel):
+    """One output column ← one source column, from Spark's analyzed plan.
+
+    `from_column` is a source column *name* (the frontend resolves which read
+    table owns it); `transform` is the SQL of the producing expression when the
+    column is computed rather than passed through unchanged.
+    """
+
+    to_table: str
+    to_column: str
+    from_column: str
+    transform: str | None = None
+
+
 class CellResult(BaseModel):
     index: int
     status: Literal["ok", "error", "skipped"]
@@ -57,10 +71,12 @@ class RunResult(BaseModel):
     cells: list[CellResult] = Field(default_factory=list)
     reads: list[str] = Field(default_factory=list)
     writes: list[str] = Field(default_factory=list)
-    #: Real output schema per written table, as Spark's analyzer resolved it —
-    #: the spark engine's payoff. Empty for the stub engine (static analysis
-    #: can't compute output types). Feeds attribute-level model creation.
+    #: Schema per table the run touched — written tables as Spark's analyzer
+    #: resolved them, read tables as their input views were registered. Empty
+    #: for the stub engine. Feeds attribute-level model creation.
     table_schemas: dict[str, list[ColumnSchema]] = Field(default_factory=dict)
+    #: Column-level lineage from the analyzed plans (spark engine only).
+    column_lineage: list[ColumnFlow] = Field(default_factory=list)
     log: list[str] = Field(default_factory=list)
     saw_credentials: bool = False
     error: str | None = None

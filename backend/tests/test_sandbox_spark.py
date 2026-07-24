@@ -42,6 +42,25 @@ def test_spark_engine_derives_reads_writes_and_output_schema():
     assert schema == {"region_up": "string", "total_amount": "bigint"}
 
 
+def test_spark_engine_derives_column_level_lineage():
+    result = run_sandbox(RunRequest(notebook_name="nb", cells=CELLS, schemas=SCHEMAS), engine="spark")
+    assert result.ok, result.error
+    flows = {(f.to_column, f.from_column) for f in result.column_lineage if f.to_table == "gold_region_totals"}
+    # region_up derives from region; total_amount derives from amount.
+    assert ("region_up", "region") in flows
+    assert ("total_amount", "amount") in flows
+    # a computed column carries the producing expression as its transform
+    total = next(f for f in result.column_lineage if f.to_column == "total_amount")
+    assert total.transform and "amount" in total.transform
+
+
+def test_spark_engine_returns_read_table_schemas_too():
+    result = run_sandbox(RunRequest(notebook_name="nb", cells=CELLS, schemas=SCHEMAS), engine="spark")
+    # the read table's columns come back so the frontend can draw source-side edges
+    assert "raw_orders" in result.table_schemas
+    assert {c.name for c in result.table_schemas["raw_orders"]} == {"order_id", "region", "amount"}
+
+
 def test_spark_engine_reports_no_credentials(monkeypatch):
     monkeypatch.setenv("AZURE_CLIENT_SECRET", "leak-me")
     result = run_sandbox(RunRequest(notebook_name="nb", cells=["x = 1"]), engine="spark")

@@ -7,7 +7,7 @@
 // Columns are not populated yet — the sandbox derives object-level lineage
 // (notebook ↔ tables). When the schema fetch lands (M2b), the same tables gain
 // their columns and the model gains attribute-level detail for free.
-import type { LineageGraph, LineageNode, LineageEdge, SandboxRunResult, Column } from '../api'
+import type { LineageGraph, LineageNode, LineageEdge, SandboxRunResult, Column, ColumnMap } from '../api'
 
 const tableId = (name: string) => `table.${name.toLowerCase()}`
 
@@ -35,12 +35,20 @@ export function sandboxRunToGraph(
     nodes.push({ id: tableId(t), kind: 'table', name: t, parent_id: null, columns: columnsFor(t), meta: {} })
   }
 
+  // Column maps for a write edge: the run's column flows into that target,
+  // shaped as the LineageGraph's ColumnMap (adapt() resolves which read table
+  // owns each from_column). This is what makes the authored model column-level.
+  const columnMapsFor = (target: string): ColumnMap[] =>
+    result.column_lineage
+      .filter((f) => f.to_table === target)
+      .map((f) => ({ from_column: f.from_column, to_column: f.to_column, transform: f.transform ?? null, evidence: null }))
+
   const edges: LineageEdge[] = [
     ...result.reads.map(
       (r): LineageEdge => ({ source: tableId(r), target: nbId, kind: 'reads', columns: [], via: nbId }),
     ),
     ...result.writes.map(
-      (w): LineageEdge => ({ source: nbId, target: tableId(w), kind: 'writes', columns: [], via: nbId }),
+      (w): LineageEdge => ({ source: nbId, target: tableId(w), kind: 'writes', columns: columnMapsFor(w), via: nbId }),
     ),
   ]
 

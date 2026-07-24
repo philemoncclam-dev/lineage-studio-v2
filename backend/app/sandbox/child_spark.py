@@ -50,6 +50,53 @@ def _short(ref: str) -> str:
     return ref.split("/")[-1].split(".")[-1]
 
 
+def _scala_seq(seq) -> list:  # noqa: ANN001
+    try:
+        return [seq.apply(i) for i in range(seq.size())]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _column_flows(df, target: str) -> list[dict]:
+    """Per-output-column source columns, from the write's analyzed plan.
+
+    Each output NamedExpression exposes its input `references()` (attributes by
+    name); passthrough columns reference just themselves, computed ones
+    reference the inputs they derive from. Anything we can't map falls back to
+    an identity (same-named) source so a copy still draws an edge.
+    """
+    out_names = [f.name for f in df.schema.fields]
+    flows: dict[str, tuple[list[str], str | None]] = {}
+    try:
+        plan = df._jdf.queryExecution().analyzed()
+        for expr in _scala_seq(plan.expressions()):
+            try:
+                name = expr.name()
+            except Exception:  # noqa: BLE001
+                continue
+            if name not in out_names:
+                continue
+            refs = list(dict.fromkeys(a.name() for a in _scala_seq(expr.references().toSeq())))
+            transform = None
+            if not (len(refs) == 1 and refs[0] == name):
+                try:
+                    transform = expr.sql()
+                except Exception:  # noqa: BLE001
+                    transform = None
+            flows[name] = (refs, transform)
+    except Exception:  # noqa: BLE001
+        pass
+
+    result: list[dict] = []
+    for out_col in out_names:
+        refs, transform = flows.get(out_col, ([out_col], None))
+        for src in refs:
+            result.append(
+                {"to_table": _short(target), "to_column": out_col, "from_column": src, "transform": transform}
+            )
+    return result
+
+
 def _saw_credentials() -> bool:
     for key in os.environ:
         up = key.upper()
@@ -100,7 +147,13 @@ def main() -> None:
 
     writes: list[str] = []
     reads: set[str] = set()
-    table_schemas: dict[str, list[dict]] = {}
+    # Seed with the registered input views so read tables carry their columns
+    # too — the frontend needs source-side columns to draw column edges.
+    table_schemas: dict[str, list[dict]] = {
+        _short(t): [{"name": c["name"], "type": c.get("type")} for c in cols]
+        for t, cols in schemas.items()
+    }
+    column_lineage: list[dict] = []
 
     def _capture(target: str, df) -> None:
         name = _short(target)
@@ -113,6 +166,7 @@ def main() -> None:
             table_schemas[name] = [
                 {"name": f.name, "type": f.dataType.simpleString()} for f in df.schema.fields
             ]
+            column_lineage.extend(_column_flows(df, name))
         except Exception as exc:  # noqa: BLE001 — a capture failure must not abort the run
             log.append(f"[spark] could not analyze write to {name}: {exc}")
 
@@ -188,6 +242,7 @@ def main() -> None:
         "reads": sorted(reads - set(writes)),
         "writes": sorted(set(writes)),
         "table_schemas": table_schemas,
+        "column_lineage": column_lineage,
         "log": log,
         "saw_credentials": creds,
         "error": None,

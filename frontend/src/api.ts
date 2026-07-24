@@ -477,14 +477,23 @@ export interface SandboxColumn {
   type?: string | null
 }
 
+export interface SandboxColumnFlow {
+  to_table: string
+  to_column: string
+  from_column: string
+  transform?: string | null
+}
+
 export interface SandboxRunResult {
   ok: boolean
   engine: 'stub' | 'spark'
   cells: SandboxCellResult[]
   reads: string[]
   writes: string[]
-  /** Real output schema per written table (Spark engine only; empty for stub). */
+  /** Schema per touched table (Spark engine only; empty for stub). */
   table_schemas: Record<string, SandboxColumn[]>
+  /** Column-level lineage from the analyzed plans (Spark engine only). */
+  column_lineage: SandboxColumnFlow[]
   log: string[]
   saw_credentials: boolean
   error: string | null

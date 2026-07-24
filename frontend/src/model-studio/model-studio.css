@@ -1,5 +1,9 @@
-/* Modeling-mode styles. Token-only (no raw hex/px beyond structural sizing),
-   consistent with the Phase 1 design system and the shell chrome. */
+/* Modeling-mode styles. Token-only (no raw hex beyond structural sizing),
+   consistent with the Phase 1 design system and the shell chrome.
+
+   Row heights are load-bearing: layout.ts stacks cards from constants that
+   must equal the rendered heights here (BAND 34 / TABLE HEAD 30 / ATTR 26 /
+   EMPTY 24 / TABLE FOOT 24 / CARD FOOT 26, card width 248, 1px borders). */
 
 .ms-root {
   flex: 1;
@@ -10,12 +14,14 @@
   background: var(--color-surface-canvas);
 }
 
+/* ---- toolbar ------------------------------------------------------------- */
+
 .ms-toolbar {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--spacing-4);
-  padding: var(--spacing-6) var(--spacing-8) var(--spacing-4);
+  padding: var(--spacing-4) var(--spacing-8);
   border-bottom: var(--border-width) solid var(--color-border);
 }
 .ms-title {
@@ -29,21 +35,51 @@
 .ms-lead {
   margin: 0;
   max-width: 60ch;
+  font-size: var(--text-base);
   color: var(--color-text-secondary);
-  font-size: var(--text-micro);
-  line-height: 1.5;
 }
 .ms-toolbar-actions {
   display: flex;
   gap: var(--spacing-2);
+  align-items: center;
   flex-shrink: 0;
 }
-.ms-danger:hover:not(:disabled) {
-  border-color: var(--color-destructive);
-  color: var(--color-destructive);
+.ms-toolbar-id {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  min-width: 0;
 }
+.ms-back {
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-size: var(--text-heading);
+  padding: 0 var(--spacing-1);
+}
+.ms-back:hover { color: var(--color-text-primary); }
+.ms-model-name {
+  font: inherit;
+  font-size: var(--text-heading);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-input);
+  padding: var(--spacing-1) var(--spacing-2);
+  min-width: 10ch;
+}
+.ms-model-name:hover { border-color: var(--color-border); }
+.ms-model-name:focus-visible { outline: none; border-color: var(--color-accent); }
+.ms-count {
+  font-size: var(--text-micro);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+.ms-primary { border-color: var(--color-accent-dim); color: var(--color-accent-hi); }
+.ms-danger:hover:not(:disabled) { border-color: var(--color-destructive); color: var(--color-destructive); }
 
-/* ---- empty state ---- */
+/* ---- empty state --------------------------------------------------------- */
+
 .ms-empty {
   flex: 1;
   display: flex;
@@ -52,34 +88,34 @@
   justify-content: center;
   gap: var(--spacing-3);
   text-align: center;
-  color: var(--color-text-secondary);
+  padding: var(--spacing-8);
 }
 .ms-empty-title {
   margin: 0;
   font-size: var(--text-heading);
-  color: var(--color-text-primary);
   font-weight: 600;
+  color: var(--color-text-primary);
 }
 .ms-empty-sub {
-  margin: 0 0 var(--spacing-2);
+  margin: 0;
+  max-width: 52ch;
+  color: var(--color-text-secondary);
   font-size: var(--text-base);
 }
+.ms-add-row { display: flex; gap: var(--spacing-2); }
 
-/* ---- board of layer columns ---- */
-.ms-board {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  gap: var(--spacing-4);
+/* ---- model library ------------------------------------------------------- */
+
+.ms-model-grid {
+  list-style: none;
+  margin: 0;
   padding: var(--spacing-6) var(--spacing-8);
-  overflow-x: auto;
-  overflow-y: hidden;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-4);
+  overflow-y: auto;
 }
-
-.ms-layer {
-  flex: 0 0 320px;
-  max-height: 100%;
+.ms-model-card {
   display: flex;
   flex-direction: column;
   background: var(--color-surface-1);
@@ -88,238 +124,359 @@
   box-shadow: var(--shadow-card);
   overflow: hidden;
 }
-.ms-layer-head {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  padding: var(--spacing-2) var(--spacing-3);
-  border-bottom: var(--border-width) solid var(--color-border);
-  background: var(--color-surface-2);
-}
-.ms-layer-name {
-  flex: 1;
-  min-width: 0;
+.ms-model-card:hover { border-color: var(--color-border-strong); }
+.ms-model-open {
   font: inherit;
-  font-weight: 600;
-  font-size: var(--text-base);
-  color: var(--color-text-primary);
-  background: transparent;
-  border: var(--border-width) solid transparent;
-  border-radius: var(--radius-input);
-  padding: var(--spacing-1) var(--spacing-2);
-}
-.ms-layer-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--spacing-3);
+  text-align: left;
   display: flex;
   flex-direction: column;
+  gap: var(--spacing-1);
+  padding: var(--spacing-4);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+}
+.ms-model-title { font-weight: 600; color: var(--color-text-primary); }
+.ms-model-meta { font-size: var(--text-micro); color: var(--color-text-secondary); }
+.ms-model-date { font-size: var(--text-micro); color: var(--color-text-tertiary); }
+.ms-model-actions {
+  display: flex;
   gap: var(--spacing-2);
-}
-.ms-empty-hint {
-  margin: 0;
-  padding: var(--spacing-3);
-  color: var(--color-text-tertiary);
-  font-size: var(--text-micro);
-  text-align: center;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-control);
-}
-.ms-layer-add {
-  padding: var(--spacing-2) var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-4) var(--spacing-3);
   border-top: var(--border-width) solid var(--color-border);
 }
 
-/* ---- nodes (objects + groups) ---- */
-.ms-node {
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface-2);
+/* ---- editor body / canvas ------------------------------------------------ */
+
+.ms-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
-.ms-group {
-  background: var(--color-surface-1);
-  border-style: dashed;
+.ms-canvas { flex: 1; min-width: 0; }
+.ms-canvas .react-flow { background: var(--color-surface-canvas); }
+.ms-canvas .react-flow__background { color: var(--color-grid-dot); }
+
+/* Layer swimlane column */
+.ms-layer {
+  box-sizing: border-box;
+  height: 100%;
+  border-right: var(--border-width) solid var(--color-border);
+  background:
+    linear-gradient(color-mix(in oklab, var(--color-surface-1) 40%, transparent),
+      color-mix(in oklab, var(--color-surface-1) 40%, transparent));
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
-.ms-node-head {
+.ms-layer-head {
+  height: 44px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: var(--spacing-1);
-  padding: var(--spacing-1) var(--spacing-2);
+  padding: 0 var(--spacing-3);
+  border-bottom: var(--border-width) solid var(--color-border);
 }
-.ms-node-name {
-  flex: 1;
-  min-width: 0;
+.ms-layer-name {
   font: inherit;
-  font-size: var(--text-base);
-  color: var(--color-text-primary);
-  background: transparent;
-  border: var(--border-width) solid transparent;
-  border-radius: var(--radius-input);
-  padding: var(--spacing-1) var(--spacing-2);
-}
-.ms-node-name:hover,
-.ms-layer-name:hover,
-.ms-attr-name:hover,
-.ms-attr-type:hover {
-  border-color: var(--color-border);
-}
-.ms-node-name:focus,
-.ms-layer-name:focus,
-.ms-attr-name:focus,
-.ms-attr-type:focus {
-  outline: none;
-  border-color: var(--color-accent);
-  background: var(--color-surface-3);
-}
-
-.ms-kind-badge {
-  flex-shrink: 0;
-  font-family: var(--font-mono);
   font-size: var(--text-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 1px var(--spacing-1);
-  border-radius: var(--radius-pill);
-  color: var(--color-text-tertiary);
-  background: var(--color-surface-3);
-}
-.ms-kind-badge[data-kind='object'] {
-  color: var(--color-accent-hi);
-}
-
-.ms-group-body {
-  padding: 0 var(--spacing-2) var(--spacing-2) var(--spacing-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
-  border-left: 2px solid var(--color-border);
-  margin-left: var(--spacing-3);
-}
-
-/* ---- attributes ---- */
-.ms-attrs {
-  padding: 0 var(--spacing-2) var(--spacing-2);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.ms-attr {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-1);
-}
-.ms-attr-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--color-text-tertiary);
-  flex-shrink: 0;
-  margin: 0 var(--spacing-1);
-}
-.ms-attr-name {
-  flex: 1;
-  min-width: 0;
-  font: inherit;
-  font-size: var(--text-micro);
   color: var(--color-text-secondary);
   background: transparent;
   border: var(--border-width) solid transparent;
   border-radius: var(--radius-input);
-  padding: 2px var(--spacing-1);
-}
-.ms-attr-type {
-  flex: 0 0 84px;
-  font-family: var(--font-mono);
-  font-size: var(--text-micro);
-  color: var(--color-text-tertiary);
-  background: transparent;
-  border: var(--border-width) solid transparent;
-  border-radius: var(--radius-input);
-  padding: 2px var(--spacing-1);
-}
-
-/* ---- controls ---- */
-.ms-add-row {
-  display: flex;
-  gap: var(--spacing-2);
-}
-.ms-add {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-1);
-  font: inherit;
-  font-size: var(--text-micro);
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-control);
   padding: var(--spacing-1) var(--spacing-2);
+  min-width: 0;
+  flex: 1;
+}
+.ms-layer-name:hover { border-color: var(--color-border); }
+.ms-layer-name:focus-visible { outline: none; border-color: var(--color-accent); color: var(--color-text-primary); }
+.ms-layer-foot {
+  display: flex;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3);
+}
+
+/* Container card (system band + tables, or a bare table) */
+.ms-card {
+  box-sizing: border-box;
+  width: 248px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  font-size: var(--text-micro);
+}
+.ms-band {
+  height: 34px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 0 var(--spacing-2);
+  background: var(--color-surface-3);
+  border-bottom: 1px solid var(--color-border);
   cursor: pointer;
 }
-.ms-add:hover {
-  color: var(--color-accent-hi);
-  border-color: var(--color-accent);
-}
-.ms-add-attr {
-  align-self: flex-start;
-  margin-top: 2px;
-}
-
-.ms-collapse,
-.ms-x {
-  display: inline-flex;
+.ms-table { border-bottom: 1px solid var(--color-border); }
+.ms-table:last-of-type { border-bottom: none; }
+.ms-table-head {
+  height: 30px;
+  box-sizing: border-box;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  color: var(--color-text-tertiary);
+  gap: var(--spacing-1);
+  padding: 0 var(--spacing-2);
+  cursor: pointer;
+}
+.ms-band.is-selected,
+.ms-table-head.is-selected { box-shadow: inset 2px 0 0 var(--color-accent); }
+.ms-band-name,
+.ms-table-name,
+.ms-attr-name {
+  font: inherit;
+  color: var(--color-text-primary);
   background: transparent;
   border: none;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-input);
+  padding: 2px var(--spacing-1);
+  min-width: 0;
+  flex: 1;
+}
+.ms-band-name { font-weight: 600; }
+.ms-table-name { font-family: var(--font-mono); }
+.ms-band-name:focus-visible,
+.ms-table-name:focus-visible,
+.ms-attr-name:focus-visible { outline: 1px solid var(--color-accent); }
+
+.ms-kind {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 1px 5px;
+}
+.ms-kind[data-kind='object'] { color: var(--color-domain-notebook); border-color: color-mix(in oklab, var(--color-domain-notebook) 40%, transparent); }
+.ms-kind[data-kind='group'] { color: var(--color-domain-gold); border-color: color-mix(in oklab, var(--color-domain-gold) 40%, transparent); }
+.ms-kind[data-kind='edge'] { color: var(--color-accent-hi); border-color: var(--color-accent-dim); }
+
+/* Attribute row */
+.ms-attr {
+  position: relative;
+  height: 26px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 0 var(--spacing-3);
   cursor: pointer;
 }
-.ms-collapse:hover {
-  color: var(--color-text-primary);
-  background: var(--color-surface-3);
+.ms-attr:hover { background: color-mix(in oklab, var(--color-surface-3) 60%, transparent); }
+.ms-attr.is-selected { box-shadow: inset 2px 0 0 var(--color-accent); background: color-mix(in oklab, var(--color-accent) 10%, transparent); }
+.ms-attr-name { font-family: var(--font-mono); }
+.ms-attr-type {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-text-tertiary);
 }
-.ms-x:hover {
-  color: var(--color-destructive);
-  background: var(--color-surface-3);
-}
-
-.ms-icon {
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: transform 120ms ease;
-}
-
-.ms-add-layer-col {
-  flex: 0 0 180px;
-  align-self: stretch;
+.ms-no-attrs {
+  height: 24px;
+  box-sizing: border-box;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  padding: 0 var(--spacing-3);
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+/* Connection handles — visible dots just inside the card edges. They must sit
+   fully INSIDE the card: .ms-card clips with overflow:hidden, and a handle
+   halfway outside loses hit-testing to the card underneath. */
+.ms-canvas .ms-handle {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-1);
+}
+.ms-canvas .ms-handle-in { left: 2px; }
+.ms-canvas .ms-handle-out { right: 2px; }
+.ms-canvas .ms-handle:hover,
+.ms-canvas .ms-handle.connectingto { border-color: var(--color-accent); background: var(--color-accent-dim); }
+
+/* Add / delete micro-buttons */
+.ms-add {
+  font: inherit;
+  height: 24px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 0 var(--spacing-3);
+  background: none;
+  border: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.ms-add:hover { color: var(--color-accent-hi); }
+.ms-add-table { height: 26px; }
+.ms-layer-foot .ms-add { width: auto; height: 28px; border: 1px dashed var(--color-border); border-radius: var(--radius-control); padding: 0 var(--spacing-2); }
+.ms-layer-foot .ms-add:hover { border-color: var(--color-accent-dim); }
+.ms-x {
+  flex-shrink: 0;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--spacing-2);
+  width: 18px;
+  height: 18px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
   color: var(--color-text-tertiary);
-  background: transparent;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-card);
   cursor: pointer;
+  opacity: 0;
+}
+.ms-attr:hover .ms-x,
+.ms-band:hover .ms-x,
+.ms-table-head:hover .ms-x,
+.ms-layer-head:hover .ms-x,
+.ms-insp-head .ms-x,
+.ms-modal-head .ms-x { opacity: 1; }
+.ms-x:hover { color: var(--color-destructive); }
+.ms-icon { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Edge kinds — distinct stroke styles, one hue family per kind */
+.ms-canvas .react-flow__edge-path { stroke: var(--color-edge-reads); stroke-width: 1.25; }
+.ms-canvas .ms-edge-derive .react-flow__edge-path { stroke: var(--color-edge-derives); stroke-dasharray: 6 3; }
+.ms-canvas .ms-edge-aggregate .react-flow__edge-path { stroke: var(--color-edge-writes); stroke-width: 2; }
+.ms-canvas .ms-edge-filter .react-flow__edge-path { stroke: var(--color-domain-neutral); stroke-dasharray: 2 3; }
+.ms-canvas .react-flow__edge.selected .react-flow__edge-path { stroke: var(--color-accent-hi); }
+
+/* ---- inspector ------------------------------------------------------------ */
+
+.ms-inspector {
+  width: 280px;
+  flex-shrink: 0;
+  border-left: var(--border-width) solid var(--color-border);
+  background: var(--color-surface-1);
+  padding: var(--spacing-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  overflow-y: auto;
+}
+.ms-insp-head { display: flex; align-items: center; gap: var(--spacing-2); }
+.ms-insp-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--text-base);
+  color: var(--color-text-primary);
 }
-.ms-add-layer-col:hover {
-  color: var(--color-accent-hi);
-  border-color: var(--color-accent);
+.ms-insp-path {
+  margin: 0;
+  font-size: var(--text-micro);
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
 }
-.ms-add-layer-col .ms-icon {
-  width: 22px;
-  height: 22px;
+.ms-field { display: flex; flex-direction: column; gap: var(--spacing-1); font-size: var(--text-micro); color: var(--color-text-secondary); }
+.ms-field input,
+.ms-field select,
+.ms-field textarea {
+  font: inherit;
+  font-size: var(--text-micro);
+  color: var(--color-text-primary);
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-input);
+  padding: var(--spacing-1) var(--spacing-2);
+  resize: vertical;
 }
+.ms-field input:focus-visible,
+.ms-field select:focus-visible,
+.ms-field textarea:focus-visible { outline: none; border-color: var(--color-accent); }
+.ms-field-inline { flex-direction: row; align-items: center; gap: var(--spacing-2); }
+
+/* ---- import modal ---------------------------------------------------------- */
+
+.ms-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: color-mix(in oklab, var(--slate-0) 60%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-8);
+}
+.ms-modal {
+  width: min(640px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  background: var(--color-surface-1);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-overlay);
+  padding: var(--spacing-4) var(--spacing-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.ms-modal-head { display: flex; align-items: center; justify-content: space-between; }
+.ms-modal-head h2 { margin: 0; font-size: var(--text-heading); color: var(--color-text-primary); }
+.ms-modal-hint { margin: 0; font-size: var(--text-micro); color: var(--color-text-secondary); }
+.ms-modal-hint code { font-family: var(--font-mono); color: var(--color-text-primary); }
+.ms-modal-paste {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--color-text-primary);
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-input);
+  padding: var(--spacing-2);
+  resize: vertical;
+}
+.ms-modal-paste:focus-visible { outline: none; border-color: var(--color-accent); }
+.ms-file input { font-size: var(--text-micro); color: var(--color-text-secondary); }
+.ms-import-preview { display: flex; flex-direction: column; gap: var(--spacing-2); }
+.ms-import-tables {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  max-height: 200px;
+  overflow-y: auto;
+}
+.ms-import-tables li {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--text-micro);
+}
+.ms-import-table-name { font-family: var(--font-mono); color: var(--color-text-primary); flex: 1; }
+.ms-import-tables input {
+  font: inherit;
+  font-size: var(--text-micro);
+  color: var(--color-text-primary);
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-input);
+  padding: 2px var(--spacing-2);
+  width: 14ch;
+}
+.ms-modal-foot { display: flex; justify-content: flex-end; gap: var(--spacing-2); }

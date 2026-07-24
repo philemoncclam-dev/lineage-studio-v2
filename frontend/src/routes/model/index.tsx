@@ -1,7 +1,7 @@
-// /model — the Modeling-mode landing view (the authoring board).
+// /model — the model library (create/open/duplicate/delete authored models).
 import { createFileRoute } from '@tanstack/react-router'
-import ModelStudio from '../../model-studio/ModelStudio'
+import ModelsHome from '../../model-studio/ModelsHome'
 
 export const Route = createFileRoute('/model/')({
-  component: ModelStudio,
+  component: ModelsHome,
 })

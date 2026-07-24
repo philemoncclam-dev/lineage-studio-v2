@@ -1,201 +1,169 @@
-// Modeling-mode store: a React context + reducer over ModelDoc, persisted to
-// localStorage so an authored model survives refresh. Self-contained — it does
-// NOT touch the shared LineageGraph/AppModel the other three modes read.
-//
-// All tree mutations are immutable and recursive so Groups nest to any depth.
+// Modeling-mode store: React context + reducer over one authored Model,
+// persisted to localStorage via localdb on every change. Self-contained — it
+// does NOT touch the shared LineageGraph/AppModel the other modes read.
 import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react'
-import {
-  emptyDoc,
-  type Attribute,
-  type Group,
-  type Layer,
-  type ModelDoc,
-  type ModelNode,
-  type ModelObject,
-} from './types'
-
-const STORAGE_KEY = 'lineage-studio:model-doc:v1'
-
-const uid = (): string =>
-  typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `id-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`
-
-// ---- recursive tree helpers -------------------------------------------------
-
-function mapNodes(nodes: ModelNode[], id: string, fn: (n: ModelNode) => ModelNode): ModelNode[] {
-  return nodes.map((n) => {
-    if (n.id === id) return fn(n)
-    if (n.kind === 'group') return { ...n, children: mapNodes(n.children, id, fn) }
-    return n
-  })
-}
-
-function removeNode(nodes: ModelNode[], id: string): ModelNode[] {
-  return nodes
-    .filter((n) => n.id !== id)
-    .map((n) => (n.kind === 'group' ? { ...n, children: removeNode(n.children, id) } : n))
-}
-
-/** Append `child` into the group with `groupId`, searching recursively. */
-function appendToGroup(nodes: ModelNode[], groupId: string, child: ModelNode): ModelNode[] {
-  return nodes.map((n) => {
-    if (n.kind !== 'group') return n
-    if (n.id === groupId) return { ...n, children: [...n.children, child] }
-    return { ...n, children: appendToGroup(n.children, groupId, child) }
-  })
-}
+import { saveModel } from './localdb'
+import { uid, type EdgeKind, type Model, type ModelNode, type NodeType } from './types'
 
 // ---- actions ----------------------------------------------------------------
 
-type Action =
-  | { type: 'reset'; doc: ModelDoc }
-  | { type: 'clear' }
-  | { type: 'addLayer' }
-  | { type: 'renameLayer'; layerId: string; name: string }
-  | { type: 'deleteLayer'; layerId: string }
-  // parentGroupId omitted → add at the layer's top level.
-  | { type: 'addObject'; layerId: string; parentGroupId?: string }
-  | { type: 'addGroup'; layerId: string; parentGroupId?: string }
-  | { type: 'renameNode'; layerId: string; nodeId: string; name: string }
-  | { type: 'toggleGroup'; layerId: string; nodeId: string }
-  | { type: 'deleteNode'; layerId: string; nodeId: string }
-  | { type: 'addAttribute'; layerId: string; objectId: string }
-  | { type: 'renameAttribute'; layerId: string; objectId: string; attrId: string; name: string }
-  | { type: 'setAttributeType'; layerId: string; objectId: string; attrId: string; dataType: string }
-  | { type: 'deleteAttribute'; layerId: string; objectId: string; attrId: string }
+export type Action =
+  | { type: 'reset'; model: Model }
+  | { type: 'renameModel'; name: string }
+  | { type: 'addLayer'; name?: string }
+  | { type: 'addNode'; nodeType: Exclude<NodeType, 'Layer'>; parentId: string; name?: string }
+  | { type: 'renameNode'; nodeId: string; name: string }
+  | { type: 'setNodeProperty'; nodeId: string; key: string; value: unknown }
+  | { type: 'setLogic'; nodeId: string; logic: string }
+  | { type: 'deleteNode'; nodeId: string }
+  | { type: 'connect'; sourceNodeId: string; targetNodeId: string }
+  | { type: 'deleteEdges'; edgeIds: string[] }
+  | { type: 'setEdgeKind'; edgeId: string; kind: EdgeKind }
+  | { type: 'setEdgeNote'; edgeId: string; note: string }
+  | { type: 'importNodes'; nodes: ModelNode[] }
 
-function newObject(): ModelObject {
-  return { id: uid(), kind: 'object', name: 'New object', attributes: [] }
-}
-function newGroup(): Group {
-  return { id: uid(), kind: 'group', name: 'New group', children: [] }
-}
-function newLayer(index: number): Layer {
-  return { id: uid(), name: `Layer ${index + 1}`, nodes: [] }
+const DEFAULT_NAMES: Record<NodeType, string> = {
+  Layer: 'New layer',
+  Object: 'New system',
+  Group: 'new_table',
+  Attribute: 'column',
 }
 
-function updateLayer(doc: ModelDoc, layerId: string, fn: (l: Layer) => Layer): ModelDoc {
-  return { ...doc, layers: doc.layers.map((l) => (l.id === layerId ? fn(l) : l)) }
+/** Ids of `nodeId` plus every descendant, for cascade delete. */
+function subtreeIds(nodes: ModelNode[], nodeId: string): Set<string> {
+  const childrenOf = new Map<string | null, ModelNode[]>()
+  for (const n of nodes) {
+    const arr = childrenOf.get(n.parentId) ?? []
+    arr.push(n)
+    childrenOf.set(n.parentId, arr)
+  }
+  const out = new Set<string>()
+  const walk = (id: string) => {
+    out.add(id)
+    for (const c of childrenOf.get(id) ?? []) walk(c.id)
+  }
+  walk(nodeId)
+  return out
 }
 
-function reducer(doc: ModelDoc, action: Action): ModelDoc {
+function reducer(model: Model, action: Action): Model {
   switch (action.type) {
     case 'reset':
-      return action.doc
-    case 'clear':
-      return emptyDoc()
-    case 'addLayer':
-      return { ...doc, layers: [...doc.layers, newLayer(doc.layers.length)] }
-    case 'renameLayer':
-      return updateLayer(doc, action.layerId, (l) => ({ ...l, name: action.name }))
-    case 'deleteLayer':
-      return { ...doc, layers: doc.layers.filter((l) => l.id !== action.layerId) }
-    case 'addObject': {
-      const child = newObject()
-      return updateLayer(doc, action.layerId, (l) => ({
-        ...l,
-        nodes: action.parentGroupId ? appendToGroup(l.nodes, action.parentGroupId, child) : [...l.nodes, child],
-      }))
+      return action.model
+    case 'renameModel':
+      return { ...model, name: action.name }
+    case 'addLayer': {
+      const layerCount = model.nodes.filter((n) => n.type === 'Layer').length
+      const node: ModelNode = {
+        id: uid(),
+        type: 'Layer',
+        name: action.name ?? `Layer ${layerCount + 1}`,
+        parentId: null,
+        properties: {},
+        transformation_logic: '',
+      }
+      return { ...model, nodes: [...model.nodes, node] }
     }
-    case 'addGroup': {
-      const child = newGroup()
-      return updateLayer(doc, action.layerId, (l) => ({
-        ...l,
-        nodes: action.parentGroupId ? appendToGroup(l.nodes, action.parentGroupId, child) : [...l.nodes, child],
-      }))
+    case 'addNode': {
+      const node: ModelNode = {
+        id: uid(),
+        type: action.nodeType,
+        name: action.name ?? DEFAULT_NAMES[action.nodeType],
+        parentId: action.parentId,
+        properties: {},
+        transformation_logic: '',
+      }
+      return { ...model, nodes: [...model.nodes, node] }
     }
     case 'renameNode':
-      return updateLayer(doc, action.layerId, (l) => ({
-        ...l,
-        nodes: mapNodes(l.nodes, action.nodeId, (n) => ({ ...n, name: action.name })),
-      }))
-    case 'toggleGroup':
-      return updateLayer(doc, action.layerId, (l) => ({
-        ...l,
-        nodes: mapNodes(l.nodes, action.nodeId, (n) =>
-          n.kind === 'group' ? { ...n, collapsed: !n.collapsed } : n,
-        ),
-      }))
-    case 'deleteNode':
-      return updateLayer(doc, action.layerId, (l) => ({ ...l, nodes: removeNode(l.nodes, action.nodeId) }))
-    case 'addAttribute':
-      return updateLayer(doc, action.layerId, (l) => ({
-        ...l,
-        nodes: mapNodes(l.nodes, action.objectId, (n) =>
-          n.kind === 'object'
-            ? { ...n, attributes: [...n.attributes, { id: uid(), name: 'attribute' } as Attribute] }
+      return {
+        ...model,
+        nodes: model.nodes.map((n) => (n.id === action.nodeId ? { ...n, name: action.name } : n)),
+      }
+    case 'setNodeProperty':
+      return {
+        ...model,
+        nodes: model.nodes.map((n) =>
+          n.id === action.nodeId
+            ? { ...n, properties: { ...n.properties, [action.key]: action.value } }
             : n,
         ),
-      }))
-    case 'renameAttribute':
-      return updateLayer(doc, action.layerId, (l) => ({
-        ...l,
-        nodes: mapNodes(l.nodes, action.objectId, (n) =>
-          n.kind === 'object'
-            ? { ...n, attributes: n.attributes.map((a) => (a.id === action.attrId ? { ...a, name: action.name } : a)) }
-            : n,
+      }
+    case 'setLogic':
+      return {
+        ...model,
+        nodes: model.nodes.map((n) =>
+          n.id === action.nodeId ? { ...n, transformation_logic: action.logic } : n,
         ),
-      }))
-    case 'setAttributeType':
-      return updateLayer(doc, action.layerId, (l) => ({
-        ...l,
-        nodes: mapNodes(l.nodes, action.objectId, (n) =>
-          n.kind === 'object'
-            ? {
-                ...n,
-                attributes: n.attributes.map((a) =>
-                  a.id === action.attrId ? { ...a, dataType: action.dataType || undefined } : a,
-                ),
-              }
-            : n,
+      }
+    case 'deleteNode': {
+      const gone = subtreeIds(model.nodes, action.nodeId)
+      return {
+        ...model,
+        nodes: model.nodes.filter((n) => !gone.has(n.id)),
+        edges: model.edges.filter((e) => !gone.has(e.sourceNodeId) && !gone.has(e.targetNodeId)),
+      }
+    }
+    case 'connect': {
+      if (action.sourceNodeId === action.targetNodeId) return model
+      const dup = model.edges.some(
+        (e) => e.sourceNodeId === action.sourceNodeId && e.targetNodeId === action.targetNodeId,
+      )
+      if (dup) return model
+      return {
+        ...model,
+        edges: [
+          ...model.edges,
+          { id: uid(), sourceNodeId: action.sourceNodeId, targetNodeId: action.targetNodeId, kind: 'copy' },
+        ],
+      }
+    }
+    case 'deleteEdges': {
+      const gone = new Set(action.edgeIds)
+      return { ...model, edges: model.edges.filter((e) => !gone.has(e.id)) }
+    }
+    case 'setEdgeKind':
+      return {
+        ...model,
+        edges: model.edges.map((e) => (e.id === action.edgeId ? { ...e, kind: action.kind } : e)),
+      }
+    case 'setEdgeNote':
+      return {
+        ...model,
+        edges: model.edges.map((e) =>
+          e.id === action.edgeId ? { ...e, note: action.note || undefined } : e,
         ),
-      }))
-    case 'deleteAttribute':
-      return updateLayer(doc, action.layerId, (l) => ({
-        ...l,
-        nodes: mapNodes(l.nodes, action.objectId, (n) =>
-          n.kind === 'object' ? { ...n, attributes: n.attributes.filter((a) => a.id !== action.attrId) } : n,
-        ),
-      }))
+      }
+    case 'importNodes':
+      return { ...model, nodes: [...model.nodes, ...action.nodes] }
     default:
-      return doc
+      return model
   }
 }
 
-// ---- persistence + context --------------------------------------------------
-
-function loadDoc(): ModelDoc {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return emptyDoc()
-    const parsed = JSON.parse(raw) as ModelDoc
-    if (!parsed || !Array.isArray(parsed.layers)) return emptyDoc()
-    return parsed
-  } catch {
-    return emptyDoc()
-  }
-}
+// ---- context ----------------------------------------------------------------
 
 interface StoreValue {
-  doc: ModelDoc
+  model: Model
   dispatch: React.Dispatch<Action>
 }
 
 const ModelStudioContext = createContext<StoreValue | null>(null)
 
-export function ModelStudioProvider({ children }: { children: ReactNode }) {
-  const [doc, dispatch] = useReducer(reducer, undefined, loadDoc)
+export function ModelStudioProvider({ initial, children }: { initial: Model; children: ReactNode }) {
+  const [model, dispatch] = useReducer(reducer, initial)
+
+  // Re-seed when navigating between models under the same provider mount.
+  useEffect(() => {
+    if (model.id !== initial.id) dispatch({ type: 'reset', model: initial })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial.id])
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(doc))
-    } catch {
-      // storage full / disabled — the in-memory doc still works this session.
-    }
-  }, [doc])
+    saveModel(model)
+  }, [model])
 
-  const value = useMemo(() => ({ doc, dispatch }), [doc])
+  const value = useMemo(() => ({ model, dispatch }), [model])
   return <ModelStudioContext.Provider value={value}>{children}</ModelStudioContext.Provider>
 }
 

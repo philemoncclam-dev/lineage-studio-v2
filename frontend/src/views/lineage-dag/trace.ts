@@ -1,4 +1,4 @@
-// Ported verbatim from the retired frontend/src/views/LineageView.tsx (lines
+// Ported verbatim from the retired hand-rolled SVG lineage view (lines
 // 10-21) — walks upstream + downstream from a column key over the flat
 // colEdges array, with a visited-guard (`set.has`) that makes it terminate
 // on cyclic input. Same algorithm, now independently unit-testable and

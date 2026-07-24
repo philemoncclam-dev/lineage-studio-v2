@@ -2,7 +2,7 @@
 // TRUST-01 requires: edge-type hue (reads/writes/derives, unchanged Phase-1
 // channel) composed with provenance line-style (declared=solid /
 // inferred=dashed, new this phase, D-08) plus trace state (on/dim/none).
-// The path itself is a straight port of the retired LineageView.tsx's
+// The path itself is a straight port of the retired hand-rolled SVG lineage view's
 // cubic-bezier curve(), reimplemented via xyflow's getBezierPath so it still
 // clears intervening cards the way dagre's rank spacing already accounts
 // for (03-UI-SPEC.md "Edge rendering").
@@ -22,7 +22,7 @@ export interface TracedLineageEdgeData extends LineageEdgeData {
 /**
  * Pure class-composition helper (TRUST-01): 'lineage-edge' base class plus
  * three independent channel classes — kind (hue), provenance (dash-style),
- * and trace state — exactly the port of the retired LineageView.tsx's
+ * and trace state — exactly the port of the retired hand-rolled SVG lineage view's
  * `['edge', kind, on?'hot':'', dim].join(' ')` idiom, with `provenance`
  * added as its own independent slot per D-08 (never derived from `kind`,
  * never derived from `traced`).

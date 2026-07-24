@@ -3,7 +3,7 @@
 // toXyflow, trace), the custom nodes/edges (03-05: TableNode, NotebookNode,
 // LineageEdge), and the keyboard/freshness pieces (03-06:
 // useLineageKeyboardNav, FreshnessIndicator) — replacing the retired
-// frontend/src/views/LineageView.tsx (its trace/selection/empty-canvas-click
+// hand-rolled SVG lineage view (its trace/selection/empty-canvas-click
 // patterns carry forward per 03-PATTERNS.md; its useLayoutEffect DOM-
 // measurement block does not, per RESEARCH.md's Don't Hand-Roll table).
 //
@@ -86,7 +86,7 @@ export default function LineageDagView(props: LineageDagViewProps) {
 }
 
 function LineageDagViewInner({ focusTable, focusColumn }: LineageDagViewProps) {
-  void focusColumn // reflected via useSelection().col below (D-07 single source of truth), kept for prop-contract parity with the retired LineageView
+  void focusColumn // reflected via useSelection().col below (D-07 single source of truth), kept for prop-contract parity with the retired lineage view
   const model = useModel()
   const { fetchedAt } = RootRoute.useLoaderData()
   const { col: selectedCol, select, clear } = useSelection()
@@ -121,7 +121,7 @@ function LineageDagViewInner({ focusTable, focusColumn }: LineageDagViewProps) {
       // xyflow's own Node.className lands on the .react-flow__node wrapper
       // (not on TableNode/NotebookNode's inner .ls-node div), so this is a
       // separate CSS hook (.lineage-focus, lineage-dag.css) — a direct port
-      // of the retired LineageView.tsx's `.ls-node.focus` ring for the
+      // of the retired hand-rolled SVG lineage view's `.ls-node.focus` ring for the
       // route-deep-linked-to table (focusTable prop), applied without
       // needing to add another data field to either node component.
       const className = n.id === focusTable ? 'lineage-focus' : undefined

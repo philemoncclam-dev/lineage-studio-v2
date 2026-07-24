@@ -1,5 +1,5 @@
 // NotebookNode — xyflow custom node porting the header-only .ls-node card
-// from the retired frontend/src/views/LineageView.tsx (notebook block, lines
+// from the retired hand-rolled SVG lineage view (notebook block, lines
 // 114-121). Never expandable — notebooks have no column rows, so only the
 // always-present __node__* fallback handle pair is rendered (03-UI-SPEC.md
 // "Column-row edge anchoring" — "Object-level edges ... always use the

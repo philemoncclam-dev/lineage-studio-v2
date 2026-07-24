@@ -1,5 +1,5 @@
 // TableNode — xyflow custom node porting the .ls-node/.head/.cols/.col card
-// language from the retired frontend/src/views/LineageView.tsx (table block,
+// language from the retired hand-rolled SVG lineage view (table block,
 // lines 123-147) onto xyflow's Handle-based positioning contract (DAG-01,
 // DAG-02). Per-row <Handle> pairs replace the old SVG view's manual
 // getBoundingClientRect() measurement — edges anchor to the exact row.

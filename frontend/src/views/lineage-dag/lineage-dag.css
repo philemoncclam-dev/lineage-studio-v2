@@ -1,8 +1,8 @@
 /* lineage-dag.css — ports the .ls-node/.head/.cols/.col/.tick card language
    and the edge class-composition idiom (frontend/src/styles/components.css
-   lines ~168-202, the retired LineageView.tsx) onto xyflow's rendered DOM
+   lines ~168-202, the retired hand-rolled SVG lineage view) onto xyflow's rendered DOM
    (TableNode/NotebookNode/LineageEdge, this plan). Binds exclusively to
-   tier-3 --dag-* tokens (plan 03-02) plus existing tier-2 --color-*/--card-*
+   tier-3 --dag-* tokens (plan 03-02) plus existing tier-2 --color-* / --card-*
    semantics — no raw hex, no raw px hue, no @import of xyflow's themed
    dist/style.css (RESEARCH.md Anti-Patterns — only base.css's layout reset
    is imported once, in the view, 03-07).
@@ -57,7 +57,7 @@
 
 /* Route-deep-link focus ring (LineageDagView's `focusTable` prop) — lands on
    xyflow's own .react-flow__node wrapper via Node.className, a direct port
-   of the retired LineageView.tsx's `.ls-node.focus` ring. */
+   of the retired hand-rolled SVG lineage view's `.ls-node.focus` ring. */
 .react-flow__node.lineage-focus .ls-node {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px var(--color-accent-dim), var(--card-shadow);

@@ -2,13 +2,13 @@
 // replacing the 02-04 stub. Renders iff useSelection().sel is set (D-11);
 // resolves the selected id against the loaded AppModel (tables, then
 // notebooks) and shows the D-12 metadata card: name, kind, workspace/
-// lakehouse location (`table.layer`, the same field LineageView's old
-// `.insp-crumb` already used for this), column list for tables, and
-// connected-edge counts derived from `model.context`. A missing field
-// omits its row entirely; a table with zero columns omits the column
-// section (partial consideration, UI-SPEC). Esc and the close button both
-// resolve to the same useSelection().clear() call — this is the single
-// shell-level Esc-to-clear listener (Pattern 3); canvas views (LineageView/
+// lakehouse location (`table.layer`, the same field the retired hand-rolled
+// SVG lineage canvas's old `.insp-crumb` already used for this), column list
+// for tables, and connected-edge counts derived from `model.context`. A
+// missing field omits its row entirely; a table with zero columns omits the
+// column section (partial consideration, UI-SPEC). Esc and the close button
+// both resolve to the same useSelection().clear() call — this is the single
+// shell-level Esc-to-clear listener (Pattern 3); canvas views (LineageDagView/
 // GraphView) additionally clear on an empty-canvas click, but do not
 // duplicate Esc handling of their own.
 import { useEffect } from 'react'

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GNode, Level } from '../data'
 import { useModel } from '../model'
+import { graphToModel } from '../model/graphToModel'
+import { saveNew } from '../model-app/localdb'
 import { useSelection } from '../selection/useSelection'
 import { canvasFont, DOMAIN_TOKEN, getCanvasTokens, invalidateCanvasTokens } from '../tokens/canvasTokens'
 import DefinitionsImport from './DefinitionsImport'
@@ -50,6 +52,14 @@ export default function GraphView({ onOpenLineage }: { onOpenLineage: (tableId: 
     }
   }
 
+  const createModelFromGraph = () => {
+    const draft = graphToModel(model)
+    const saved = saveNew({ name: draft.name, nodes: draft.nodes, edges: draft.edges, tags: [] })
+    // Cross into the model tab's own router (basename /model) with a full
+    // navigation so it mounts on the new model's editor route.
+    window.location.assign(`/model/models/${saved.id}`)
+  }
+
   return (
     <div className="gv-root">
       <div className="crumbs">
@@ -59,6 +69,10 @@ export default function GraphView({ onOpenLineage }: { onOpenLineage: (tableId: 
             {i < path.length - 1 && <span className="sep">›</span>}
           </span>
         ))}
+        <button className="gv-to-model" onClick={createModelFromGraph} title="Build a 4-layer authored model from this graph">
+          <svg viewBox="0 0 24 24" aria-hidden><path d="M12 3.5 3.5 8l8.5 4.5L20.5 8z" /><path d="M3.5 12 12 16.5 20.5 12M3.5 16 12 20.5 20.5 16" /></svg>
+          Create model
+        </button>
       </div>
       <div className="gv-stage">
         {level.type === 'graph' ? (

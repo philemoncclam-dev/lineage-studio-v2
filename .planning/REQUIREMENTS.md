@@ -52,7 +52,7 @@ Resolved before requirements, recorded so they aren't relitigated:
 - [x] **DAG-01**: Column-level lineage renders left-to-right with expandable table cards and column rows
 - [x] **DAG-02**: Column-to-column edges connect to the correct column rows, not merely to node boundaries
 - [x] **DAG-03**: Hovering a column traces its full upstream and downstream path; unrelated nodes and edges dim
-- [ ] **DAG-04**: Clicking a column selects it persistently; selection survives hovering elsewhere
+- [x] **DAG-04**: Clicking a column selects it persistently; selection survives hovering elsewhere
 - [x] **DAG-05**: The inspector shows a selected column's transformation expression, plain-English explanation, inputs, and outputs
 - [x] **DAG-06**: The view toggles between table-level and column-level detail
 - [x] **DAG-07**: Layout is deterministic — the same graph produces the same positions across renders
@@ -179,7 +179,7 @@ dependencies, parallelization, and pitfall guards.
 | DAG-01 | Phase 3 | Complete |
 | DAG-02 | Phase 3 | Complete |
 | DAG-03 | Phase 3 | Complete |
-| DAG-04 | Phase 3 | Pending |
+| DAG-04 | Phase 3 | Complete |
 | DAG-05 | Phase 3 | Complete |
 | DAG-06 | Phase 3 | Complete |
 | DAG-07 | Phase 3 | Complete |

@@ -23,5 +23,12 @@ dist-ssr
 *.sln
 *.sw?
 
-# TanStack Router generated route tree (regenerated every build)
-routeTree.gen.ts
+# TanStack Router plugin cache
+.tanstack/
+
+# NOTE: src/routeTree.gen.ts is generated but IS committed. `npm run build` is
+# `tsc -b && vite build`, so tsc typechecks before the vite plugin regenerates
+# the tree — on a fresh CI clone an ignored file makes the build fail with
+# "Cannot find module './routeTree.gen'". Committing it keeps a clean checkout
+# typecheckable. The plugin still regenerates it on every dev/build run; commit
+# the result whenever routes change.

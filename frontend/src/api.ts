@@ -394,3 +394,66 @@ export async function ingest(payload: unknown): Promise<LineageGraph> {
   if (!res.ok) throw new Error(`ingest failed: ${res.status}`)
   return res.json()
 }
+
+// --- Fabric toolkit: workspace explorer (backend/app/fabric/router.py) -----
+// Read-only walk of the live Fabric REST surface: workspaces → items → tables.
+// A refused call throws via detail() (empty-means-no-permission), so callers
+// can show "couldn't read" distinctly from a genuinely empty workspace.
+
+export interface FabricWorkspace {
+  id: string
+  name: string
+}
+
+export interface FabricFolder {
+  id: string
+  name: string
+  parent_id: string | null
+}
+
+export interface FabricItem {
+  id: string
+  name: string
+  type: string
+  folder_id: string | null
+}
+
+export interface FabricWorkspaceItems {
+  folders: FabricFolder[]
+  notebooks: FabricItem[]
+  lakehouses: FabricItem[]
+  others: FabricItem[]
+}
+
+export interface FabricTable {
+  name: string
+  type?: string | null
+  format?: string | null
+}
+
+export async function fetchFabricStatus(): Promise<{ configured: boolean }> {
+  const res = await fetch(`${BASE}/fabric/status`)
+  if (!res.ok) return detail(res, 'fabric status')
+  return res.json()
+}
+
+export async function fetchFabricWorkspaces(): Promise<FabricWorkspace[]> {
+  const res = await fetch(`${BASE}/fabric/workspaces`)
+  if (!res.ok) return detail(res, 'fabric workspaces')
+  return res.json()
+}
+
+export async function fetchFabricItems(workspaceId: string): Promise<FabricWorkspaceItems> {
+  const res = await fetch(`${BASE}/fabric/workspaces/${workspaceId}/items`)
+  if (!res.ok) return detail(res, 'fabric items')
+  return res.json()
+}
+
+export async function fetchFabricTables(
+  workspaceId: string,
+  lakehouseId: string,
+): Promise<FabricTable[]> {
+  const res = await fetch(`${BASE}/fabric/workspaces/${workspaceId}/lakehouses/${lakehouseId}/tables`)
+  if (!res.ok) return detail(res, 'fabric tables')
+  return res.json()
+}

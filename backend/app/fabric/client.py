@@ -111,6 +111,49 @@ class FabricClient:
 
         raise FabricError(f"operation did not finish within {_OPERATION_TIMEOUT}s")
 
+    def list_workspaces(self) -> list[dict]:
+        """All workspaces the service principal can see.
+
+        Note the standing trap: an SP with no workspace access gets `200
+        {"value": []}`, not a 403 — an empty list is ambiguous between "no
+        workspaces" and "no permission", and callers must not read it as
+        "correctly configured, nothing there".
+        """
+        return self.request("GET", "/workspaces").get("value", [])
+
+    def list_items(self, workspace_id: str) -> list[dict]:
+        """Every item in a workspace (notebooks, lakehouses, …).
+
+        Each item carries a `type` ("Notebook", "Lakehouse", …) and, when it
+        lives inside a folder, a `folderId` — the two fields the explorer tree
+        groups on.
+        """
+        return self.request("GET", f"/workspaces/{workspace_id}/items").get("value", [])
+
+    def list_folders(self, workspace_id: str) -> list[dict]:
+        """The workspace's folder tree, or `[]` if unavailable.
+
+        The folders API is newer than the items API and 404s on tenants that
+        predate it; a missing folder tree just flattens the explorer, it is not
+        an error, so the refusal is swallowed rather than raised.
+        """
+        try:
+            return self.request("GET", f"/workspaces/{workspace_id}/folders").get("value", [])
+        except FabricError:
+            return []
+
+    def list_lakehouse_tables(self, workspace_id: str, lakehouse_id: str) -> list[dict]:
+        """Tables in a lakehouse.
+
+        This endpoint answers under a `data` key rather than the `value` key
+        the rest of the Fabric surface uses; both are accepted here because the
+        shape has drifted before (handoff: the swagger has been wrong).
+        """
+        payload = self.request(
+            "GET", f"/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/tables"
+        )
+        return payload.get("data") or payload.get("value") or []
+
     def get_notebook_definition(self, workspace_id: str, item_id: str) -> dict:
         """The notebook's definition: a list of base64-encoded parts.
 

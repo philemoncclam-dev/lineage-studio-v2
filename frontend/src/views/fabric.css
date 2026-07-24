@@ -1,0 +1,90 @@
+/* Fabric-toolkit explorer tree. Token-driven, dark-first like the rest of the
+   shell. The tree is a flat stack of disclosure rows indented by depth rather
+   than nested <ul>s, so every row shares one hover/height rhythm. */
+
+.fx-tree {
+  margin-top: var(--spacing-4, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 720px;
+}
+
+.fx-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--row-height, 32px);
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control, 6px);
+  color: var(--color-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fx-row:hover {
+  background: var(--color-surface-2, rgba(255, 255, 255, 0.04));
+}
+.fx-row[data-leaf='true'] {
+  cursor: default;
+}
+.fx-row[data-leaf='true']:hover {
+  background: none;
+}
+
+.fx-chevron {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--color-text-tertiary);
+  transition: transform 120ms ease;
+}
+.fx-row[data-open='true'] .fx-chevron {
+  transform: rotate(90deg);
+}
+.fx-chevron.fx-hidden {
+  visibility: hidden;
+}
+
+.fx-icon {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  color: var(--color-text-secondary);
+}
+.fx-icon[data-kind='lakehouse'] {
+  color: var(--color-accent);
+}
+.fx-icon[data-kind='notebook'] {
+  color: var(--color-domain-notebook, var(--color-text-secondary));
+}
+
+.fx-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fx-meta {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro, 11px);
+  font-family: var(--font-mono);
+}
+
+.fx-note {
+  padding: 4px 8px;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro, 11px);
+}
+.fx-note[data-error='true'] {
+  color: var(--color-destructive);
+}
+
+.fx-empty {
+  padding: 8px;
+  color: var(--color-text-secondary);
+}

@@ -1,0 +1,24 @@
+# The image is backend-only — keep the frontend, planning docs, and all local
+# venvs / data / caches out of the build context.
+frontend/
+.planning/
+.claude/
+.git/
+.github/
+handoff.md
+*.md
+
+# Local Python state
+**/.venv/
+**/.venv312/
+sandbox/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+
+# Secrets never go into the image (Cloud Run injects them as env at runtime)
+.env
+*.env
+
+# Node
+**/node_modules/

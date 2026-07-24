@@ -16,6 +16,7 @@ JSON contract (protocol.py) is identical.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -29,11 +30,25 @@ _CHILD_STUB = _SANDBOX_DIR / "child_stub.py"
 _CHILD_SPARK = _SANDBOX_DIR / "child_spark.py"
 
 # The pinned Spark venv lives outside backend/ so uvicorn --reload never watches
-# it. Present on a machine set up for real execution; absent on Vercel/CI, where
+# it (local Windows setup). Absent in a container, where PySpark is instead
+# installed into the backend's own interpreter — and absent on Vercel/CI, where
 # the runner transparently falls back to the stub engine.
-_SPARK_PYTHON = (
+_SPARK_VENV_PYTHON = (
     Path(__file__).resolve().parents[3] / "sandbox" / ".venv312" / "Scripts" / "python.exe"
 )
+
+
+def _spark_python() -> str | None:
+    """The interpreter that can run the Spark executor, or None.
+
+    Prefers the pinned local venv; otherwise uses the current interpreter when
+    PySpark is importable there (the container image installs it that way).
+    """
+    if _SPARK_VENV_PYTHON.exists():
+        return str(_SPARK_VENV_PYTHON)
+    if importlib.util.find_spec("pyspark") is not None:
+        return sys.executable
+    return None
 
 # Benign OS variables the child needs to start Python at all. Everything else —
 # crucially every PURVIEW_*/AZURE_* secret — is dropped. Names are matched
@@ -42,6 +57,8 @@ _KEEP_ENV = {
     "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP",
     "APPDATA", "LOCALAPPDATA", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
     "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS", "LANG", "LC_ALL",
+    # Needed by Spark in a Linux container (find the JVM, a writable HOME).
+    "JAVA_HOME", "SPARK_HOME", "HOME",
 }
 
 # Spark cold-start is ~15s; give the whole run generous headroom. The stub is
@@ -54,7 +71,7 @@ def _scrubbed_env() -> dict[str, str]:
 
 
 def spark_available() -> bool:
-    return _SPARK_PYTHON.exists() and _CHILD_SPARK.exists()
+    return _CHILD_SPARK.exists() and _spark_python() is not None
 
 
 Engine = str  # "auto" | "spark" | "stub"
@@ -63,12 +80,14 @@ Engine = str  # "auto" | "spark" | "stub"
 def _executor_cmd(request_file: str, engine: Engine) -> list[str]:
     """The command that runs one sandbox request.
 
-    The pinned Spark venv + real executor when chosen and present; otherwise the
-    stub under the backend interpreter. This is the whole M2a → M2b seam.
+    The Spark executor (pinned venv locally, or the current interpreter in a
+    container) when chosen and available; otherwise the stub under the backend
+    interpreter. This is the whole M2a → M2b seam.
     """
-    use_spark = engine == "spark" or (engine == "auto" and spark_available())
+    spark_python = _spark_python()
+    use_spark = spark_python is not None and _CHILD_SPARK.exists() and engine in ("spark", "auto")
     if use_spark:
-        return [str(_SPARK_PYTHON), str(_CHILD_SPARK), request_file]
+        return [spark_python, str(_CHILD_SPARK), request_file]
     return [sys.executable, str(_CHILD_STUB), request_file]
 
 

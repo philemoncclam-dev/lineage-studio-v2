@@ -1,0 +1,187 @@
+/* lineage-dag.css — ports the .ls-node/.head/.cols/.col/.tick card language
+   and the edge class-composition idiom (frontend/src/styles/components.css
+   lines ~168-202, the retired LineageView.tsx) onto xyflow's rendered DOM
+   (TableNode/NotebookNode/LineageEdge, this plan). Binds exclusively to
+   tier-3 --dag-* tokens (plan 03-02) plus existing tier-2 --color-*/--card-*
+   semantics — no raw hex, no raw px hue, no @import of xyflow's themed
+   dist/style.css (RESEARCH.md Anti-Patterns — only base.css's layout reset
+   is imported once, in the view, 03-07).
+
+   Handle positioning note: Handle elements are absolutely positioned by
+   xyflow relative to the .react-flow__node wrapper (base.css sets
+   `.react-flow__node { position: absolute }`), NOT relative to .ls-node/
+   .cols/.col — so none of the selectors below may set `position` to
+   anything but the default `static`, or TableNode's row-center Handle math
+   (headerHeight + i*rowHeight + rowHeight/2) would silently misalign. */
+
+/* ===== Card chrome ===== */
+.ls-node {
+  width: var(--dag-node-width);
+  background: var(--card-bg);
+  border: var(--border-width) solid var(--card-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  transition: box-shadow var(--dag-trace-transition), border-color var(--dag-trace-transition),
+    opacity var(--dag-trace-transition);
+}
+
+/* Whole-card dim (D-05): a card with zero traced columns and that is not a
+   trace endpoint dims as one unit — header/border/rows together, never
+   partially. Cards that DO contain >=1 traced column (or are an
+   object-level trace endpoint) never get this class; their chrome stays at
+   opacity 1 even while individual unrelated rows dim via .col.dim below. */
+.ls-node.dim {
+  opacity: var(--dag-dim-opacity);
+  pointer-events: none;
+}
+
+.ls-node .head {
+  height: var(--dag-node-header-height);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: 0 var(--spacing-3);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ls-node .head:focus-visible {
+  outline: none;
+  border-radius: var(--card-radius);
+  box-shadow: 0 0 0 3px var(--color-accent-dim);
+}
+
+.tick {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--color-domain-neutral);
+}
+.tick.bronze { background: var(--color-domain-bronze); }
+.tick.silver { background: var(--color-domain-silver); }
+.tick.gold { background: var(--color-domain-gold); }
+.tick.notebook { background: var(--color-domain-notebook); }
+.tick.workspace { background: var(--color-domain-neutral); }
+.tick.accent { background: var(--color-accent); }
+
+.ls-node .title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ls-node .sub {
+  font-size: var(--text-micro);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+}
+
+/* ===== Column rows (E2 card overflow — D-04 scroll-in-card, no
+   virtualization, no truncate-with-count) ===== */
+.cols {
+  border-top: var(--border-width) solid var(--card-border);
+  max-height: var(--dag-node-max-height);
+  overflow-y: auto;
+}
+
+.col {
+  height: var(--dag-node-row-height);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: 0 var(--spacing-3);
+  font-size: var(--text-base);
+  border-top: var(--border-width) solid var(--color-surface-2);
+  cursor: pointer;
+  transition: opacity var(--dag-trace-transition), background var(--dag-trace-transition);
+  min-width: 0; /* lets .name/.type ellipsis instead of forcing row width */
+}
+.col:first-child { border-top: 0; }
+.col:hover { background: var(--color-surface-2); }
+
+/* Traced treatment — carried forward verbatim from components.css's
+   .col.hot/.col.sel (03-UI-SPEC.md Trace & Selection table). */
+.col.hot { background: var(--color-accent-dim); }
+.col.sel { background: var(--color-accent-dim); box-shadow: inset 2.5px 0 0 var(--color-accent); }
+
+/* Unrelated-row dim: a row inside a card that DOES have traced columns
+   elsewhere, but this row isn't one of them (card chrome itself stays at
+   opacity 1 — see .ls-node.dim above, which is the whole-card variant). */
+.col.dim {
+  opacity: var(--dag-dim-opacity);
+  pointer-events: none;
+}
+
+.col:focus-visible {
+  outline: none;
+  border-radius: var(--radius-input);
+  box-shadow: 0 0 0 3px var(--color-accent-dim);
+}
+
+.col .name {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.col .type {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--text-micro);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+}
+.col .pk {
+  flex: none;
+  font-size: var(--text-micro);
+  font-weight: 600;
+  color: var(--color-success);
+  border: var(--border-width) solid var(--color-success);
+  border-radius: var(--radius-input);
+  padding: 0 var(--spacing-1);
+}
+
+/* ===== Edges (TRUST-01) ===== */
+/* Base: --dag-base-stroke-width (1.5px, carried forward unchanged) with the
+   same 180ms opacity/stroke-width transition already in production
+   (components.css's .ls-edges .edge — Phase 7 owns real motion design,
+   this is a deliberate minimal carry-forward so dim/undim doesn't hard-cut). */
+.lineage-edge {
+  fill: none;
+  stroke-width: var(--dag-base-stroke-width);
+  opacity: 0.8;
+  transition: opacity var(--dag-trace-transition), stroke-width var(--dag-trace-transition);
+}
+
+/* Edge-type hue channel — unchanged Phase-1 channel, independent of
+   provenance below. */
+.lineage-edge.reads { stroke: var(--color-edge-reads); }
+.lineage-edge.writes { stroke: var(--color-edge-writes); }
+.lineage-edge.derives { stroke: var(--color-edge-derives); }
+
+/* Provenance line-style channel (D-08) — a dash-pattern shape channel,
+   never colour, fully independent of the hue channel above. Phase 3 only
+   ever emits `inferred` (D-09); `declared` is built + test-exercised with
+   no live data path until Phase 5's Purview read-back. */
+.lineage-edge.inferred { stroke-dasharray: var(--dag-edge-dasharray-inferred); }
+.lineage-edge.declared { stroke-dasharray: var(--dag-edge-dasharray-declared); }
+
+/* Trace state channel — one treatment, one opacity value, no third tier. */
+.lineage-edge.on {
+  stroke: var(--color-accent);
+  stroke-width: var(--dag-trace-stroke-width);
+  opacity: 1;
+}
+.lineage-edge.dim {
+  opacity: var(--dag-dim-opacity);
+  pointer-events: none;
+}

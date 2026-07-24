@@ -49,10 +49,8 @@ export function modelToLineageGraph(model: Model): LineageGraph {
     nodes.push({ id, kind: 'lakehouse', name: layer.name, parent_id: workspaceId, columns: [], meta: {} })
   }
 
-  // Groups → tables. `tableIdOf` maps the authored Group id to the graph table
-  // id, and `colNameById` lets edge building resolve an attribute to its
-  // (table, column-name) pair.
-  const tableIdOf = new Map<string, string>()
+  // Groups → tables. `colNameById` / `tableIdOfAttr` let edge building resolve
+  // an attribute back to its (column-name, table) pair.
   const colNameById = new Map<string, string>()
   const tableIdOfAttr = new Map<string, string>()
   for (const group of model.nodes.filter((n) => n.type === 'Group')) {
@@ -65,7 +63,6 @@ export function modelToLineageGraph(model: Model): LineageGraph {
       data_type: (a.properties.dataType as string | undefined) ?? null,
     }))
     const tableId = `tbl:${group.id}`
-    tableIdOf.set(group.id, tableId)
     for (const a of attrs) {
       colNameById.set(a.id, a.name)
       tableIdOfAttr.set(a.id, tableId)

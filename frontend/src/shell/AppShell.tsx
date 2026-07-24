@@ -2,10 +2,9 @@
 // mode menu, per-mode data-driven icon rail, rail-bottom cluster, the canvas
 // region wrapping <Outlet/>, and the Inspector/CommandPalette overlay mount
 // points 02-05/02-06 fill in. Replaces the 02-03 minimal `.app` stub.
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, lazy, Suspense, useEffect, useState } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { useRouterState } from '@tanstack/react-router'
-import CommandPalette from './CommandPalette'
 import Inspector from './Inspector'
 import ModeMenu from './ModeMenu'
 import Rail from './Rail'
@@ -14,6 +13,10 @@ import RailBottomCluster from './RailBottomCluster'
 import { modeFromPathname, railConfig } from './railConfig'
 import '../styles/components.css'
 import '../styles/shell.css'
+
+// cmdk-backed palette is modal-only (Cmd+K / rail search), so keep it out of
+// the boot chunk and load it the first time it's opened.
+const CommandPalette = lazy(() => import('./CommandPalette'))
 
 // `overlays` (default true) gates Inspector/CommandPalette — both read
 // router match context (useMatch/useSearch/useLoaderData) via useSelection()
@@ -27,6 +30,13 @@ export default function AppShell({ children, overlays = true }: { children: Reac
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const mode = modeFromPathname(pathname)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  // Latches true on first open so the lazy palette stays mounted afterwards
+  // (preserving its close animation) instead of unmounting each time.
+  const [paletteMounted, setPaletteMounted] = useState(false)
+  const openPalette = () => {
+    setPaletteMounted(true)
+    setPaletteOpen(true)
+  }
 
   // Global Cmd+K listener (ported from the old App.tsx's effect, per
   // 02-PATTERNS.md) — the shell owns this once, rail-bottom's search trigger
@@ -35,7 +45,7 @@ export default function AppShell({ children, overlays = true }: { children: Reac
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
-        setPaletteOpen(true)
+        openPalette()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -48,14 +58,18 @@ export default function AppShell({ children, overlays = true }: { children: Reac
         <div className="shell-rail-col">
           <ModeMenu />
           {mode === 'model' ? <ModelEditorRail /> : <Rail items={railConfig[mode]} />}
-          <RailBottomCluster onOpenSearch={() => setPaletteOpen(true)} />
+          <RailBottomCluster onOpenSearch={openPalette} />
         </div>
         <div className="shell-canvas">
           {children}
           {overlays && <Inspector />}
         </div>
       </div>
-      {overlays && <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />}
+      {overlays && paletteMounted && (
+        <Suspense fallback={null}>
+          <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        </Suspense>
+      )}
     </Tooltip.Provider>
   )
 }

@@ -56,7 +56,11 @@ export async function fetchSample(): Promise<LineageGraph> {
 }
 
 export async function fetchGraph(): Promise<LineageGraph> {
-  const res = await fetch(`${BASE}/graph`)
+  // The root loader awaits this before first paint, so an unreachable or
+  // cold-starting backend would otherwise hang boot on the "Loading graph…"
+  // skeleton indefinitely. Bound it: on timeout the loader's catch falls back
+  // to the bundled sample model, so the app always paints quickly.
+  const res = await fetch(`${BASE}/graph`, { signal: AbortSignal.timeout(4000) })
   if (!res.ok) throw new Error(`graph failed: ${res.status}`)
   return res.json()
 }

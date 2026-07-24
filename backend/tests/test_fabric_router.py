@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.fabric import router as fabric_router
-from app.fabric.client import FabricError
+from app.fabric.client import FabricError, parse_onelake_tables
 
 
 class FakeClient:
@@ -114,3 +114,53 @@ def test_unconfigured_integration_is_a_503(client, monkeypatch):
     monkeypatch.setattr(fabric_router, "FabricClient", boom)
     resp = client.get("/fabric/workspaces")
     assert resp.status_code == 503
+
+
+def _onelake_paths(*names):
+    return [{"name": n, "isDirectory": "true"} for n in names]
+
+
+def test_onelake_parser_handles_schema_enabled_layout():
+    lh = "lh1"
+    paths = _onelake_paths(
+        f"{lh}/Tables/dbo/orders/_delta_log",
+        f"{lh}/Tables/dbo/orders/_delta_log/00000.json",  # file inside — ignored
+        f"{lh}/Tables/dbo/orders/part-0001.parquet",  # data file — ignored
+        f"{lh}/Tables/sales/customers/_delta_log",
+    )
+    assert parse_onelake_tables(paths) == [
+        {"name": "dbo.orders", "type": "Managed", "format": "delta"},
+        {"name": "sales.customers", "type": "Managed", "format": "delta"},
+    ]
+
+
+def test_onelake_parser_handles_classic_layout():
+    paths = _onelake_paths("lh1/Tables/raw_orders/_delta_log")
+    assert parse_onelake_tables(paths) == [
+        {"name": "raw_orders", "type": "Managed", "format": "delta"},
+    ]
+
+
+def test_schema_enabled_400_falls_back_to_onelake(client, monkeypatch):
+    """The reported UnsupportedOperationForSchemasEnabledLakehouse 400."""
+    real_error = FabricError(
+        "GET .../tables failed [400]: "
+        '{"errorCode":"UnsupportedOperationForSchemasEnabledLakehouse"}'
+    )
+
+    class SchemaLakehouseClient:
+        def list_lakehouse_tables(self, ws, lh):
+            # Exercise the real fallback branch on the real client method.
+            from app.fabric.client import FabricClient
+
+            return FabricClient.list_lakehouse_tables(self, ws, lh)
+
+        def request(self, *a, **k):
+            raise real_error
+
+        def list_lakehouse_tables_onelake(self, ws, lh):
+            return [{"name": "dbo.orders", "type": "Managed", "format": "delta"}]
+
+    _use(monkeypatch, SchemaLakehouseClient())
+    body = client.get("/fabric/workspaces/ws1/lakehouses/lh1/tables").json()
+    assert body == [{"name": "dbo.orders", "type": "Managed", "format": "delta"}]

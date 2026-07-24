@@ -25,8 +25,40 @@ from ..config import Settings, get_settings
 #: Azure AD v2 scope for the Fabric data plane.
 FABRIC_SCOPE = "https://api.fabric.microsoft.com/.default"
 
+#: OneLake is an ADLS-Gen2 data plane and takes a *storage* token, not a Fabric
+#: one — a different scope entirely.
+ONELAKE_SCOPE = "https://storage.azure.com/.default"
+ONELAKE_BASE = "https://onelake.dfs.fabric.microsoft.com"
+
 _BASE = "https://api.fabric.microsoft.com/v1"
 _TIMEOUT = 120
+
+
+def parse_onelake_tables(paths: list[dict]) -> list[dict]:
+    """Turn a OneLake filesystem listing of `.../Tables` into table rows.
+
+    A Delta table is any directory containing a `_delta_log` folder, so the
+    presence of a `.../Tables/<...>/_delta_log` directory entry marks its parent
+    as a table. This works for both layouts:
+      - classic:         Tables/<table>/_delta_log        -> "table"
+      - schema-enabled:  Tables/<schema>/<table>/_delta_log -> "schema.table"
+    The schema is kept in the name so the two never collide.
+    """
+    marker = "/Tables/"
+    suffix = "/_delta_log"
+    tables: dict[str, dict] = {}
+    for p in paths:
+        name = p.get("name") or ""
+        idx = name.find(marker)
+        if idx < 0 or not name.endswith(suffix):
+            continue
+        rel = name[idx + len(marker) : -len(suffix)]
+        segs = [s for s in rel.split("/") if s]
+        if not segs:
+            continue
+        display = ".".join(segs) if len(segs) > 1 else segs[0]
+        tables[display] = {"name": display, "type": "Managed", "format": "delta"}
+    return sorted(tables.values(), key=lambda t: t["name"])
 #: `getDefinition` is asynchronous; these bound the poll for its result.
 _POLL_INTERVAL = 2
 _OPERATION_TIMEOUT = 60
@@ -145,14 +177,53 @@ class FabricClient:
     def list_lakehouse_tables(self, workspace_id: str, lakehouse_id: str) -> list[dict]:
         """Tables in a lakehouse.
 
-        This endpoint answers under a `data` key rather than the `value` key
-        the rest of the Fabric surface uses; both are accepted here because the
+        The Fabric REST endpoint answers under a `data` key rather than the
+        `value` key the rest of the surface uses; both are accepted because the
         shape has drifted before (handoff: the swagger has been wrong).
+
+        Schema-enabled lakehouses are refused by that endpoint entirely
+        (`UnsupportedOperationForSchemasEnabledLakehouse`), so on that specific
+        400 the tables are enumerated from the OneLake filesystem instead, which
+        handles both classic and schema-enabled layouts.
         """
-        payload = self.request(
-            "GET", f"/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/tables"
+        try:
+            payload = self.request(
+                "GET", f"/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/tables"
+            )
+            return payload.get("data") or payload.get("value") or []
+        except FabricError as exc:
+            if "schemasenabled" in str(exc).lower() or "schemas enabled" in str(exc).lower():
+                return self.list_lakehouse_tables_onelake(workspace_id, lakehouse_id)
+            raise
+
+    def list_lakehouse_tables_onelake(
+        self, workspace_id: str, lakehouse_id: str
+    ) -> list[dict]:
+        """Enumerate a lakehouse's Delta tables via the OneLake filesystem.
+
+        The fallback for schema-enabled lakehouses (and a layout-agnostic path
+        in general): a recursive listing of `.../Tables` under a storage-scoped
+        token, parsed for `_delta_log` markers. GUIDs are valid OneLake path
+        segments, so the ids we already hold are used verbatim — no display-name
+        lookup needed.
+        """
+        token = self._credential.get_token(ONELAKE_SCOPE).token
+        resp = self._session.get(
+            f"{ONELAKE_BASE}/{workspace_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            params={
+                "resource": "filesystem",
+                "recursive": "true",
+                "directory": f"{lakehouse_id}/Tables",
+            },
+            timeout=_TIMEOUT,
         )
-        return payload.get("data") or payload.get("value") or []
+        if not resp.ok:
+            raise FabricError(
+                f"OneLake table listing failed [{resp.status_code}]: {resp.text[:300]}"
+            )
+        paths = (resp.json() or {}).get("paths") or []
+        return parse_onelake_tables(paths)
 
     def get_notebook_definition(self, workspace_id: str, item_id: str) -> dict:
         """The notebook's definition: a list of base64-encoded parts.

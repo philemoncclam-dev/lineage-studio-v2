@@ -196,33 +196,57 @@ class FabricClient:
                 return self.list_lakehouse_tables_onelake(workspace_id, lakehouse_id)
             raise
 
-    def list_lakehouse_tables_onelake(
-        self, workspace_id: str, lakehouse_id: str
-    ) -> list[dict]:
-        """Enumerate a lakehouse's Delta tables via the OneLake filesystem.
-
-        The fallback for schema-enabled lakehouses (and a layout-agnostic path
-        in general): a recursive listing of `.../Tables` under a storage-scoped
-        token, parsed for `_delta_log` markers. GUIDs are valid OneLake path
-        segments, so the ids we already hold are used verbatim — no display-name
-        lookup needed.
-        """
+    def _onelake_headers(self) -> dict[str, str]:
         token = self._credential.get_token(ONELAKE_SCOPE).token
+        return {"Authorization": f"Bearer {token}"}
+
+    def onelake_list(
+        self, workspace_id: str, directory: str, recursive: bool = False
+    ) -> list[dict]:
+        """List a OneLake directory (ADLS-Gen2 filesystem listing).
+
+        GUIDs are valid path segments, so the ids we already hold are used
+        verbatim — no display-name lookup needed.
+        """
         resp = self._session.get(
             f"{ONELAKE_BASE}/{workspace_id}",
-            headers={"Authorization": f"Bearer {token}"},
+            headers=self._onelake_headers(),
             params={
                 "resource": "filesystem",
-                "recursive": "true",
-                "directory": f"{lakehouse_id}/Tables",
+                "recursive": "true" if recursive else "false",
+                "directory": directory,
             },
             timeout=_TIMEOUT,
         )
         if not resp.ok:
             raise FabricError(
-                f"OneLake table listing failed [{resp.status_code}]: {resp.text[:300]}"
+                f"OneLake list failed [{resp.status_code}]: {resp.text[:300]}"
             )
-        paths = (resp.json() or {}).get("paths") or []
+        return (resp.json() or {}).get("paths") or []
+
+    def onelake_read_text(self, workspace_id: str, path: str) -> str:
+        """Read a single OneLake file as text (e.g. a Delta `_delta_log` commit)."""
+        resp = self._session.get(
+            f"{ONELAKE_BASE}/{workspace_id}/{path}",
+            headers=self._onelake_headers(),
+            timeout=_TIMEOUT,
+        )
+        if not resp.ok:
+            raise FabricError(
+                f"OneLake read failed [{resp.status_code}]: {resp.text[:200]}"
+            )
+        return resp.text
+
+    def list_lakehouse_tables_onelake(
+        self, workspace_id: str, lakehouse_id: str
+    ) -> list[dict]:
+        """Enumerate a lakehouse's Delta tables via the OneLake filesystem.
+
+        The fallback for schema-enabled lakehouses (and a layout-agnostic path in
+        general): a recursive listing of `.../Tables`, parsed for `_delta_log`
+        markers.
+        """
+        paths = self.onelake_list(workspace_id, f"{lakehouse_id}/Tables", recursive=True)
         return parse_onelake_tables(paths)
 
     def get_notebook_definition(self, workspace_id: str, item_id: str) -> dict:

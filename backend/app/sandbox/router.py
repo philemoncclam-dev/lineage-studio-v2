@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from ..fabric.client import FabricClient, FabricError
 from ..fabric.notebooks import NotebookDecodeError, fetch_notebook_source
+from ..fabric.schema import resolve_read_schemas, scan_read_tables
 from .protocol import ColumnSchema, RunRequest, RunResult
 from .runner import run_sandbox
 
@@ -33,6 +34,7 @@ class SandboxRunRequest(BaseModel):
 @router.post("/run", response_model=RunResult)
 def sandbox_run(req: SandboxRunRequest) -> RunResult:
     cells = req.cells
+    schemas: dict[str, list[ColumnSchema]] = dict(req.schemas or {})
     if cells is None:
         if not (req.workspace_id and req.item_id):
             raise HTTPException(
@@ -40,13 +42,19 @@ def sandbox_run(req: SandboxRunRequest) -> RunResult:
                 detail="provide cells, or workspace_id + item_id to fetch the notebook",
             )
         try:
-            source = fetch_notebook_source(
-                FabricClient(), req.workspace_id, req.item_id, req.name
-            )
+            client = FabricClient()
+            source = fetch_notebook_source(client, req.workspace_id, req.item_id, req.name)
         except (FabricError, NotebookDecodeError) as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         cells = source.cells
+        # Fetch the read tables' schemas from OneLake so the Spark engine can
+        # register empty views the notebook resolves against. Best-effort:
+        # anything unresolved just surfaces as a per-cell error in the run.
+        if not schemas:
+            try:
+                fetched = resolve_read_schemas(client, req.workspace_id, scan_read_tables(cells))
+                schemas = {k: list(v) for k, v in fetched.items()}
+            except FabricError:
+                schemas = {}
 
-    return run_sandbox(
-        RunRequest(notebook_name=req.name, cells=cells, schemas=req.schemas or {})
-    )
+    return run_sandbox(RunRequest(notebook_name=req.name, cells=cells, schemas=schemas))

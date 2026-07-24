@@ -10,10 +10,18 @@ import AppShell from '../shell/AppShell'
 
 export interface RouterContext {
   graph: LineageGraph | null
+  fetchedAt: number | null
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
-  loader: async () => ({ graph: await fetchGraph().catch(() => null) }),
+  loader: async () => {
+    const graph = await fetchGraph().catch(() => null)
+    // TRUST-03/D-14: an in-memory, session-only capture of when the graph
+    // actually resolved — only set on a real fetch, never on the silent
+    // sample-data fallback (FreshnessIndicator treats a null fetchedAt the
+    // same as source==='sample'). No persistence.
+    return { graph, fetchedAt: graph ? Date.now() : null }
+  },
   component: RootComponent,
   pendingComponent: RootPending,
 })

@@ -56,10 +56,13 @@ export default function TableNode({ data }: NodeProps<Node<TableNodeData & Recor
         }}
       >
         <span className={`tick ${data.colorKey}`} />
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div className="title">{data.name}</div>
           <div className="sub">{data.layer}</div>
         </div>
+        {data.mode === 'column' && data.columns.length > 0 && (
+          <span className="count">{data.columns.length}</span>
+        )}
       </div>
 
       {data.mode === 'column' && (

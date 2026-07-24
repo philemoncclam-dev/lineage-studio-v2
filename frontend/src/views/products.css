@@ -114,6 +114,24 @@
 }
 .dp-card-foot { display: flex; align-items: center; gap: 0.5rem; }
 
+/* domain cards (Domains page) — a card that is itself a button */
+.dp-domain-card {
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.dp-subs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.15rem 0 0.75rem; }
+.dp-sub-chip {
+  font: var(--text-micro);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-2);
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.55rem;
+  cursor: pointer;
+}
+.dp-sub-chip:hover { color: var(--color-text-primary); box-shadow: inset 0 0 0 1px var(--color-border-strong); }
+
 /* --- status + domain pills --- */
 
 .dp-pill {

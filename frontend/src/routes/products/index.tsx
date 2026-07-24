@@ -12,6 +12,10 @@ import {
 import '../../views/products.css'
 
 export const Route = createFileRoute('/products/')({
+  // Deep-linkable domain filter, so the Domains page can jump straight into a
+  // pre-scoped catalogue (?domain=<id>).
+  validateSearch: (s: Record<string, unknown>): { domain?: string } =>
+    typeof s.domain === 'string' ? { domain: s.domain } : {},
   component: ProductsBrowse,
 })
 
@@ -30,9 +34,10 @@ function descendantsOf(id: string, byParent: Map<string | null, ProductDomain[]>
 }
 
 function ProductsBrowse() {
+  const { domain } = Route.useSearch()
   const [domains, setDomains] = useState<ProductDomain[]>([])
   const [products, setProducts] = useState<ProductRecord[]>([])
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(domain ?? null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -83,13 +88,8 @@ function ProductsBrowse() {
   return (
     <div className="dp-page">
       <div className="dp-page-head">
-        <div>
-          <h1 className="dp-title">Data Products</h1>
-          <p className="dp-lead">
-            Curated, owned data products you can discover and request access to.
-          </p>
-        </div>
-        <Link to="/products/new" className="dp-btn primary">New data product</Link>
+        <h1 className="dp-title">Data Products</h1>
+        <Link to="/products/new" className="dp-btn primary">New product</Link>
       </div>
 
       {error && <div className="dp-error">{error}</div>}

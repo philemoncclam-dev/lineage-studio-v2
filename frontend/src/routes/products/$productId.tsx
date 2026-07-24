@@ -197,8 +197,7 @@ function ProductDetail() {
           <div className="dp-aside-label">Access</div>
           {submitted ? (
             <div className="dp-note ok">
-              Request sent — <span className="dp-pill" data-status={submitted.status}>{submitted.status}</span>.
-              The owner will review it. On approval, reader access to the Fabric workspace is granted automatically.
+              Request sent to the owner · <span className="dp-pill" data-status={submitted.status}>{submitted.status}</span>
             </div>
           ) : requesting ? (
             <RequestForm product={product} onDone={setSubmitted} />

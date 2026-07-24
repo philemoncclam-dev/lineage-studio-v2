@@ -79,9 +79,8 @@ function NewProduct() {
   return (
     <div className="dp-page">
       <h1 className="dp-title">New data product</h1>
-      <p className="dp-lead">Define the product and its owner. You can attach assets and a model afterwards.</p>
 
-      <div className="dp-form">
+      <div className="dp-form" style={{ marginTop: '1.25rem' }}>
         {error && <div className="dp-error">{error}</div>}
         <div className="dp-field">
           <label>Name</label>

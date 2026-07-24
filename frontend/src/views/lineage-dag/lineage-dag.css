@@ -111,6 +111,19 @@
   user-select: none;
 }
 
+/* Column-count badge (model's otable-count idiom) — a calm pill on the right
+   of the header, so the card reads its shape without expanding. */
+.ls-node .count {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--text-micro);
+  color: var(--color-text-tertiary);
+  background: var(--color-surface-2);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--spacing-2);
+  line-height: 1.5;
+}
+
 .ls-node .head:focus-visible {
   outline: none;
   border-radius: var(--card-radius);
@@ -118,9 +131,9 @@
 }
 
 .tick {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
   flex: none;
   background: var(--color-domain-neutral);
 }
@@ -161,13 +174,13 @@
   gap: var(--spacing-2);
   padding: 0 var(--spacing-3);
   font-size: var(--text-base);
-  border-top: var(--border-width) solid var(--color-surface-2);
+  border-top: var(--border-width) solid color-mix(in oklch, var(--color-border) 45%, transparent);
   cursor: pointer;
   transition: opacity var(--dag-trace-transition), background var(--dag-trace-transition);
   min-width: 0; /* lets .name/.type ellipsis instead of forcing row width */
 }
 .col:first-child { border-top: 0; }
-.col:hover { background: var(--color-surface-2); }
+.col:hover { background: color-mix(in oklch, var(--color-surface-2) 70%, transparent); }
 
 /* Traced treatment — carried forward verbatim from components.css's
    .col.hot/.col.sel (03-UI-SPEC.md Trace & Selection table). */

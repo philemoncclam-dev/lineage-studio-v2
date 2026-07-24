@@ -56,9 +56,10 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
     { key: 'data-products', label: 'Data products', icon: 'products', to: '/purview/data-products' },
   ],
   products: [
-    { key: 'catalog', label: 'Product catalog', icon: 'products', to: '/products' },
-    { key: 'new-product', label: 'New data product', icon: 'plus', to: '/products/new' },
-    { key: 'requests', label: 'Access requests', icon: 'inbox', to: '/products/requests' },
+    { key: 'catalog', label: 'Products', icon: 'products', to: '/products' },
+    { key: 'domains', label: 'Domains', icon: 'layers', to: '/products/domains' },
+    { key: 'new-product', label: 'New product', icon: 'plus', to: '/products/new' },
+    { key: 'requests', label: 'Requests', icon: 'inbox', to: '/products/requests' },
   ],
 }
 

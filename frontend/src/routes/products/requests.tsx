@@ -97,11 +97,10 @@ function RequestsInbox() {
 
   return (
     <div className="dp-page">
-      <h1 className="dp-title">Access requests</h1>
-      <p className="dp-lead">
-        Requests for the data products you own. Approving grants reader access to the Fabric workspace
-        {writeEnabled ? '.' : ' (writes disabled — approvals are previewed).'}
-      </p>
+      <div className="dp-page-head">
+        <h1 className="dp-title">Access requests</h1>
+        {!writeEnabled && <span className="dp-pill">preview mode</span>}
+      </div>
 
       {error && <div className="dp-error">{error}</div>}
 

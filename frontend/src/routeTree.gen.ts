@@ -19,6 +19,7 @@ import { Route as ModelIndexRouteImport } from './routes/model.index'
 import { Route as ModelSplatRouteImport } from './routes/model.$'
 import { Route as ProductsIndexRouteImport } from './routes/products/index'
 import { Route as ProductsProductIdRouteImport } from './routes/products/$productId'
+import { Route as ProductsDomainsRouteImport } from './routes/products/domains'
 import { Route as ProductsNewRouteImport } from './routes/products/new'
 import { Route as ProductsRequestsRouteImport } from './routes/products/requests'
 import { Route as PurviewDataProductsRouteImport } from './routes/purview/data-products'
@@ -79,6 +80,11 @@ const ProductsProductIdRoute = ProductsProductIdRouteImport.update({
   path: '/$productId',
   getParentRoute: () => ProductsRouteRoute,
 } as any)
+const ProductsDomainsRoute = ProductsDomainsRouteImport.update({
+  id: '/domains',
+  path: '/domains',
+  getParentRoute: () => ProductsRouteRoute,
+} as any)
 const ProductsNewRoute = ProductsNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -136,6 +142,7 @@ export interface FileRoutesByFullPath {
   '/purview': typeof PurviewRouteRouteWithChildren
   '/model/$': typeof ModelSplatRoute
   '/products/$productId': typeof ProductsProductIdRoute
+  '/products/domains': typeof ProductsDomainsRoute
   '/products/new': typeof ProductsNewRoute
   '/products/requests': typeof ProductsRequestsRoute
   '/purview/data-products': typeof PurviewDataProductsRoute
@@ -155,6 +162,7 @@ export interface FileRoutesByTo {
   '/purview': typeof PurviewRouteRouteWithChildren
   '/model/$': typeof ModelSplatRoute
   '/products/$productId': typeof ProductsProductIdRoute
+  '/products/domains': typeof ProductsDomainsRoute
   '/products/new': typeof ProductsNewRoute
   '/products/requests': typeof ProductsRequestsRoute
   '/purview/data-products': typeof PurviewDataProductsRoute
@@ -177,6 +185,7 @@ export interface FileRoutesById {
   '/purview': typeof PurviewRouteRouteWithChildren
   '/model/$': typeof ModelSplatRoute
   '/products/$productId': typeof ProductsProductIdRoute
+  '/products/domains': typeof ProductsDomainsRoute
   '/products/new': typeof ProductsNewRoute
   '/products/requests': typeof ProductsRequestsRoute
   '/purview/data-products': typeof PurviewDataProductsRoute
@@ -200,6 +209,7 @@ export interface FileRouteTypes {
     | '/purview'
     | '/model/$'
     | '/products/$productId'
+    | '/products/domains'
     | '/products/new'
     | '/products/requests'
     | '/purview/data-products'
@@ -219,6 +229,7 @@ export interface FileRouteTypes {
     | '/purview'
     | '/model/$'
     | '/products/$productId'
+    | '/products/domains'
     | '/products/new'
     | '/products/requests'
     | '/purview/data-products'
@@ -240,6 +251,7 @@ export interface FileRouteTypes {
     | '/purview'
     | '/model/$'
     | '/products/$productId'
+    | '/products/domains'
     | '/products/new'
     | '/products/requests'
     | '/purview/data-products'
@@ -334,6 +346,13 @@ declare module '@tanstack/react-router' {
       path: '/$productId'
       fullPath: '/products/$productId'
       preLoaderRoute: typeof ProductsProductIdRouteImport
+      parentRoute: typeof ProductsRouteRoute
+    }
+    '/products/domains': {
+      id: '/products/domains'
+      path: '/domains'
+      fullPath: '/products/domains'
+      preLoaderRoute: typeof ProductsDomainsRouteImport
       parentRoute: typeof ProductsRouteRoute
     }
     '/products/new': {
@@ -434,6 +453,7 @@ const LineageRouteRouteWithChildren = LineageRouteRoute._addFileChildren(
 
 interface ProductsRouteRouteChildren {
   ProductsProductIdRoute: typeof ProductsProductIdRoute
+  ProductsDomainsRoute: typeof ProductsDomainsRoute
   ProductsNewRoute: typeof ProductsNewRoute
   ProductsRequestsRoute: typeof ProductsRequestsRoute
   ProductsIndexRoute: typeof ProductsIndexRoute
@@ -441,6 +461,7 @@ interface ProductsRouteRouteChildren {
 
 const ProductsRouteRouteChildren: ProductsRouteRouteChildren = {
   ProductsProductIdRoute: ProductsProductIdRoute,
+  ProductsDomainsRoute: ProductsDomainsRoute,
   ProductsNewRoute: ProductsNewRoute,
   ProductsRequestsRoute: ProductsRequestsRoute,
   ProductsIndexRoute: ProductsIndexRoute,

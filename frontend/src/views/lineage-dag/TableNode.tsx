@@ -33,8 +33,16 @@ export default function TableNode({ data }: NodeProps<Node<TableNodeData & Recor
 
   const headerLabel = `${data.name}, ${data.layer} table, ${data.columns.length} columns`
 
+  // Whole-card dim (D-05): a trace is active AND none of this table's own
+  // columns are in the traced set (the card is neither the trace anchor nor
+  // one of its endpoints) — chrome dims as one unit. A card with >=1 traced
+  // column never gets this class; its individual unrelated rows dim below
+  // instead (avoids compounding opacity: 0.15 twice).
+  const hasTracedCol = !!data.traced && data.columns.some((c) => data.traced!.has(c.key))
+  const cardDim = !!data.traced && !hasTracedCol
+
   return (
-    <div className="ls-node">
+    <div className={`ls-node${cardDim ? ' dim' : ''}`}>
       <div
         className="head"
         role="button"
@@ -59,15 +67,26 @@ export default function TableNode({ data }: NodeProps<Node<TableNodeData & Recor
           {data.columns.map((c, i) => {
             const top = HEADER_HEIGHT + i * ROW_HEIGHT + ROW_HEIGHT / 2
             const rowLabel = `${c.name}, ${c.type}${c.pk ? ', primary key' : ''}, ${data.name}`
+            const isActive = c.key === data.active
+            const isHot = !!data.traced?.has(c.key) && !isActive
+            // Only dim an individual row when the CARD itself isn't already
+            // whole-dimmed (cardDim above) — stacking .ls-node.dim's opacity
+            // with a per-row .col.dim would compound to a barely-visible
+            // 0.15 * 0.15, not the intended single 0.15 tier (D-05: "one
+            // trace treatment, one opacity value, no third tier").
+            const isDim = !!data.traced && !data.traced.has(c.key) && !cardDim
+            const rowClass = ['col', isHot ? 'hot' : '', isActive ? 'sel' : '', isDim ? 'dim' : ''].join(' ').trim()
             return (
               <div
-                className="col"
+                className={rowClass}
                 key={c.key}
                 role="button"
                 tabIndex={-1}
                 data-lineage-focus={c.key}
                 data-col={c.key}
                 aria-label={rowLabel}
+                onMouseEnter={() => data.onHoverColumn?.(c.key)}
+                onMouseLeave={() => data.onHoverColumn?.(null)}
                 onClick={(e) => {
                   e.stopPropagation()
                   select(data.id, c.key)

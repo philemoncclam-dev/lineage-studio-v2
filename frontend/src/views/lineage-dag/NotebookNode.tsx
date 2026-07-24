@@ -20,7 +20,7 @@ export default function NotebookNode({ data }: NodeProps<Node<NotebookNodeData &
   const { select } = useSelection()
 
   return (
-    <div className="ls-node">
+    <div className={`ls-node${data.dim ? ' dim' : ''}`}>
       <div
         className="head"
         role="button"

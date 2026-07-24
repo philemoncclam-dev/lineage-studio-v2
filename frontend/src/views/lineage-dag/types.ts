@@ -20,11 +20,23 @@ export interface TableNodeData {
   columns: Col[]
   mode: LineageMode
   colorKey: ColorKey
+  // Trace/hover-wiring fields injected per-render by LineageDagView (03-07)
+  // — toXyflow.ts's static mapping knows nothing about the active hover/
+  // selection, so these stay optional here and are always present by the
+  // time TableNode actually renders inside LineageDagView.
+  traced?: Set<string> | null
+  active?: string | null
+  onHoverColumn?: (colKey: string | null) => void
 }
 
 export interface NotebookNodeData {
   id: string
   name: string
+  // Whole-card dim (D-05): true whenever a column-level trace is active — a
+  // notebook never owns a traced column itself (colEdges are column-to-
+  // column only), so it always dims as an unrelated card while any trace is
+  // live. Injected per-render by LineageDagView, same as TableNodeData above.
+  dim?: boolean
 }
 
 export interface LineageEdgeData {

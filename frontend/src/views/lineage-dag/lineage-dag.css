@@ -14,6 +14,70 @@
    anything but the default `static`, or TableNode's row-center Handle math
    (headerHeight + i*rowHeight + rowHeight/2) would silently misalign. */
 
+/* ===== View chrome (03-07): toolbar strip + canvas region + empty state.
+   Owned by this phase's canvas component per 03-UI-SPEC.md "Layout &
+   Composition" — not a rail item, not a persistent legend. ===== */
+.lineage-view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+.lineage-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-4);
+  background: var(--lineage-toolbar-bg);
+  border-bottom: var(--border-width) solid var(--lineage-toolbar-border);
+  z-index: 6;
+}
+
+.lineage-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--color-surface-canvas);
+}
+/* xyflow's own ResizeObserver-driven viewport needs a concrete pixel box —
+   .shell-canvas/.lineage-view are flex columns, so this fills the remaining
+   height exactly like the retired .ls-stage did. */
+.lineage-canvas .react-flow { width: 100%; height: 100%; }
+
+.lineage-canvas-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  text-align: center;
+  padding: var(--spacing-8);
+  background-image: radial-gradient(var(--color-grid-dot) 1.2px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+.lineage-canvas-empty-heading { margin: 0; font-size: var(--text-heading); font-weight: 600; color: var(--color-text-primary); }
+.lineage-canvas-empty-body { margin: 0; font-size: var(--text-base); color: var(--color-text-secondary); max-width: 360px; }
+
+/* Route-deep-link focus ring (LineageDagView's `focusTable` prop) — lands on
+   xyflow's own .react-flow__node wrapper via Node.className, a direct port
+   of the retired LineageView.tsx's `.ls-node.focus` ring. */
+.react-flow__node.lineage-focus .ls-node {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-dim), var(--card-shadow);
+}
+
+/* Visually-hidden but accessibility-tree-present edge summary (DAG-08) —
+   standard sr-only technique: never display:none/visibility:hidden, which
+   both remove an element from the a11y tree. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ===== Card chrome ===== */
 .ls-node {
   width: var(--dag-node-width);

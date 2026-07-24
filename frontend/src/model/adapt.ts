@@ -57,6 +57,25 @@ export function adapt(g: LineageGraph): AppModel {
     }
   }
 
+  // ---- table-to-table `derives` edges (authored models exported from the
+  // modelling tab have no mediating notebook, so column lineage is carried
+  // directly on derives edges rather than through reads/writes) ----
+  for (const e of g.edges) {
+    if (e.kind !== 'derives' || !e.columns.length) continue
+    const src = tableById.get(tid(e.source))
+    const tgt = tableById.get(tid(e.target))
+    if (!src || !tgt) continue
+    for (const m of e.columns) {
+      const toCol = tgt.columns.find((c) => c.name === m.to_column)
+      const fromCol = src.columns.find((c) => c.name === m.from_column)
+      if (!toCol) continue
+      if (fromCol) colEdges.push([fromCol.key, toCol.key])
+      xform[toCol.key] = m.transform
+        ? [m.transform, `Derived as ${m.transform} from ${src.name}.`]
+        : [m.from_column, `Passed through from ${src.name} · ${m.from_column}.`]
+    }
+  }
+
   // ---- knowledge-graph drill levels ----
   const { levels, levelTable } = buildGraphLevels(g)
 

@@ -60,7 +60,7 @@ describe('root route pending state (CR-01 / SHELL-07)', () => {
 
     const router = createRouter({
       routeTree,
-      context: { graph: null, fetchedAt: null },
+      context: { graph: null, fetchedAt: null, snapshotLabel: null },
       history: createMemoryHistory({ initialEntries: ['/'] }),
       // Render the pending fallback synchronously instead of after the
       // default 1s/500ms delay, so the test doesn't need fake timers.

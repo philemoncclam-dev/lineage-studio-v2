@@ -5,6 +5,7 @@ import './styles/tokens.css'
 import { initTheme } from './shell/theme'
 import { initCanvasTokenCache } from './tokens/canvasTokens'
 import { router } from './router'
+import { completeAuthRedirectBridge } from './model-app/connectors/fabricAuth'
 
 // Restore a persisted theme choice before first paint (Pitfall 2: Phase 1
 // wired the data-theme/light-dark() mechanism but shipped no control or
@@ -18,8 +19,21 @@ initTheme()
 // getCanvasTokens() rather than reading the DOM's computed style themselves.
 initCanvasTokenCache()
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <RouterProvider router={router} />
-  </StrictMode>,
-)
+function renderApp() {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <RouterProvider router={router} />
+    </StrictMode>,
+  )
+}
+
+// The Fabric (model tab) MSAL sign-in popup redirects to this origin ("/"),
+// re-entering this entry rather than the model mount. On such a load, relay the
+// auth response to the opener window and close instead of booting the full app.
+// On every normal load (no auth response in the URL, or Fabric unconfigured)
+// this resolves false immediately and is a no-op.
+completeAuthRedirectBridge()
+  .then((isClosingBridge) => {
+    if (!isClosingBridge) renderApp()
+  })
+  .catch(() => renderApp())

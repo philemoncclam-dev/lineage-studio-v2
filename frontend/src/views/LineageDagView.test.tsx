@@ -102,7 +102,7 @@ async function renderView(model: AppModel) {
   const routeTree = RootRoute.addChildren([indexRoute])
   const router = createRouter({
     routeTree,
-    context: { graph: null, fetchedAt: null },
+    context: { graph: null, fetchedAt: null, snapshotLabel: null },
     history: createMemoryHistory({ initialEntries: ['/'] }),
     defaultPendingMs: 0,
     defaultPendingMinMs: 0,

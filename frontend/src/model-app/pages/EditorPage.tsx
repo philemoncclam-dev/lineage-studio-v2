@@ -37,6 +37,8 @@ import { ThemeToggle } from "../theme";
 import { Tour } from "../tour/Tour";
 import { hasSeenTour } from "../tour/tourSeen";
 import { publishModelRailState, subscribeModelRailActions } from "../railBridge";
+import { modelToLineageGraph } from "../toLineageGraph";
+import { saveGraphStash } from "../../graphStash";
 
 const PANEL_MIN = 200;
 const PANEL_MAX = 480;
@@ -370,6 +372,15 @@ export default function EditorPage() {
         case "tidy": ed.applyTidy(); break;
         case "import": setModal("importHub"); break;
         case "export": setModal("exportHub"); break;
+        case "graph":
+          // Convert the authored model to the host LineageGraph, stash it, and
+          // hand off to the host graph view (full navigation so the host root
+          // loader re-reads the stash — crossing the react-router boundary).
+          if (ed.model) {
+            saveGraphStash(modelToLineageGraph(ed.model), ed.model.name);
+            window.location.assign("/graph");
+          }
+          break;
         case "undo": undo(); break;
         case "redo": redo(); break;
         case "settings": setModal("settings"); break;

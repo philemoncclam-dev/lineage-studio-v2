@@ -55,6 +55,15 @@ export function buildGraphLevels(g: LineageGraph): { levels: Record<string, Leve
       const anchor = lakehouseOf(tNode) ?? tNode.id
       links.push([e.kind === 'reads' ? anchor : nb, e.kind === 'reads' ? nb : anchor, e.kind])
     }
+    // Table-to-table `derives` edges (notebook-free authored models): connect
+    // the two tables' lakehouses so the estate/workspace network stays linked.
+    for (const e of g.edges) {
+      if (e.kind !== 'derives') continue
+      const s = byId.get(e.source)
+      const t = byId.get(e.target)
+      if (!s || !t) continue
+      links.push([lakehouseOf(s) ?? s.id, lakehouseOf(t) ?? t.id, 'derives'])
+    }
     levels[`ws:${w.id}`] = { level: 'Workspace', crumb: w.name, type: 'graph', nodes, links }
   }
 
@@ -77,6 +86,13 @@ export function buildGraphLevels(g: LineageGraph): { levels: Record<string, Leve
     const links: [string, string, string][] = g.edges
       .filter((e) => (e.kind === 'reads' && lhTables.some((t) => t.id === e.source)) || (e.kind === 'writes' && lhTables.some((t) => t.id === e.target)))
       .map((e) => [e.source, e.target, e.kind] as [string, string, string])
+    // `derives` edges wholly within this lakehouse (both endpoints are tables
+    // shown here). Cross-lakehouse derivations surface at the workspace level.
+    for (const e of g.edges) {
+      if (e.kind !== 'derives') continue
+      if (lhTables.some((t) => t.id === e.source) && lhTables.some((t) => t.id === e.target))
+        links.push([e.source, e.target, 'derives'])
+    }
     levels[`lake:${lh.id}`] = { level: 'Lakehouse', crumb: lh.name, type: 'graph', nodes, links }
   }
 

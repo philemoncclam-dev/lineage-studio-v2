@@ -20,6 +20,7 @@ export type ModelRailAction =
   | 'tidy'
   | 'import'
   | 'export'
+  | 'graph'
   | 'undo'
   | 'redo'
   | 'settings'

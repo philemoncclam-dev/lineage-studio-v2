@@ -58,6 +58,9 @@ const ICONS: Record<ModelRailAction, ReactNode> = {
   export: (
     <svg viewBox="0 0 24 24"><path d="M12 15V4M7 9l5-5 5 5" /><path d="M4.5 19.5h15" /></svg>
   ),
+  graph: (
+    <svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="13" cy="18" r="2.5" /><path d="M8 8l3.5 8M16 8l-2 7.5" /></svg>
+  ),
   undo: (
     <svg viewBox="0 0 24 24"><path d="M8.5 5 4 9.5 8.5 14" /><path d="M4 9.5h10a6 6 0 0 1 0 12h-3" /></svg>
   ),
@@ -122,6 +125,7 @@ export default function ModelEditorRail() {
     { action: 'tidy', label: 'Tidy layout' },
     { action: 'import', label: 'Import' },
     { action: 'export', label: 'Export' },
+    { action: 'graph', label: 'Open in graph view' },
     { action: 'undo', label: 'Undo', disabled: !state.canUndo, sepBefore: true },
     { action: 'redo', label: 'Redo', disabled: !state.canRedo },
     { action: 'settings', label: 'Editor settings', sepBefore: true },

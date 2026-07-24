@@ -13,9 +13,20 @@
 .fx-row {
   display: flex;
   align-items: center;
-  gap: 8px;
   width: 100%;
   min-height: var(--row-height, 32px);
+  border-radius: var(--radius-control, 6px);
+}
+.fx-row:hover {
+  background: var(--color-surface-2, rgba(255, 255, 255, 0.04));
+}
+
+.fx-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 4px 8px;
   background: none;
   border: none;
@@ -25,14 +36,35 @@
   text-align: left;
   cursor: pointer;
 }
-.fx-row:hover {
-  background: var(--color-surface-2, rgba(255, 255, 255, 0.04));
-}
-.fx-row[data-leaf='true'] {
+.fx-row-main:disabled {
   cursor: default;
 }
-.fx-row[data-leaf='true']:hover {
-  background: none;
+
+/* "Open in Fabric" — quiet until the row is hovered or the link is focused. */
+.fx-open {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 4px;
+  color: var(--color-text-tertiary);
+  border-radius: var(--radius-control, 6px);
+  opacity: 0;
+  transition: opacity 100ms ease, color 100ms ease, background 100ms ease;
+}
+.fx-row:hover .fx-open,
+.fx-open:focus-visible {
+  opacity: 1;
+}
+.fx-open:hover {
+  color: var(--color-accent);
+  background: var(--color-surface-canvas, rgba(255, 255, 255, 0.06));
+}
+.fx-open svg {
+  width: 14px;
+  height: 14px;
 }
 
 .fx-chevron {

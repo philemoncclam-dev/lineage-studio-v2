@@ -3,11 +3,13 @@
 // + lakehouses → lakehouse tables. Each branch fetches its children only when
 // first opened, so nothing is pulled from Fabric until the user drills in.
 //
-// Columns stop at tables on purpose: there is no reliable REST endpoint for
-// lakehouse table columns, and the accurate schema fetch is the Phase-2
-// sandbox work (see .planning/FABRIC-TOOLKIT-PLAN.md).
+// Rows are actionable: every row that maps to a Fabric page carries an
+// "open in Fabric ↗" link, and notebooks additionally open in the sandbox.
+// Tables link to their parent lakehouse's page (Fabric has no reliable
+// per-table deep link). Columns stop at tables on purpose — the accurate
+// schema fetch is the Phase-2 sandbox work (see FABRIC-TOOLKIT-PLAN.md).
 import { useEffect, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
   fetchFabricStatus,
   fetchFabricWorkspaces,
@@ -23,6 +25,15 @@ import '../../views/fabric.css'
 export const Route = createFileRoute('/fabric/explore')({
   component: ExploreRoute,
 })
+
+// Fabric portal deep links. The notebook form matches the QN the backend
+// parser already relies on (fabric/notebooks.py's _NOTEBOOK_QN).
+const FABRIC = 'https://app.fabric.microsoft.com'
+const fabricUrl = {
+  workspace: (ws: string) => `${FABRIC}/groups/${ws}/list`,
+  lakehouse: (ws: string, lh: string) => `${FABRIC}/groups/${ws}/lakehouses/${lh}`,
+  notebook: (ws: string, id: string) => `${FABRIC}/groups/${ws}/synapsenotebooks/${id}`,
+}
 
 // Tiny async-state helper — the tree has many independent lazy fetches and
 // each wants its own loading/error/data lifecycle.
@@ -69,6 +80,24 @@ function Icon({ kind }: { kind: keyof typeof ICONS }) {
   )
 }
 
+function OpenInFabric({ href }: { href: string }) {
+  return (
+    <a
+      className="fx-open"
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title="Open in Fabric"
+      aria-label="Open in Fabric"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M14 4h6v6M20 4l-9 9M18 13v6H5V6h6" />
+      </svg>
+    </a>
+  )
+}
+
 interface RowProps {
   depth: number
   kind: keyof typeof ICONS
@@ -76,24 +105,29 @@ interface RowProps {
   meta?: string
   open?: boolean
   leaf?: boolean
-  onToggle?: () => void
+  onPrimary?: () => void
+  fabricHref?: string
+  hint?: string
 }
 
-function Row({ depth, kind, label, meta, open, leaf, onToggle }: RowProps) {
+function Row({ depth, kind, label, meta, open, leaf, onPrimary, fabricHref, hint }: RowProps) {
   return (
-    <button
-      className="fx-row"
-      data-open={open}
-      data-leaf={leaf}
-      style={{ paddingLeft: 8 + depth * 18 }}
-      onClick={leaf ? undefined : onToggle}
-      aria-expanded={leaf ? undefined : !!open}
-    >
-      <Chevron hidden={leaf} />
-      <Icon kind={kind} />
-      <span className="fx-label">{label}</span>
-      {meta && <span className="fx-meta">{meta}</span>}
-    </button>
+    <div className="fx-row" data-open={open}>
+      <button
+        className="fx-row-main"
+        style={{ paddingLeft: 8 + depth * 18 }}
+        onClick={onPrimary}
+        disabled={!onPrimary}
+        aria-expanded={leaf ? undefined : !!open}
+        title={hint}
+      >
+        <Chevron hidden={leaf} />
+        <Icon kind={kind} />
+        <span className="fx-label">{label}</span>
+        {meta && <span className="fx-meta">{meta}</span>}
+      </button>
+      {fabricHref && <OpenInFabric href={fabricHref} />}
+    </div>
   )
 }
 
@@ -103,12 +137,37 @@ function Note({ state }: { state: Async<unknown> }) {
   return null
 }
 
+function NotebookRow({ workspaceId, notebook, depth }: { workspaceId: string; notebook: FabricItem; depth: number }) {
+  const navigate = useNavigate()
+  return (
+    <Row
+      depth={depth}
+      kind="notebook"
+      label={notebook.name}
+      leaf
+      hint="Open in sandbox"
+      onPrimary={() =>
+        navigate({ to: '/fabric/sandbox', search: { ws: workspaceId, item: notebook.id, name: notebook.name } })
+      }
+      fabricHref={fabricUrl.notebook(workspaceId, notebook.id)}
+    />
+  )
+}
+
 function LakehouseNode({ workspaceId, lakehouse, depth }: { workspaceId: string; lakehouse: FabricItem; depth: number }) {
   const [open, setOpen] = useState(false)
   const tables = useAsync<FabricTable[]>(() => fetchFabricTables(workspaceId, lakehouse.id), [workspaceId, lakehouse.id, open], open)
+  const lhHref = fabricUrl.lakehouse(workspaceId, lakehouse.id)
   return (
     <>
-      <Row depth={depth} kind="lakehouse" label={lakehouse.name} open={open} onToggle={() => setOpen((o) => !o)} />
+      <Row
+        depth={depth}
+        kind="lakehouse"
+        label={lakehouse.name}
+        open={open}
+        onPrimary={() => setOpen((o) => !o)}
+        fabricHref={lhHref}
+      />
       {open && (
         <>
           <Note state={tables} />
@@ -117,7 +176,17 @@ function LakehouseNode({ workspaceId, lakehouse, depth }: { workspaceId: string;
           )}
           {tables.status === 'ok' &&
             tables.data!.map((t) => (
-              <Row key={t.name} depth={depth + 1} kind="table" label={t.name} meta={t.format ?? undefined} leaf />
+              <Row
+                key={t.name}
+                depth={depth + 1}
+                kind="table"
+                label={t.name}
+                meta={t.format ?? undefined}
+                leaf
+                hint="Open lakehouse in Fabric"
+                onPrimary={() => window.open(lhHref, '_blank', 'noopener')}
+                fabricHref={lhHref}
+              />
             ))}
         </>
       )}
@@ -148,7 +217,7 @@ function FolderBranch({
         <LakehouseNode key={l.id} workspaceId={workspaceId} lakehouse={l} depth={depth} />
       ))}
       {notebooks.map((n) => (
-        <Row key={n.id} depth={depth} kind="notebook" label={n.name} leaf />
+        <NotebookRow key={n.id} workspaceId={workspaceId} notebook={n} depth={depth} />
       ))}
     </>
   )
@@ -170,7 +239,7 @@ function FolderNode({
   const [open, setOpen] = useState(false)
   return (
     <>
-      <Row depth={depth} kind="folder" label={name} open={open} onToggle={() => setOpen((o) => !o)} />
+      <Row depth={depth} kind="folder" label={name} open={open} onPrimary={() => setOpen((o) => !o)} />
       {open && <FolderBranch parentId={folderId} items={items} workspaceId={workspaceId} depth={depth + 1} />}
     </>
   )
@@ -186,7 +255,14 @@ function WorkspaceNode({ workspace, depth }: { workspace: FabricWorkspace; depth
     items.data!.folders.length === 0
   return (
     <>
-      <Row depth={depth} kind="workspace" label={workspace.name} open={open} onToggle={() => setOpen((o) => !o)} />
+      <Row
+        depth={depth}
+        kind="workspace"
+        label={workspace.name}
+        open={open}
+        onPrimary={() => setOpen((o) => !o)}
+        fabricHref={fabricUrl.workspace(workspace.id)}
+      />
       {open && (
         <>
           <Note state={items} />
@@ -213,6 +289,7 @@ function ExploreRoute() {
       <h1 className="page-title">Explore workspace</h1>
       <p className="page-lead">
         Browse the live shape of your Fabric workspaces — folders, notebooks, lakehouses, and tables.
+        Open any item in Fabric, or send a notebook to the sandbox.
       </p>
 
       {status.status === 'ok' && !status.data?.configured && (

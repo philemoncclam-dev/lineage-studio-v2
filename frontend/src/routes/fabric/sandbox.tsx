@@ -7,6 +7,10 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { runSandbox, type SandboxRunResult } from '../../api'
+import { adapt } from '../../model'
+import { graphToModel } from '../../model/graphToModel'
+import { sandboxRunToGraph } from '../../model/sandboxToGraph'
+import { saveNew } from '../../model-app/localdb'
 import '../../views/fabric.css'
 
 interface SandboxSearch {
@@ -69,14 +73,25 @@ function SandboxRoute() {
 
           {run.status === 'error' && <div className="fx-note" data-error="true">{run.error}</div>}
 
-          {run.status === 'done' && run.result && <RunReport result={run.result} />}
+          {run.status === 'done' && run.result && <RunReport result={run.result} notebookName={name!} />}
         </>
       )}
     </div>
   )
 }
 
-function RunReport({ result }: { result: SandboxRunResult }) {
+function RunReport({ result, notebookName }: { result: SandboxRunResult; notebookName: string }) {
+  // Assemble a 4-layer authored model from what the run touched, reusing the
+  // exact graph → model path the graph view's "create model" button uses.
+  const createModel = () => {
+    const graph = sandboxRunToGraph(result, notebookName)
+    const draft = graphToModel(adapt(graph))
+    const saved = saveNew({ name: `${notebookName} — model`, nodes: draft.nodes, edges: draft.edges, tags: [] })
+    window.location.assign(`/model/models/${saved.id}`)
+  }
+
+  const hasFlow = result.reads.length > 0 || result.writes.length > 0
+
   return (
     <div className="sbx-report">
       <div className="sbx-safety" data-breach={result.saw_credentials}>
@@ -86,6 +101,15 @@ function RunReport({ result }: { result: SandboxRunResult }) {
       </div>
 
       {!result.ok && <div className="fx-note" data-error="true">{result.error}</div>}
+
+      {result.ok && hasFlow && (
+        <div className="sbx-actions">
+          <button className="sbx-run" onClick={createModel} title="Build a 4-layer authored model from this run">
+            Create model from this run →
+          </button>
+          <span className="fx-note">Assembles the notebook + its read/write tables as an editable model.</span>
+        </div>
+      )}
 
       <div className="sbx-io">
         <div>

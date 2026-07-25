@@ -200,7 +200,12 @@ def get_table_schema(
         dirs = table_dirs_for_lakehouse(client, workspace_id, lakehouse_id)
     except FabricError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    table_dir = dirs.get(table_name.lower())
+    # Schema-enabled lakehouses surface tables as schema-qualified names
+    # ("dbo.raw_orders"), but table_dirs_for_lakehouse keys on the last path
+    # segment only ("raw_orders"). Try the qualified name first, then fall back
+    # to the segment after the last dot so both layouts resolve.
+    key = table_name.lower()
+    table_dir = dirs.get(key) or dirs.get(key.rsplit(".", 1)[-1])
     if not table_dir:
         raise HTTPException(
             status_code=404, detail=f"table {table_name!r} not found in lakehouse"

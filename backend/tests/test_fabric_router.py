@@ -187,6 +187,29 @@ def test_table_schema_reads_columns_from_delta_log(client, monkeypatch):
     assert body == [{"name": "id", "type": "bigint"}, {"name": "amount", "type": "double"}]
 
 
+def test_table_schema_resolves_schema_qualified_name(client, monkeypatch):
+    """Schema-enabled lakehouses show 'dbo.raw_orders' but the dir index keys
+    on the last segment 'raw_orders' — the endpoint must match either."""
+    schema_string = json.dumps(
+        {"type": "struct", "fields": [{"name": "id", "type": "long"}]}
+    )
+    commit = json.dumps({"metaData": {"schemaString": schema_string}})
+
+    class SchemaClient:
+        def onelake_list(self, ws, path, recursive=False):
+            if path.endswith("/Tables"):
+                return [{"name": "lh1/Tables/dbo/raw_orders/_delta_log"}]
+            return [{"name": "lh1/Tables/dbo/raw_orders/_delta_log/00000000000000000000.json"}]
+
+        def onelake_read_text(self, ws, path):
+            return commit
+
+    _use(monkeypatch, SchemaClient())
+    resp = client.get("/fabric/workspaces/ws1/lakehouses/lh1/tables/dbo.raw_orders/schema")
+    assert resp.status_code == 200
+    assert resp.json() == [{"name": "id", "type": "bigint"}]
+
+
 def test_table_schema_unknown_table_is_404(client, monkeypatch):
     class SchemaClient:
         def onelake_list(self, ws, path, recursive=False):

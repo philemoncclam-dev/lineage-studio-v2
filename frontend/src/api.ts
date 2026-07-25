@@ -458,6 +458,41 @@ export async function fetchFabricTables(
   return res.json()
 }
 
+export interface FabricNotebookSource {
+  name: string
+  lakehouse_default: string | null
+  cells: string[]
+}
+
+export async function fetchFabricNotebookSource(
+  workspaceId: string,
+  itemId: string,
+  name: string,
+): Promise<FabricNotebookSource> {
+  const res = await fetch(
+    `${BASE}/fabric/workspaces/${workspaceId}/notebooks/${itemId}/source?name=${encodeURIComponent(name)}`,
+  )
+  if (!res.ok) return detail(res, 'notebook source')
+  return res.json()
+}
+
+export interface FabricColumn {
+  name: string
+  type?: string | null
+}
+
+export async function fetchFabricTableSchema(
+  workspaceId: string,
+  lakehouseId: string,
+  tableName: string,
+): Promise<FabricColumn[]> {
+  const res = await fetch(
+    `${BASE}/fabric/workspaces/${workspaceId}/lakehouses/${lakehouseId}/tables/${encodeURIComponent(tableName)}/schema`,
+  )
+  if (!res.ok) return detail(res, 'table schema')
+  return res.json()
+}
+
 // --- Fabric toolkit: notebook sandbox (backend/app/sandbox/router.py) ------
 // Runs a notebook in an isolated subprocess — scrubbed env, no Fabric creds,
 // no writes to real Fabric. M2a returns a stub (static) result; M2b swaps in

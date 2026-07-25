@@ -23,6 +23,8 @@ from pydantic import BaseModel
 
 from ..config import get_settings
 from .client import FabricClient, FabricError
+from .notebooks import NotebookDecodeError, fetch_notebook_source
+from .schema import fetch_table_schema, table_dirs_for_lakehouse
 
 router = APIRouter(prefix="/fabric", tags=["fabric"])
 
@@ -56,6 +58,17 @@ class Table(BaseModel):
     name: str
     type: str | None = None
     format: str | None = None
+
+
+class NotebookSourceResponse(BaseModel):
+    name: str
+    lakehouse_default: str | None = None
+    cells: list[str]
+
+
+class Column(BaseModel):
+    name: str
+    type: str | None = None
 
 
 def _client() -> FabricClient:
@@ -145,3 +158,52 @@ def list_lakehouse_tables(workspace_id: str, lakehouse_id: str) -> list[Table]:
         for t in raw
         if t.get("name")
     ]
+
+
+@router.get(
+    "/workspaces/{workspace_id}/notebooks/{item_id}/source",
+    response_model=NotebookSourceResponse,
+)
+def get_notebook_source(
+    workspace_id: str, item_id: str, name: str = "notebook"
+) -> NotebookSourceResponse:
+    """The decoded code cells of one notebook, read-only, for the detail panel.
+
+    Reuses the same `fetch_notebook_source` the sandbox relies on; a refused
+    call or an undecodable definition is a 502 the UI shows as "couldn't read".
+    """
+    client = _client()
+    try:
+        src = fetch_notebook_source(client, workspace_id, item_id, name)
+    except (FabricError, NotebookDecodeError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return NotebookSourceResponse(
+        name=src.name, lakehouse_default=src.lakehouse_default, cells=src.cells
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/tables/{table_name}/schema",
+    response_model=list[Column],
+)
+def get_table_schema(
+    workspace_id: str, lakehouse_id: str, table_name: str
+) -> list[Column]:
+    """Column list for one lakehouse table, from its OneLake Delta log.
+
+    Same schema path the sandbox stands up (schema.py). An empty list means the
+    table's `_delta_log` couldn't be read or carried no schema — not that the
+    table has no columns.
+    """
+    client = _client()
+    try:
+        dirs = table_dirs_for_lakehouse(client, workspace_id, lakehouse_id)
+    except FabricError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    table_dir = dirs.get(table_name.lower())
+    if not table_dir:
+        raise HTTPException(
+            status_code=404, detail=f"table {table_name!r} not found in lakehouse"
+        )
+    cols = fetch_table_schema(client, workspace_id, table_dir)
+    return [Column(name=c.name, type=c.type) for c in cols]

@@ -9,6 +9,9 @@ must surface as an error, not an empty 200; that boundary is asserted here.
 
 from __future__ import annotations
 
+import base64
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -132,6 +135,66 @@ def test_onelake_parser_handles_schema_enabled_layout():
         {"name": "dbo.orders", "type": "Managed", "format": "delta"},
         {"name": "sales.customers", "type": "Managed", "format": "delta"},
     ]
+
+
+def test_notebook_source_returns_decoded_cells(client, monkeypatch):
+    """The detail panel's notebook code path: definition → decoded cells."""
+
+    class NotebookClient:
+        def get_notebook_definition(self, ws, item):
+            ipynb = json.dumps(
+                {"cells": [{"cell_type": "code", "source": ["df = spark.table('raw_orders')"]}]}
+            ).encode()
+            payload = base64.b64encode(ipynb).decode()
+            return {"parts": [{"path": "notebook-content.ipynb", "payload": payload}]}
+
+    _use(monkeypatch, NotebookClient())
+    body = client.get("/fabric/workspaces/ws1/notebooks/n1/source?name=load").json()
+    assert body["name"] == "load"
+    assert any("raw_orders" in c for c in body["cells"])
+
+
+def test_notebook_source_refusal_is_an_error(client, monkeypatch):
+    class NotebookClient:
+        def get_notebook_definition(self, ws, item):
+            raise FabricError("definition refused")
+
+    _use(monkeypatch, NotebookClient())
+    assert client.get("/fabric/workspaces/ws1/notebooks/n1/source").status_code == 502
+
+
+def test_table_schema_reads_columns_from_delta_log(client, monkeypatch):
+    """The detail panel's table columns path: OneLake Delta log → columns."""
+    schema_string = json.dumps(
+        {"type": "struct", "fields": [
+            {"name": "id", "type": "long"},
+            {"name": "amount", "type": "double"},
+        ]}
+    )
+    commit = json.dumps({"metaData": {"schemaString": schema_string}})
+
+    class SchemaClient:
+        def onelake_list(self, ws, path, recursive=False):
+            if path.endswith("/Tables"):
+                return [{"name": "lh1/Tables/orders/_delta_log"}]
+            return [{"name": "lh1/Tables/orders/_delta_log/00000000000000000000.json"}]
+
+        def onelake_read_text(self, ws, path):
+            return commit
+
+    _use(monkeypatch, SchemaClient())
+    body = client.get("/fabric/workspaces/ws1/lakehouses/lh1/tables/orders/schema").json()
+    assert body == [{"name": "id", "type": "bigint"}, {"name": "amount", "type": "double"}]
+
+
+def test_table_schema_unknown_table_is_404(client, monkeypatch):
+    class SchemaClient:
+        def onelake_list(self, ws, path, recursive=False):
+            return [{"name": "lh1/Tables/orders/_delta_log"}]
+
+    _use(monkeypatch, SchemaClient())
+    resp = client.get("/fabric/workspaces/ws1/lakehouses/lh1/tables/missing/schema")
+    assert resp.status_code == 404
 
 
 def test_onelake_parser_handles_classic_layout():

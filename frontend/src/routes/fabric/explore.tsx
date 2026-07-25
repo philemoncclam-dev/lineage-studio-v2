@@ -1,14 +1,16 @@
-// /fabric/explore — the live workspace explorer (M1). A lazy disclosure tree
-// over the read-only /fabric/* REST surface: workspaces → folders + notebooks
-// + lakehouses → lakehouse tables. Each branch fetches its children only when
-// first opened, so nothing is pulled from Fabric until the user drills in.
+// /fabric/explore — the live workspace explorer (M1), master-detail layout.
+// Left: a lazy disclosure tree over the read-only /fabric/* REST surface
+// (workspaces → folders + notebooks + lakehouses → lakehouse tables); each
+// branch fetches its children only when first opened. Right: a detail panel
+// that reacts to the selected node — workspace/folder metadata, a notebook's
+// decoded code, or a table's columns — with actions to open the item in Fabric
+// or send a notebook to the sandbox.
 //
-// Rows are actionable: every row that maps to a Fabric page carries an
-// "open in Fabric ↗" link, and notebooks additionally open in the sandbox.
-// Tables link to their parent lakehouse's page (Fabric has no reliable
-// per-table deep link). Columns stop at tables on purpose — the accurate
-// schema fetch is the Phase-2 sandbox work (see FABRIC-TOOLKIT-PLAN.md).
-import { useEffect, useState } from 'react'
+// Detail data comes from two read-only endpoints added alongside the tree:
+// /notebooks/{id}/source (decoded cells) and /tables/{name}/schema (OneLake
+// Delta columns) — see backend/app/fabric/router.py.
+import { createContext, useContext, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { BarsSpinner } from '../../model-app/ui'
 import {
@@ -16,10 +18,13 @@ import {
   fetchFabricWorkspaces,
   fetchFabricItems,
   fetchFabricTables,
+  fetchFabricNotebookSource,
+  fetchFabricTableSchema,
   type FabricWorkspace,
   type FabricWorkspaceItems,
   type FabricItem,
   type FabricTable,
+  type FabricColumn,
 } from '../../api'
 import '../../views/fabric.css'
 
@@ -56,6 +61,21 @@ function useAsync<T>(fn: () => Promise<T>, deps: unknown[], enabled = true): Asy
   }, deps)
   return state
 }
+
+// --- selection ------------------------------------------------------------
+// A single selected node drives the detail panel. Each variant carries just
+// enough to fetch and label its detail; `key` is the highlight identity.
+type Selected =
+  | { kind: 'workspace'; key: string; ws: FabricWorkspace }
+  | { kind: 'folder'; key: string; name: string; workspaceId: string; folderId: string; items: FabricWorkspaceItems }
+  | { kind: 'notebook'; key: string; workspaceId: string; notebook: FabricItem }
+  | { kind: 'lakehouse'; key: string; workspaceId: string; lakehouse: FabricItem }
+  | { kind: 'table'; key: string; workspaceId: string; lakehouse: FabricItem; table: FabricTable }
+
+const SelectionCtx = createContext<{ selectedKey?: string; select: (s: Selected) => void }>({
+  select: () => {},
+})
+const useSelection = () => useContext(SelectionCtx)
 
 function Chevron({ hidden }: { hidden?: boolean }) {
   return (
@@ -106,14 +126,15 @@ interface RowProps {
   meta?: string
   open?: boolean
   leaf?: boolean
+  selected?: boolean
   onPrimary?: () => void
   fabricHref?: string
   hint?: string
 }
 
-function Row({ depth, kind, label, meta, open, leaf, onPrimary, fabricHref, hint }: RowProps) {
+function Row({ depth, kind, label, meta, open, leaf, selected, onPrimary, fabricHref, hint }: RowProps) {
   return (
-    <div className="fx-row" data-open={open}>
+    <div className="fx-row" data-open={open} data-selected={selected || undefined}>
       <button
         className="fx-row-main"
         style={{ paddingLeft: 8 + depth * 18 }}
@@ -132,10 +153,10 @@ function Row({ depth, kind, label, meta, open, leaf, onPrimary, fabricHref, hint
   )
 }
 
-function Note({ state }: { state: Async<unknown> }) {
+function Note({ state, indent }: { state: Async<unknown>; indent?: number }) {
   if (state.status === 'loading')
     return (
-      <div className="fx-note">
+      <div className="fx-note" style={indent ? { paddingLeft: indent } : undefined}>
         <span className="loading-row"><BarsSpinner size={16} />Loading…</span>
       </div>
     )
@@ -143,26 +164,30 @@ function Note({ state }: { state: Async<unknown> }) {
   return null
 }
 
+// --- tree nodes -----------------------------------------------------------
+
 function NotebookRow({ workspaceId, notebook, depth }: { workspaceId: string; notebook: FabricItem; depth: number }) {
-  const navigate = useNavigate()
+  const { select, selectedKey } = useSelection()
+  const key = `nb:${notebook.id}`
   return (
     <Row
       depth={depth}
       kind="notebook"
       label={notebook.name}
       leaf
-      hint="Open in sandbox"
-      onPrimary={() =>
-        navigate({ to: '/fabric/sandbox', search: { ws: workspaceId, item: notebook.id, name: notebook.name } })
-      }
+      selected={selectedKey === key}
+      hint="Show notebook code"
+      onPrimary={() => select({ kind: 'notebook', key, workspaceId, notebook })}
       fabricHref={fabricUrl.notebook(workspaceId, notebook.id)}
     />
   )
 }
 
 function LakehouseNode({ workspaceId, lakehouse, depth }: { workspaceId: string; lakehouse: FabricItem; depth: number }) {
+  const { select, selectedKey } = useSelection()
   const [open, setOpen] = useState(false)
   const tables = useAsync<FabricTable[]>(() => fetchFabricTables(workspaceId, lakehouse.id), [workspaceId, lakehouse.id, open], open)
+  const key = `lh:${lakehouse.id}`
   const lhHref = fabricUrl.lakehouse(workspaceId, lakehouse.id)
   return (
     <>
@@ -171,29 +196,37 @@ function LakehouseNode({ workspaceId, lakehouse, depth }: { workspaceId: string;
         kind="lakehouse"
         label={lakehouse.name}
         open={open}
-        onPrimary={() => setOpen((o) => !o)}
+        selected={selectedKey === key}
+        onPrimary={() => {
+          select({ kind: 'lakehouse', key, workspaceId, lakehouse })
+          setOpen((o) => !o)
+        }}
         fabricHref={lhHref}
       />
       {open && (
         <>
-          <Note state={tables} />
+          <Note state={tables} indent={8 + (depth + 1) * 18} />
           {tables.status === 'ok' && tables.data!.length === 0 && (
             <div className="fx-note" style={{ paddingLeft: 8 + (depth + 1) * 18 }}>No tables.</div>
           )}
           {tables.status === 'ok' &&
-            tables.data!.map((t) => (
-              <Row
-                key={t.name}
-                depth={depth + 1}
-                kind="table"
-                label={t.name}
-                meta={t.format ?? undefined}
-                leaf
-                hint="Open lakehouse in Fabric"
-                onPrimary={() => window.open(lhHref, '_blank', 'noopener')}
-                fabricHref={lhHref}
-              />
-            ))}
+            tables.data!.map((t) => {
+              const tKey = `tb:${lakehouse.id}/${t.name}`
+              return (
+                <Row
+                  key={t.name}
+                  depth={depth + 1}
+                  kind="table"
+                  label={t.name}
+                  meta={t.format ?? undefined}
+                  leaf
+                  selected={selectedKey === tKey}
+                  hint="Show columns"
+                  onPrimary={() => select({ kind: 'table', key: tKey, workspaceId, lakehouse, table: t })}
+                  fabricHref={lhHref}
+                />
+              )
+            })}
         </>
       )}
     </>
@@ -242,18 +275,32 @@ function FolderNode({
   workspaceId: string
   depth: number
 }) {
+  const { select, selectedKey } = useSelection()
   const [open, setOpen] = useState(false)
+  const key = `fd:${folderId}`
   return (
     <>
-      <Row depth={depth} kind="folder" label={name} open={open} onPrimary={() => setOpen((o) => !o)} />
+      <Row
+        depth={depth}
+        kind="folder"
+        label={name}
+        open={open}
+        selected={selectedKey === key}
+        onPrimary={() => {
+          select({ kind: 'folder', key, name, workspaceId, folderId, items })
+          setOpen((o) => !o)
+        }}
+      />
       {open && <FolderBranch parentId={folderId} items={items} workspaceId={workspaceId} depth={depth + 1} />}
     </>
   )
 }
 
 function WorkspaceNode({ workspace, depth }: { workspace: FabricWorkspace; depth: number }) {
+  const { select, selectedKey } = useSelection()
   const [open, setOpen] = useState(false)
   const items = useAsync<FabricWorkspaceItems>(() => fetchFabricItems(workspace.id), [workspace.id, open], open)
+  const key = `ws:${workspace.id}`
   const empty =
     items.status === 'ok' &&
     items.data!.notebooks.length === 0 &&
@@ -266,12 +313,16 @@ function WorkspaceNode({ workspace, depth }: { workspace: FabricWorkspace; depth
         kind="workspace"
         label={workspace.name}
         open={open}
-        onPrimary={() => setOpen((o) => !o)}
+        selected={selectedKey === key}
+        onPrimary={() => {
+          select({ kind: 'workspace', key, ws: workspace })
+          setOpen((o) => !o)
+        }}
         fabricHref={fabricUrl.workspace(workspace.id)}
       />
       {open && (
         <>
-          <Note state={items} />
+          <Note state={items} indent={8 + (depth + 1) * 18} />
           {empty && <div className="fx-note" style={{ paddingLeft: 8 + (depth + 1) * 18 }}>Empty (or no access to its items).</div>}
           {items.status === 'ok' && (
             <FolderBranch parentId={null} items={items.data!} workspaceId={workspace.id} depth={depth + 1} />
@@ -282,6 +333,271 @@ function WorkspaceNode({ workspace, depth }: { workspace: FabricWorkspace; depth
   )
 }
 
+// --- detail panel ---------------------------------------------------------
+
+function DetailAction({
+  onClick,
+  href,
+  primary,
+  children,
+}: {
+  onClick?: () => void
+  href?: string
+  primary?: boolean
+  children: ReactNode
+}) {
+  const cls = `fx-btn${primary ? ' fx-btn--primary' : ''}`
+  if (href)
+    return (
+      <a className={cls} href={href} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    )
+  return (
+    <button className={cls} onClick={onClick} type="button">
+      {children}
+    </button>
+  )
+}
+
+function OpenFabricIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <path d="M14 4h6v6M20 4l-9 9M18 13v6H5V6h6" />
+    </svg>
+  )
+}
+
+function SandboxIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  )
+}
+
+function DetailHeader({ kind, title, subtitle }: { kind: keyof typeof ICONS; title: string; subtitle?: string }) {
+  return (
+    <div className="fx-detail-head">
+      <Icon kind={kind} />
+      <div className="fx-detail-titles">
+        <h2 className="fx-detail-title">{title}</h2>
+        {subtitle && <div className="fx-detail-sub">{subtitle}</div>}
+      </div>
+    </div>
+  )
+}
+
+function KeyVals({ rows }: { rows: [string, ReactNode][] }) {
+  return (
+    <dl className="fx-kv">
+      {rows.map(([k, v]) => (
+        <div className="fx-kv-row" key={k}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function CodeBlock({ code }: { code: string }) {
+  const lines = code.replace(/\n$/, '').split('\n')
+  return (
+    <div className="fx-code">
+      <div className="fx-code-gutter" aria-hidden>
+        {lines.map((_, i) => (
+          <span key={i}>{i + 1}</span>
+        ))}
+      </div>
+      <pre className="fx-code-body">
+        <code>{lines.join('\n')}</code>
+      </pre>
+    </div>
+  )
+}
+
+function WorkspaceDetail({ sel }: { sel: Extract<Selected, { kind: 'workspace' }> }) {
+  const items = useAsync<FabricWorkspaceItems>(() => fetchFabricItems(sel.ws.id), [sel.ws.id])
+  return (
+    <div className="fx-detail-body">
+      <DetailHeader kind="workspace" title={sel.ws.name} subtitle="Workspace" />
+      <div className="fx-detail-actions">
+        <DetailAction href={fabricUrl.workspace(sel.ws.id)}>
+          <OpenFabricIcon /> Open in Fabric
+        </DetailAction>
+      </div>
+      {items.status === 'ok' ? (
+        <KeyVals
+          rows={[
+            ['ID', <code>{sel.ws.id}</code>],
+            ['Notebooks', String(items.data!.notebooks.length)],
+            ['Lakehouses', String(items.data!.lakehouses.length)],
+            ['Folders', String(items.data!.folders.length)],
+          ]}
+        />
+      ) : (
+        <Note state={items} />
+      )}
+    </div>
+  )
+}
+
+function FolderDetail({ sel }: { sel: Extract<Selected, { kind: 'folder' }> }) {
+  const notebooks = sel.items.notebooks.filter((n) => n.folder_id === sel.folderId).length
+  const lakehouses = sel.items.lakehouses.filter((l) => l.folder_id === sel.folderId).length
+  const subFolders = sel.items.folders.filter((f) => f.parent_id === sel.folderId).length
+  return (
+    <div className="fx-detail-body">
+      <DetailHeader kind="folder" title={sel.name} subtitle="Folder" />
+      <KeyVals
+        rows={[
+          ['Notebooks', String(notebooks)],
+          ['Lakehouses', String(lakehouses)],
+          ['Subfolders', String(subFolders)],
+        ]}
+      />
+    </div>
+  )
+}
+
+function NotebookDetail({ sel }: { sel: Extract<Selected, { kind: 'notebook' }> }) {
+  const navigate = useNavigate()
+  const source = useAsync(
+    () => fetchFabricNotebookSource(sel.workspaceId, sel.notebook.id, sel.notebook.name),
+    [sel.workspaceId, sel.notebook.id],
+  )
+  const code = source.status === 'ok' ? source.data!.cells.join('\n\n# ── cell ──\n\n') : ''
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="fx-detail-body">
+      <DetailHeader kind="notebook" title={sel.notebook.name} subtitle="Notebook" />
+      <div className="fx-detail-actions">
+        <DetailAction
+          primary
+          onClick={() =>
+            navigate({ to: '/fabric/sandbox', search: { ws: sel.workspaceId, item: sel.notebook.id, name: sel.notebook.name } })
+          }
+        >
+          <SandboxIcon /> Open in sandbox
+        </DetailAction>
+        <DetailAction href={fabricUrl.notebook(sel.workspaceId, sel.notebook.id)}>
+          <OpenFabricIcon /> Open in Fabric
+        </DetailAction>
+        {source.status === 'ok' && (
+          <DetailAction
+            onClick={() => {
+              navigator.clipboard?.writeText(code)
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1500)
+            }}
+          >
+            {copied ? 'Copied' : 'Copy code'}
+          </DetailAction>
+        )}
+      </div>
+      {source.status === 'ok' ? (
+        source.data!.cells.length ? (
+          <CodeBlock code={code} />
+        ) : (
+          <div className="fx-note">This notebook has no code cells.</div>
+        )
+      ) : (
+        <Note state={source} />
+      )}
+    </div>
+  )
+}
+
+function LakehouseDetail({ sel }: { sel: Extract<Selected, { kind: 'lakehouse' }> }) {
+  const tables = useAsync<FabricTable[]>(() => fetchFabricTables(sel.workspaceId, sel.lakehouse.id), [sel.workspaceId, sel.lakehouse.id])
+  return (
+    <div className="fx-detail-body">
+      <DetailHeader kind="lakehouse" title={sel.lakehouse.name} subtitle="Lakehouse" />
+      <div className="fx-detail-actions">
+        <DetailAction href={fabricUrl.lakehouse(sel.workspaceId, sel.lakehouse.id)}>
+          <OpenFabricIcon /> Open in Fabric
+        </DetailAction>
+      </div>
+      {tables.status === 'ok' ? (
+        <KeyVals
+          rows={[
+            ['ID', <code>{sel.lakehouse.id}</code>],
+            ['Tables', String(tables.data!.length)],
+          ]}
+        />
+      ) : (
+        <Note state={tables} />
+      )}
+    </div>
+  )
+}
+
+function TableDetail({ sel }: { sel: Extract<Selected, { kind: 'table' }> }) {
+  const schema = useAsync<FabricColumn[]>(
+    () => fetchFabricTableSchema(sel.workspaceId, sel.lakehouse.id, sel.table.name),
+    [sel.workspaceId, sel.lakehouse.id, sel.table.name],
+  )
+  return (
+    <div className="fx-detail-body">
+      <DetailHeader kind="table" title={sel.table.name} subtitle={`Table · ${sel.lakehouse.name}`} />
+      <div className="fx-detail-actions">
+        <DetailAction href={fabricUrl.lakehouse(sel.workspaceId, sel.lakehouse.id)}>
+          <OpenFabricIcon /> Open lakehouse in Fabric
+        </DetailAction>
+      </div>
+      {schema.status === 'ok' ? (
+        schema.data!.length ? (
+          <table className="fx-cols">
+            <thead>
+              <tr>
+                <th>Column</th>
+                <th>Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {schema.data!.map((c) => (
+                <tr key={c.name}>
+                  <td>{c.name}</td>
+                  <td className="fx-cols-type">{c.type ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="fx-note">
+            No columns resolved. The table's Delta log couldn't be read (this doesn't mean the table is empty).
+          </div>
+        )
+      ) : (
+        <Note state={schema} />
+      )}
+    </div>
+  )
+}
+
+function Detail({ sel }: { sel?: Selected }) {
+  if (!sel)
+    return (
+      <div className="fx-detail-empty">
+        <Icon kind="workspace" />
+        <p>Select a workspace, notebook, lakehouse, or table to see its details.</p>
+      </div>
+    )
+  switch (sel.kind) {
+    case 'workspace':
+      return <WorkspaceDetail sel={sel} />
+    case 'folder':
+      return <FolderDetail sel={sel} />
+    case 'notebook':
+      return <NotebookDetail sel={sel} />
+    case 'lakehouse':
+      return <LakehouseDetail sel={sel} />
+    case 'table':
+      return <TableDetail sel={sel} />
+  }
+}
+
 function ExploreRoute() {
   const status = useAsync(() => fetchFabricStatus(), [])
   const workspaces = useAsync<FabricWorkspace[]>(
@@ -289,37 +605,47 @@ function ExploreRoute() {
     [status.status],
     status.status === 'ok' && !!status.data?.configured,
   )
+  const [selected, setSelected] = useState<Selected>()
+
+  const connected = status.status === 'ok' && status.data?.configured
+
+  if (status.status === 'ok' && !status.data?.configured)
+    return (
+      <div className="fx-page">
+        <div className="fx-explorer fx-explorer--single">
+          <div className="fx-empty">
+            Fabric isn’t connected. Set the Purview service-principal credentials in the backend
+            <code> .env</code> to browse live workspaces.
+          </div>
+        </div>
+      </div>
+    )
 
   return (
-    <div className="purview-page">
-      <h1 className="page-title">Explore workspace</h1>
-      <p className="page-lead">
-        Browse the live shape of your Fabric workspaces — folders, notebooks, lakehouses, and tables.
-        Open any item in Fabric, or send a notebook to the sandbox.
-      </p>
-
-      {status.status === 'ok' && !status.data?.configured && (
-        <div className="fx-empty">
-          Fabric isn’t connected. Set the Purview service-principal credentials in the backend
-          <code> .env</code> to browse live workspaces.
-        </div>
-      )}
-
-      {status.status === 'ok' && status.data?.configured && (
-        <div className="fx-tree" role="tree">
-          <Note state={workspaces} />
-          {workspaces.status === 'ok' && workspaces.data!.length === 0 && (
-            <div className="fx-empty">
-              No workspaces visible. The service principal may not have been granted access to any
-              (an empty list here means “no permission”, not “none exist”).
+    <div className="fx-page">
+      <SelectionCtx.Provider value={{ selectedKey: selected?.key, select: setSelected }}>
+        <div className="fx-explorer">
+          <div className="fx-explorer-tree">
+            <div className="fx-panel-head">Workspaces</div>
+            <div className="fx-tree" role="tree">
+              <Note state={status} />
+              {connected && <Note state={workspaces} />}
+              {connected && workspaces.status === 'ok' && workspaces.data!.length === 0 && (
+                <div className="fx-empty">
+                  No workspaces visible. The service principal may not have been granted access to any
+                  (an empty list here means “no permission”, not “none exist”).
+                </div>
+              )}
+              {connected &&
+                workspaces.status === 'ok' &&
+                workspaces.data!.map((ws) => <WorkspaceNode key={ws.id} workspace={ws} depth={0} />)}
             </div>
-          )}
-          {workspaces.status === 'ok' &&
-            workspaces.data!.map((ws) => <WorkspaceNode key={ws.id} workspace={ws} depth={0} />)}
+          </div>
+          <div className="fx-explorer-detail">
+            <Detail sel={selected} />
+          </div>
         </div>
-      )}
-
-      <Note state={status} />
+      </SelectionCtx.Provider>
     </div>
   )
 }

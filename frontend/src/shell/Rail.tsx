@@ -26,7 +26,7 @@ const ICONS: Record<RailIconName, ReactNode> = {
     <svg viewBox="0 0 24 24"><path d="M4 6h4l2-2h10v14a2 2 0 0 1-2 2H4z" /><path d="M4 6v12" /></svg>
   ),
   sandbox: (
-    <svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-4.6 7.4a2 2 0 0 0 1.7 3.1h9.8a2 2 0 0 0 1.7-3.1L14 9V3" /><path d="M7.5 14h9" /></svg>
+    <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" /><path d="M10 9.5l5 3-5 3z" /></svg>
   ),
   definitions: (
     <svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z" /><path d="M15 3v4h4M9 12h6M9 16h6" /></svg>

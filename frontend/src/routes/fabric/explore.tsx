@@ -71,6 +71,7 @@ type Selected =
   | { kind: 'notebook'; key: string; workspaceId: string; notebook: FabricItem }
   | { kind: 'lakehouse'; key: string; workspaceId: string; lakehouse: FabricItem }
   | { kind: 'table'; key: string; workspaceId: string; lakehouse: FabricItem; table: FabricTable }
+  | { kind: 'item'; key: string; workspaceId: string; item: FabricItem }
 
 const SelectionCtx = createContext<{ selectedKey?: string; select: (s: Selected) => void }>({
   select: () => {},
@@ -91,6 +92,9 @@ const ICONS = {
   notebook: <path d="M6 3h9l4 4v14H6z M15 3v4h4M9 12h6M9 16h6" />,
   lakehouse: <path d="M4 7c0-1.5 3.6-2.5 8-2.5S20 5.5 20 7v10c0 1.5-3.6 2.5-8 2.5S4 18.5 4 17zM4 7c0 1.5 3.6 2.5 8 2.5s8-1 8-2.5" />,
   table: <path d="M4 5h16v14H4z M4 10h16M4 15h16M10 5v14" />,
+  // Generic "other item" (pipeline, report, semantic model, …): a small
+  // two-node flow, which reads closest to a pipeline of the mixed bag.
+  item: <path d="M4 5h6v5H4zM14 14h6v5h-6zM10 7.5h2.5a1.5 1.5 0 0 1 1.5 1.5v6" />,
 }
 
 function Icon({ kind }: { kind: keyof typeof ICONS }) {
@@ -183,6 +187,23 @@ function NotebookRow({ workspaceId, notebook, depth }: { workspaceId: string; no
   )
 }
 
+function OtherRow({ workspaceId, item, depth }: { workspaceId: string; item: FabricItem; depth: number }) {
+  const { select, selectedKey } = useSelection()
+  const key = `it:${item.id}`
+  return (
+    <Row
+      depth={depth}
+      kind="item"
+      label={item.name}
+      meta={item.type}
+      leaf
+      selected={selectedKey === key}
+      hint="Show details"
+      onPrimary={() => select({ kind: 'item', key, workspaceId, item })}
+    />
+  )
+}
+
 function LakehouseNode({ workspaceId, lakehouse, depth }: { workspaceId: string; lakehouse: FabricItem; depth: number }) {
   const { select, selectedKey } = useSelection()
   const [open, setOpen] = useState(false)
@@ -247,6 +268,7 @@ function FolderBranch({
   const subFolders = items.folders.filter((f) => f.parent_id === parentId)
   const notebooks = items.notebooks.filter((n) => n.folder_id === parentId)
   const lakehouses = items.lakehouses.filter((l) => l.folder_id === parentId)
+  const others = items.others.filter((o) => o.folder_id === parentId)
   return (
     <>
       {subFolders.map((f) => (
@@ -257,6 +279,9 @@ function FolderBranch({
       ))}
       {notebooks.map((n) => (
         <NotebookRow key={n.id} workspaceId={workspaceId} notebook={n} depth={depth} />
+      ))}
+      {others.map((o) => (
+        <OtherRow key={o.id} workspaceId={workspaceId} item={o} depth={depth} />
       ))}
     </>
   )
@@ -305,7 +330,8 @@ function WorkspaceNode({ workspace, depth }: { workspace: FabricWorkspace; depth
     items.status === 'ok' &&
     items.data!.notebooks.length === 0 &&
     items.data!.lakehouses.length === 0 &&
-    items.data!.folders.length === 0
+    items.data!.folders.length === 0 &&
+    items.data!.others.length === 0
   return (
     <>
       <Row
@@ -467,6 +493,7 @@ function FolderDetail({ sel }: { sel: Extract<Selected, { kind: 'folder' }> }) {
   const notebooks = sel.items.notebooks.filter((n) => n.folder_id === sel.folderId).length
   const lakehouses = sel.items.lakehouses.filter((l) => l.folder_id === sel.folderId).length
   const subFolders = sel.items.folders.filter((f) => f.parent_id === sel.folderId).length
+  const others = sel.items.others.filter((o) => o.folder_id === sel.folderId).length
   return (
     <div className="fx-detail-body">
       <DetailHeader kind="folder" title={sel.name} subtitle="Folder" />
@@ -475,6 +502,7 @@ function FolderDetail({ sel }: { sel: Extract<Selected, { kind: 'folder' }> }) {
           ['Notebooks', String(notebooks)],
           ['Lakehouses', String(lakehouses)],
           ['Subfolders', String(subFolders)],
+          ['Other items', String(others)],
         ]}
       />
     </div>
@@ -601,12 +629,36 @@ function TableDetail({ sel }: { sel: Extract<Selected, { kind: 'table' }> }) {
   )
 }
 
+function ItemDetail({ sel }: { sel: Extract<Selected, { kind: 'item' }> }) {
+  return (
+    <div className="fx-detail-body">
+      <DetailHeader
+        kind="item"
+        title={sel.item.name}
+        subtitle={sel.item.type}
+        fabricHref={fabricUrl.workspace(sel.workspaceId)}
+        fabricLabel="Open workspace in Fabric"
+      />
+      {sel.item.description && <p className="fx-detail-desc">{sel.item.description}</p>}
+      <KeyVals
+        rows={[
+          ['Type', sel.item.type],
+          ['ID', <code>{sel.item.id}</code>],
+        ]}
+      />
+      <div className="fx-note">
+        This item type isn’t modelled in the toolkit yet — only notebooks and lakehouse tables feed lineage.
+      </div>
+    </div>
+  )
+}
+
 function Detail({ sel }: { sel?: Selected }) {
   if (!sel)
     return (
       <div className="fx-detail-empty">
         <Icon kind="workspace" />
-        <p>Select a workspace, notebook, lakehouse, or table to see its details.</p>
+        <p>Select a workspace, notebook, lakehouse, table, or item to see its details.</p>
       </div>
     )
   switch (sel.kind) {
@@ -620,6 +672,8 @@ function Detail({ sel }: { sel?: Selected }) {
       return <LakehouseDetail sel={sel} />
     case 'table':
       return <TableDetail sel={sel} />
+    case 'item':
+      return <ItemDetail sel={sel} />
   }
 }
 

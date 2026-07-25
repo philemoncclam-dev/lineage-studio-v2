@@ -63,6 +63,19 @@ class Table(BaseModel):
     format: str | None = None
 
 
+class CatalogEntry(BaseModel):
+    """One searchable asset for the command palette (flat, self-locating)."""
+
+    kind: str  # workspace | notebook | lakehouse | table | item
+    workspace_id: str
+    workspace_name: str
+    id: str  # item id; for a table, the table name
+    name: str
+    item_type: str | None = None  # Fabric item type, or "Table"
+    lakehouse_id: str | None = None
+    lakehouse_name: str | None = None
+
+
 class NotebookSourceResponse(BaseModel):
     name: str
     lakehouse_default: str | None = None
@@ -104,6 +117,73 @@ def list_workspaces() -> list[Workspace]:
         for w in raw
         if w.get("id")
     ]
+
+
+@router.get("/catalog", response_model=list[CatalogEntry])
+def catalog() -> list[CatalogEntry]:
+    """A flat index of every discoverable asset, for palette search.
+
+    Walks workspaces → items → lakehouse tables. Per-workspace and
+    per-lakehouse failures are swallowed (best-effort) so one refused corner
+    doesn't blank the whole index — but the top-level workspace list refusal is
+    still an error (empty-means-no-permission trap).
+    """
+    client = _client()
+    try:
+        workspaces = client.list_workspaces()
+    except FabricError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    out: list[CatalogEntry] = []
+    for w in workspaces:
+        wid = w.get("id")
+        if not wid:
+            continue
+        wname = _name(w)
+        out.append(
+            CatalogEntry(kind="workspace", workspace_id=wid, workspace_name=wname, id=wid, name=wname)
+        )
+        try:
+            items = client.list_items(wid)
+        except FabricError:
+            continue
+        lakehouses: list[tuple[str, str]] = []
+        for it in items:
+            iid = it.get("id")
+            if not iid:
+                continue
+            itype = it.get("type") or "Unknown"
+            iname = _name(it)
+            kind = itype.lower()
+            if kind == "notebook":
+                out.append(CatalogEntry(kind="notebook", workspace_id=wid, workspace_name=wname, id=iid, name=iname, item_type=itype))
+            elif kind == "lakehouse":
+                out.append(CatalogEntry(kind="lakehouse", workspace_id=wid, workspace_name=wname, id=iid, name=iname, item_type=itype))
+                lakehouses.append((iid, iname))
+            else:
+                out.append(CatalogEntry(kind="item", workspace_id=wid, workspace_name=wname, id=iid, name=iname, item_type=itype))
+        for lid, lname in lakehouses:
+            try:
+                tables = client.list_lakehouse_tables(wid, lid)
+            except FabricError:
+                continue
+            for t in tables:
+                tn = t.get("name")
+                if not tn:
+                    continue
+                out.append(
+                    CatalogEntry(
+                        kind="table",
+                        workspace_id=wid,
+                        workspace_name=wname,
+                        id=tn,
+                        name=tn,
+                        item_type="Table",
+                        lakehouse_id=lid,
+                        lakehouse_name=lname,
+                    )
+                )
+    return out
 
 
 @router.get("/workspaces/{workspace_id}/items", response_model=WorkspaceItems)

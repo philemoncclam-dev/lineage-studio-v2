@@ -1,72 +1,123 @@
-// cmdk Command.Dialog command palette (D-17, NAV-01, NAV-03) — real
-// implementation replacing the 02-04 stub. AppShell owns the open state
-// (rail-bottom search trigger + the global Cmd+K keydown listener) and mounts
-// this unconditionally; this file only fills Command.Input/Command.List.
+// cmdk Command.Dialog command palette (D-17, NAV-01, NAV-03). Searches the live
+// Fabric catalog — every discoverable asset (workspaces, notebooks, lakehouses,
+// tables, and other items) via /fabric/catalog — and jumps to the Explore view
+// drilled onto the picked object (auto-expanding its ancestors and selecting
+// it, through the target search-params the explore route understands).
 //
-// shouldFilter={false} (set on the stub already) + driving Command.List
-// directly from src/shell/search.ts's ported GROUP_ORDER/MAX_PER_GROUP
-// ranking means cmdk never re-sorts/re-filters results the app already
-// ranked, grouped, and capped (RESEARCH.md Pattern 4 / Pitfall 6).
-//
-// No manual key-event listener or Arrow/Enter/Escape handling lives in this
-// file — cmdk + the Radix Dialog it wraps own keyboard nav, focus-trap, and
-// focus-restore-on-close (NAV-03, "Don't Hand-Roll").
-import { useEffect, useMemo, useState } from 'react'
+// shouldFilter={false}: we rank/group/cap results ourselves so cmdk never
+// re-sorts them. cmdk + the Radix Dialog own keyboard nav, focus-trap, and
+// focus-restore-on-close — no hand-rolled key handling here.
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Command } from 'cmdk'
 import { useNavigate } from '@tanstack/react-router'
-import { useModel, type AppModel } from '../model'
-import { useSelection } from '../selection/useSelection'
-import { GROUP_LABEL, GROUP_ORDER, hl, search, type SearchResult } from './search'
+import { fetchFabricCatalog, type FabricCatalogEntry, type FabricCatalogKind } from '../api'
 
 export interface CommandPaletteProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-// Best-effort table for a notebook/code result: the table the notebook
-// writes to, per the model's object-level ops ([source, target, kind]).
-// Notebooks with no resolvable write target (not covered by `ops`, e.g. the
-// non-DAG sample notebooks) fall back to a selection-only update below.
-function firstWrittenTable(model: AppModel, notebookId: string): string | undefined {
-  const op = model.ops.find(([src, , kind]) => src === notebookId && kind === 'writes')
-  return op?.[1]
+const GROUP_ORDER: FabricCatalogKind[] = ['workspace', 'notebook', 'lakehouse', 'table', 'item']
+const GROUP_LABEL: Record<FabricCatalogKind, string> = {
+  workspace: 'Workspaces',
+  notebook: 'Notebooks',
+  lakehouse: 'Lakehouses',
+  table: 'Tables',
+  item: 'Other items',
+}
+const MAX_PER_GROUP = 8
+
+// Module-level cache so re-opening the palette doesn't re-crawl the tenant. A
+// failed load isn't cached, so the next open retries.
+let catalogCache: Promise<FabricCatalogEntry[]> | null = null
+function loadCatalog(): Promise<FabricCatalogEntry[]> {
+  if (!catalogCache) {
+    catalogCache = fetchFabricCatalog().catch((e) => {
+      catalogCache = null
+      throw e
+    })
+  }
+  return catalogCache
+}
+
+// Rank: case-insensitive substring match, earlier match wins, then shorter name.
+function rank(entries: FabricCatalogEntry[], query: string): FabricCatalogEntry[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+  const scored: { e: FabricCatalogEntry; at: number }[] = []
+  for (const e of entries) {
+    const at = e.name.toLowerCase().indexOf(q)
+    const wat = at < 0 ? e.workspace_name.toLowerCase().indexOf(q) : -2
+    if (at < 0 && wat < 0) continue
+    scored.push({ e, at: at < 0 ? 1000 + wat : at })
+  }
+  scored.sort((a, b) => a.at - b.at || a.e.name.length - b.e.name.length)
+  return scored.map((s) => s.e)
+}
+
+function hl(text: string, query: string) {
+  const q = query.trim().toLowerCase()
+  const at = q ? text.toLowerCase().indexOf(q) : -1
+  if (at < 0) return text
+  return (
+    <>
+      {text.slice(0, at)}
+      <mark>{text.slice(at, at + q.length)}</mark>
+      {text.slice(at + q.length)}
+    </>
+  )
+}
+
+// A catalog entry → the explore route's target search-params.
+function targetSearch(e: FabricCatalogEntry): Record<string, string> {
+  const s: Record<string, string> = {
+    ws: e.workspace_id,
+    wsName: e.workspace_name,
+    kind: e.kind,
+    id: e.id,
+    name: e.name,
+  }
+  if (e.item_type) s.itemType = e.item_type
+  if (e.lakehouse_id) s.lh = e.lakehouse_id
+  if (e.lakehouse_name) s.lhName = e.lakehouse_name
+  return s
+}
+
+function subtitle(e: FabricCatalogEntry): string {
+  if (e.kind === 'table') return `${e.lakehouse_name ?? 'lakehouse'} · ${e.workspace_name}`
+  if (e.kind === 'workspace') return 'Workspace'
+  return e.workspace_name
 }
 
 export default function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
-  const model = useModel()
   const navigate = useNavigate()
-  const { select } = useSelection()
   const [query, setQuery] = useState('')
+  const [entries, setEntries] = useState<FabricCatalogEntry[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const loadingRef = useRef(false)
 
-  // Fresh state each time the palette opens (carried forward from
-  // SearchPalette.tsx's reset-on-open effect); cmdk/Radix Dialog own
-  // focus-on-open, so no manual `.focus()` call is needed here.
+  // Fresh query each time the palette opens — its own effect so a late catalog
+  // load (which changes `entries`) never wipes what the user just typed.
   useEffect(() => {
     if (open) setQuery('')
   }, [open])
 
-  const results = useMemo(() => search(model, query), [model, query])
-
-  // The retired Lineage-mode DAG was the old jump target; picks now land in
-  // the graph with the result selected (?sel/?col).
-  const pick = (r: SearchResult) => {
-    if ((r.kind === 'table' || r.kind === 'column') && r.tableId) {
-      const tableId = r.tableId
-      void navigate({
-        to: '/graph',
-        search: (prev: Record<string, unknown>) => ({ ...prev, sel: tableId, col: r.colKey }),
+  useEffect(() => {
+    if (!open || entries || loadingRef.current) return
+    loadingRef.current = true
+    setError(null)
+    loadCatalog()
+      .then(setEntries)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => {
+        loadingRef.current = false
       })
-    } else if ((r.kind === 'notebook' || r.kind === 'code') && r.notebookId) {
-      const tableId = firstWrittenTable(model, r.notebookId)
-      if (tableId) {
-        void navigate({
-          to: '/graph',
-          search: (prev: Record<string, unknown>) => ({ ...prev, sel: tableId, col: undefined }),
-        })
-      } else {
-        select(r.notebookId)
-      }
-    }
+  }, [open, entries])
+
+  const results = useMemo(() => rank(entries ?? [], query), [entries, query])
+
+  const pick = (e: FabricCatalogEntry) => {
+    void navigate({ to: '/fabric/explore', search: targetSearch(e) as never })
     onOpenChange(false)
   }
 
@@ -82,41 +133,39 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
     >
       <Command.Input
         className="sp-input"
-        placeholder="Search tables, columns, notebooks, code…"
+        placeholder="Search workspaces, notebooks, lakehouses, tables…"
         value={query}
         onValueChange={setQuery}
         spellCheck={false}
       />
       {query.trim() !== '' && (
         <Command.List className="sp-results">
-          <Command.Empty className="sp-empty">No matches for &quot;{query}&quot;.</Command.Empty>
-          {GROUP_ORDER.map((kind) => {
-            const group = results.filter((r) => r.kind === kind)
-            if (group.length === 0) return null
-            return (
-              <Command.Group key={kind} heading={GROUP_LABEL[kind]}>
-                {group.map((r) => {
-                  const value = `${r.kind}:${r.tableId ?? ''}:${r.colKey ?? ''}:${r.notebookId ?? ''}:${r.line ?? ''}`
-                  return (
-                    <Command.Item key={value} value={value} className="sp-row" onSelect={() => pick(r)}>
-                      {r.kind === 'code' ? (
-                        <>
-                          <span className="sp-id">{r.label}</span>
-                          <span className="sp-line">:{r.line}</span>
-                          <span className="sp-code">{hl(r.context ?? '', query)}</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="sp-id">{hl(r.label, query)}</span>
-                          {r.context && <span className="sp-ctx">{r.context}</span>}
-                        </>
-                      )}
-                    </Command.Item>
-                  )
-                })}
-              </Command.Group>
-            )
-          })}
+          {error ? (
+            <div className="sp-empty">Couldn’t load the catalog: {error}</div>
+          ) : !entries ? (
+            <div className="sp-empty">Loading catalog…</div>
+          ) : (
+            <>
+              <Command.Empty className="sp-empty">No matches for &quot;{query}&quot;.</Command.Empty>
+              {GROUP_ORDER.map((kind) => {
+                const group = results.filter((r) => r.kind === kind).slice(0, MAX_PER_GROUP)
+                if (group.length === 0) return null
+                return (
+                  <Command.Group key={kind} heading={GROUP_LABEL[kind]}>
+                    {group.map((r) => {
+                      const value = `${r.kind}:${r.workspace_id}:${r.lakehouse_id ?? ''}:${r.id}`
+                      return (
+                        <Command.Item key={value} value={value} className="sp-row" onSelect={() => pick(r)}>
+                          <span className="sp-id">{hl(r.name, query)}</span>
+                          <span className="sp-ctx">{subtitle(r)}</span>
+                        </Command.Item>
+                      )
+                    })}
+                  </Command.Group>
+                )
+              })}
+            </>
+          )}
         </Command.List>
       )}
     </Command.Dialog>

@@ -212,6 +212,45 @@ def test_table_schema_resolves_schema_qualified_name(client, monkeypatch):
     assert resp.json() == [{"name": "id", "type": "bigint"}]
 
 
+def test_catalog_flattens_workspaces_items_and_tables(client, monkeypatch):
+    fake = FakeClient(
+        workspaces=[{"id": "ws1", "displayName": "Sales"}],
+        items=[
+            {"id": "n1", "displayName": "load", "type": "Notebook"},
+            {"id": "l1", "displayName": "LH", "type": "Lakehouse"},
+            {"id": "p1", "displayName": "nightly", "type": "DataPipeline"},
+        ],
+        tables=[{"name": "orders", "type": "Managed", "format": "delta"}],
+    )
+    _use(monkeypatch, fake)
+    body = client.get("/fabric/catalog").json()
+    kinds = {e["kind"] for e in body}
+    assert kinds == {"workspace", "notebook", "lakehouse", "table", "item"}
+    table = next(e for e in body if e["kind"] == "table")
+    assert table["name"] == "orders"
+    assert table["lakehouse_id"] == "l1" and table["lakehouse_name"] == "LH"
+    pipe = next(e for e in body if e["kind"] == "item")
+    assert pipe["item_type"] == "DataPipeline"
+
+
+def test_catalog_swallows_per_workspace_failure(client, monkeypatch):
+    """A refused items call for one workspace must not blank the whole index."""
+    _use(monkeypatch, FakeClient(workspaces=[{"id": "ws1", "displayName": "Sales"}], raise_on={"list_items"}))
+    body = client.get("/fabric/catalog").json()
+    assert body == [
+        {
+            "kind": "workspace",
+            "workspace_id": "ws1",
+            "workspace_name": "Sales",
+            "id": "ws1",
+            "name": "Sales",
+            "item_type": None,
+            "lakehouse_id": None,
+            "lakehouse_name": None,
+        }
+    ]
+
+
 def test_pipeline_definition_parses_activities_and_edges(client, monkeypatch):
     """The pipeline canvas path: definition → activities with dependsOn edges."""
     content = json.dumps(

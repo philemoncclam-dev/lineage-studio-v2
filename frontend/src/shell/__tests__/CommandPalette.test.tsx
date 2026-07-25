@@ -1,18 +1,12 @@
 // Component-level coverage for the cmdk-based CommandPalette (D-17, NAV-01,
-// NAV-03). This suite exists in addition to the plan's required search.test.ts
-// parity tests because a pre-existing, unrelated bug in the live app (Suspense
-// pendingComponent rendering AppShell/Inspector outside router match context —
-// see 02-06-SUMMARY.md "Blockers/Concerns") currently crashes the running dev
-// app before it paints, blocking the plan's live-browser both-themes
-// human-check. This test exercises the palette's DOM behavior directly
-// (mocked router) so the feature has real regression coverage independent of
-// that pre-existing, out-of-scope blocker.
-import { fireEvent, render, screen } from '@testing-library/react'
+// NAV-03). The palette searches the live Fabric catalog (/fabric/catalog) and
+// jumps to the Explore view drilled onto the picked asset, so this suite mocks
+// the catalog fetch and the router and exercises the palette's DOM directly.
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AppModel } from '../../model'
+import type { FabricCatalogEntry } from '../../api'
 
-// jsdom has no ResizeObserver; cmdk's Command.List uses one internally to
-// size itself. Polyfilled only in this suite (the one consumer of cmdk).
+// jsdom has no ResizeObserver; cmdk's Command.List uses one internally.
 class MockResizeObserver {
   observe() {}
   unobserve() {}
@@ -21,107 +15,86 @@ class MockResizeObserver {
 vi.stubGlobal('ResizeObserver', MockResizeObserver)
 
 const mockNavigate = vi.fn()
-const mockSelect = vi.fn()
-
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }))
 
-vi.mock('../../selection/useSelection', () => ({
-  useSelection: () => ({ sel: undefined, col: undefined, select: mockSelect, clear: vi.fn() }),
-}))
+const catalog: FabricCatalogEntry[] = [
+  {
+    kind: 'table',
+    workspace_id: 'ws1',
+    workspace_name: 'Sales',
+    id: 'orders_clean',
+    name: 'orders_clean',
+    item_type: 'Table',
+    lakehouse_id: 'lh1',
+    lakehouse_name: 'LH_Sales',
+  },
+  { kind: 'notebook', workspace_id: 'ws1', workspace_name: 'Sales', id: 'nb1', name: 'order_report', item_type: 'Notebook' },
+]
 
-let mockModel: AppModel
-
-vi.mock('../../model', async () => {
-  const actual = await vi.importActual<typeof import('../../model')>('../../model')
-  return { ...actual, useModel: () => mockModel }
-})
+const fetchFabricCatalog = vi.fn(() => Promise.resolve(catalog))
+vi.mock('../../api', () => ({ fetchFabricCatalog: () => fetchFabricCatalog() }))
 
 import CommandPalette from '../CommandPalette'
 
-// hl() splits a matched row label across a plain-text node + a <mark>
-// element (T-02-06: real React nodes, not an HTML string), so the rendered
-// ".sp-id" span has mixed children rather than one text node — RTL's default
-// getByText won't match the concatenated string in that case. Matches on the
-// element's full textContent instead, same content, split-children-safe.
 function findRowByLabel(label: string) {
   return screen.getByText((_, element) => element?.className === 'sp-id' && element.textContent === label)
 }
 
-function baseModel(): AppModel {
-  return {
-    source: 'sample',
-    tables: [
-      { id: 't1', name: 'orders_clean', layer: 'silver', c: 'silver', x: 0, y: 0, columns: [
-        { key: 't1.order_id', name: 'order_id', type: 'long', pk: true },
-      ] },
-    ],
-    notebooks: [{ id: 'nb1', name: 'order_report', x: 0, y: 0 }],
-    colEdges: [],
-    ops: [],
-    xform: {},
-    evidence: {},
-    levels: {},
-    levelTable: {},
-    notebookCode: { nb1: 'print("order total")' },
-    context: {},
-  }
-}
-
-describe('CommandPalette (NAV-01, NAV-03)', () => {
+describe('CommandPalette (Fabric catalog search)', () => {
   beforeEach(() => {
     mockNavigate.mockReset()
-    mockSelect.mockReset()
-    mockModel = baseModel()
   })
 
-  it('renders nothing below the input with no query (query.trim() guard)', () => {
+  it('renders nothing below the input with no query', () => {
     render(<CommandPalette open onOpenChange={vi.fn()} />)
     expect(screen.queryByText('Tables')).not.toBeInTheDocument()
     expect(screen.queryByText(/No matches for/)).not.toBeInTheDocument()
   })
 
-  it('shows grouped, ranked results for a query matching multiple kinds', () => {
+  it('shows grouped results from the catalog for a query', async () => {
     render(<CommandPalette open onOpenChange={vi.fn()} />)
-    const input = screen.getByPlaceholderText('Search tables, columns, notebooks, code…')
+    const input = screen.getByPlaceholderText('Search workspaces, notebooks, lakehouses, tables…')
     fireEvent.change(input, { target: { value: 'order' } })
 
-    expect(screen.getByText('Tables')).toBeInTheDocument()
+    expect(await screen.findByText('Tables')).toBeInTheDocument()
     expect(findRowByLabel('orders_clean')).toBeInTheDocument()
+    expect(findRowByLabel('order_report')).toBeInTheDocument()
   })
 
-  it('shows the exact no-match copy when a query has no results', () => {
+  it('shows the exact no-match copy when a query has no results', async () => {
     render(<CommandPalette open onOpenChange={vi.fn()} />)
-    const input = screen.getByPlaceholderText('Search tables, columns, notebooks, code…')
-    fireEvent.change(input, { target: { value: 'zzzznomatch' } })
+    const input = screen.getByPlaceholderText('Search workspaces, notebooks, lakehouses, tables…')
+    // Wait for the catalog to load first, else the "Loading…" state shows.
+    fireEvent.change(input, { target: { value: 'order' } })
+    await screen.findByText('Tables')
 
+    fireEvent.change(input, { target: { value: 'zzzznomatch' } })
     expect(screen.getByText('No matches for "zzzznomatch".')).toBeInTheDocument()
   })
 
-  it('selecting a table result performs a real navigation to the graph with sel set', () => {
+  it('picking a table drills into explore with the target search-params', async () => {
     const onOpenChange = vi.fn()
     render(<CommandPalette open onOpenChange={onOpenChange} />)
-    const input = screen.getByPlaceholderText('Search tables, columns, notebooks, code…')
+    const input = screen.getByPlaceholderText('Search workspaces, notebooks, lakehouses, tables…')
     fireEvent.change(input, { target: { value: 'orders_clean' } })
 
-    fireEvent.click(findRowByLabel('orders_clean'))
+    fireEvent.click(await screen.findByText((_, el) => el?.className === 'sp-id' && el.textContent === 'orders_clean'))
 
-    expect(mockNavigate).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1))
     const call = mockNavigate.mock.calls[0][0]
-    expect(call.to).toBe('/graph')
-    expect(call.search({})).toEqual({ sel: 't1', col: undefined })
+    expect(call.to).toBe('/fabric/explore')
+    expect(call.search).toEqual({
+      ws: 'ws1',
+      wsName: 'Sales',
+      kind: 'table',
+      id: 'orders_clean',
+      name: 'orders_clean',
+      itemType: 'Table',
+      lh: 'lh1',
+      lhName: 'LH_Sales',
+    })
     expect(onOpenChange).toHaveBeenCalledWith(false)
-  })
-
-  it('selecting a column result navigates with both sel and col set', () => {
-    render(<CommandPalette open onOpenChange={vi.fn()} />)
-    const input = screen.getByPlaceholderText('Search tables, columns, notebooks, code…')
-    fireEvent.change(input, { target: { value: 'order_id' } })
-
-    fireEvent.click(findRowByLabel('order_id'))
-
-    const call = mockNavigate.mock.calls[0][0]
-    expect(call.search({})).toEqual({ sel: 't1', col: 't1.order_id' })
   })
 })

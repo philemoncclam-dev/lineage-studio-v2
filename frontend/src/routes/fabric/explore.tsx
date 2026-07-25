@@ -30,7 +30,32 @@ import {
 } from '../../api'
 import '../../views/fabric.css'
 
+// Deep-link target (set by the command palette): which asset to drill onto.
+// All optional strings so a bare /fabric/explore is still valid.
+interface ExploreSearch {
+  ws?: string
+  wsName?: string
+  kind?: string
+  id?: string
+  name?: string
+  itemType?: string
+  lh?: string
+  lhName?: string
+}
+
+const asStr = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined)
+
 export const Route = createFileRoute('/fabric/explore')({
+  validateSearch: (s: Record<string, unknown>): ExploreSearch => ({
+    ws: asStr(s.ws),
+    wsName: asStr(s.wsName),
+    kind: asStr(s.kind),
+    id: asStr(s.id),
+    name: asStr(s.name),
+    itemType: asStr(s.itemType),
+    lh: asStr(s.lh),
+    lhName: asStr(s.lhName),
+  }),
   component: ExploreRoute,
 })
 
@@ -75,10 +100,67 @@ type Selected =
   | { kind: 'table'; key: string; workspaceId: string; lakehouse: FabricItem; table: FabricTable }
   | { kind: 'item'; key: string; workspaceId: string; item: FabricItem }
 
-const SelectionCtx = createContext<{ selectedKey?: string; select: (s: Selected) => void }>({
-  select: () => {},
-})
+interface SelectionCtxValue {
+  selectedKey?: string
+  select: (s: Selected) => void
+  /** Node keys to force-open on mount (deep-link drill). */
+  autoOpen: Set<string>
+  /** When set, open every folder in this workspace so nested items surface. */
+  autoOpenFoldersWs?: string
+}
+const SelectionCtx = createContext<SelectionCtxValue>({ select: () => {}, autoOpen: new Set() })
 const useSelection = () => useContext(SelectionCtx)
+
+// A deep-link target → the Selected it should drill onto (objects synthesized
+// from the target params — enough for the detail panel to fetch and label).
+function targetToSelected(t: ExploreSearch): Selected | undefined {
+  if (!t.ws || !t.kind || !t.id) return undefined
+  const ws = t.ws
+  switch (t.kind) {
+    case 'workspace':
+      return { kind: 'workspace', key: `ws:${ws}`, ws: { id: ws, name: t.wsName ?? ws } }
+    case 'notebook':
+      return {
+        kind: 'notebook',
+        key: `nb:${t.id}`,
+        workspaceId: ws,
+        notebook: { id: t.id, name: t.name ?? t.id, type: t.itemType ?? 'Notebook', folder_id: null },
+      }
+    case 'lakehouse':
+      return {
+        kind: 'lakehouse',
+        key: `lh:${t.id}`,
+        workspaceId: ws,
+        lakehouse: { id: t.id, name: t.name ?? t.id, type: 'Lakehouse', folder_id: null },
+      }
+    case 'table':
+      return t.lh
+        ? {
+            kind: 'table',
+            key: `tb:${t.lh}/${t.id}`,
+            workspaceId: ws,
+            lakehouse: { id: t.lh, name: t.lhName ?? t.lh, type: 'Lakehouse', folder_id: null },
+            table: { name: t.id },
+          }
+        : undefined
+    case 'item':
+      return {
+        kind: 'item',
+        key: `it:${t.id}`,
+        workspaceId: ws,
+        item: { id: t.id, name: t.name ?? t.id, type: t.itemType ?? 'Unknown', folder_id: null },
+      }
+  }
+  return undefined
+}
+
+function targetAutoOpen(t: ExploreSearch): Set<string> {
+  const s = new Set<string>()
+  if (t.ws) s.add(`ws:${t.ws}`)
+  if (t.lh) s.add(`lh:${t.lh}`)
+  if (t.kind === 'lakehouse' && t.id) s.add(`lh:${t.id}`)
+  return s
+}
 
 function Chevron({ hidden }: { hidden?: boolean }) {
   return (
@@ -215,10 +297,10 @@ function OtherRow({ workspaceId, item, depth }: { workspaceId: string; item: Fab
 }
 
 function LakehouseNode({ workspaceId, lakehouse, depth }: { workspaceId: string; lakehouse: FabricItem; depth: number }) {
-  const { select, selectedKey } = useSelection()
-  const [open, setOpen] = useState(false)
-  const tables = useAsync<FabricTable[]>(() => fetchFabricTables(workspaceId, lakehouse.id), [workspaceId, lakehouse.id, open], open)
+  const { select, selectedKey, autoOpen } = useSelection()
   const key = `lh:${lakehouse.id}`
+  const [open, setOpen] = useState(() => autoOpen.has(key))
+  const tables = useAsync<FabricTable[]>(() => fetchFabricTables(workspaceId, lakehouse.id), [workspaceId, lakehouse.id, open], open)
   const lhHref = fabricUrl.lakehouse(workspaceId, lakehouse.id)
   return (
     <>
@@ -311,9 +393,9 @@ function FolderNode({
   workspaceId: string
   depth: number
 }) {
-  const { select, selectedKey } = useSelection()
-  const [open, setOpen] = useState(false)
+  const { select, selectedKey, autoOpen, autoOpenFoldersWs } = useSelection()
   const key = `fd:${folderId}`
+  const [open, setOpen] = useState(() => autoOpen.has(key) || autoOpenFoldersWs === workspaceId)
   return (
     <>
       <Row
@@ -334,10 +416,10 @@ function FolderNode({
 }
 
 function WorkspaceNode({ workspace, depth }: { workspace: FabricWorkspace; depth: number }) {
-  const { select, selectedKey } = useSelection()
-  const [open, setOpen] = useState(false)
-  const items = useAsync<FabricWorkspaceItems>(() => fetchFabricItems(workspace.id), [workspace.id, open], open)
+  const { select, selectedKey, autoOpen } = useSelection()
   const key = `ws:${workspace.id}`
+  const [open, setOpen] = useState(() => autoOpen.has(key))
+  const items = useAsync<FabricWorkspaceItems>(() => fetchFabricItems(workspace.id), [workspace.id, open], open)
   const empty =
     items.status === 'ok' &&
     items.data!.notebooks.length === 0 &&
@@ -819,14 +901,66 @@ function Detail({ sel }: { sel?: Selected }) {
   }
 }
 
+// The tree + detail, with selection state. Split out and keyed on the deep-link
+// target so a palette jump (new target while already on this page) remounts it,
+// re-initializing the drilled-open path and selection.
+function ExplorerBody({
+  target,
+  status,
+  workspaces,
+  connected,
+}: {
+  target: ExploreSearch
+  status: Async<{ configured: boolean }>
+  workspaces: Async<FabricWorkspace[]>
+  connected: boolean | undefined
+}) {
+  const [selected, setSelected] = useState<Selected | undefined>(() => targetToSelected(target))
+  const hasTarget = !!(target.ws && target.kind && target.id)
+  const autoOpen = useMemo(() => targetAutoOpen(target), [target])
+  const ctx = useMemo<SelectionCtxValue>(
+    () => ({
+      selectedKey: selected?.key,
+      select: setSelected,
+      autoOpen,
+      autoOpenFoldersWs: hasTarget ? target.ws : undefined,
+    }),
+    [selected?.key, autoOpen, hasTarget, target.ws],
+  )
+
+  return (
+    <SelectionCtx.Provider value={ctx}>
+      <div className="fx-explorer-tree">
+        <div className="fx-panel-head">Workspaces</div>
+        <div className="fx-tree" role="tree">
+          <Note state={status} />
+          {connected && <Note state={workspaces} />}
+          {connected && workspaces.status === 'ok' && workspaces.data!.length === 0 && (
+            <div className="fx-empty">
+              No workspaces visible. The service principal may not have been granted access to any
+              (an empty list here means “no permission”, not “none exist”).
+            </div>
+          )}
+          {connected &&
+            workspaces.status === 'ok' &&
+            workspaces.data!.map((ws) => <WorkspaceNode key={ws.id} workspace={ws} depth={0} />)}
+        </div>
+      </div>
+      <div className="fx-explorer-detail">
+        <Detail sel={selected} />
+      </div>
+    </SelectionCtx.Provider>
+  )
+}
+
 function ExploreRoute() {
+  const search = Route.useSearch()
   const status = useAsync(() => fetchFabricStatus(), [])
   const workspaces = useAsync<FabricWorkspace[]>(
     () => fetchFabricWorkspaces(),
     [status.status],
     status.status === 'ok' && !!status.data?.configured,
   )
-  const [selected, setSelected] = useState<Selected>()
 
   const connected = status.status === 'ok' && status.data?.configured
 
@@ -842,31 +976,24 @@ function ExploreRoute() {
       </div>
     )
 
+  // Remount the body when the drill target changes, so its open-path/selection
+  // re-initialize even if we're already on this route.
+  const targetKey =
+    search.ws && search.kind && search.id
+      ? `${search.kind}:${search.ws}:${search.lh ?? ''}:${search.id}`
+      : 'none'
+
   return (
     <div className="fx-page">
-      <SelectionCtx.Provider value={{ selectedKey: selected?.key, select: setSelected }}>
-        <div className="fx-explorer">
-          <div className="fx-explorer-tree">
-            <div className="fx-panel-head">Workspaces</div>
-            <div className="fx-tree" role="tree">
-              <Note state={status} />
-              {connected && <Note state={workspaces} />}
-              {connected && workspaces.status === 'ok' && workspaces.data!.length === 0 && (
-                <div className="fx-empty">
-                  No workspaces visible. The service principal may not have been granted access to any
-                  (an empty list here means “no permission”, not “none exist”).
-                </div>
-              )}
-              {connected &&
-                workspaces.status === 'ok' &&
-                workspaces.data!.map((ws) => <WorkspaceNode key={ws.id} workspace={ws} depth={0} />)}
-            </div>
-          </div>
-          <div className="fx-explorer-detail">
-            <Detail sel={selected} />
-          </div>
-        </div>
-      </SelectionCtx.Provider>
+      <div className="fx-explorer">
+        <ExplorerBody
+          key={targetKey}
+          target={search}
+          status={status}
+          workspaces={workspaces}
+          connected={connected}
+        />
+      </div>
     </div>
   )
 }

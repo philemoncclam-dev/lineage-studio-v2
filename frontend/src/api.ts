@@ -460,6 +460,25 @@ export async function fetchFabricTables(
   return res.json()
 }
 
+export type FabricCatalogKind = 'workspace' | 'notebook' | 'lakehouse' | 'table' | 'item'
+
+export interface FabricCatalogEntry {
+  kind: FabricCatalogKind
+  workspace_id: string
+  workspace_name: string
+  id: string
+  name: string
+  item_type?: string | null
+  lakehouse_id?: string | null
+  lakehouse_name?: string | null
+}
+
+export async function fetchFabricCatalog(): Promise<FabricCatalogEntry[]> {
+  const res = await fetch(`${BASE}/fabric/catalog`)
+  if (!res.ok) return detail(res, 'fabric catalog')
+  return res.json()
+}
+
 export interface FabricNotebookSource {
   name: string
   lakehouse_default: string | null

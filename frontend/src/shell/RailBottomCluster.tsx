@@ -7,21 +7,12 @@ import { type ReactNode, useEffect, useState } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { fetchPurviewStatus } from '../api'
-import { getTheme, isDarkResolved, setTheme } from './theme'
 
 type StatusDot = 'ok' | 'off' | 'err'
 
 function SearchIcon() {
   return (
     <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
-  )
-}
-
-function ThemeIcon({ dark }: { dark: boolean }) {
-  return dark ? (
-    <svg viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" /></svg>
-  ) : (
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" /><path d="M12 2.5v3M12 18.5v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2.5 12h3M18.5 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" /></svg>
   )
 }
 
@@ -45,7 +36,6 @@ function RailBottomButton({ label, onClick, children }: { label: string; onClick
 }
 
 export default function RailBottomCluster({ onOpenSearch }: { onOpenSearch: () => void }) {
-  const [dark, setDark] = useState(() => isDarkResolved())
   const [status, setStatus] = useState<StatusDot>('off')
 
   useEffect(() => {
@@ -56,19 +46,10 @@ export default function RailBottomCluster({ onOpenSearch }: { onOpenSearch: () =
     return () => { alive = false }
   }, [])
 
-  const toggleTheme = () => {
-    const next = getTheme() === 'dark' || (!getTheme() && isDarkResolved()) ? 'light' : 'dark'
-    setTheme(next)
-    setDark(next === 'dark')
-  }
-
   return (
     <div className="rail-bottom">
       <RailBottomButton label="Search (⌘K)" onClick={onOpenSearch}>
         <SearchIcon />
-      </RailBottomButton>
-      <RailBottomButton label="Toggle theme" onClick={toggleTheme}>
-        <ThemeIcon dark={dark} />
       </RailBottomButton>
       <Tooltip.Root>
         <Tooltip.Trigger asChild>

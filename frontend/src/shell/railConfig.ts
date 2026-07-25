@@ -44,9 +44,8 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
     { key: 'layers', label: 'Model layers', icon: 'layers', to: '/model' },
   ],
   fabric: [
-    { key: 'explore', label: 'Explore workspace', icon: 'explore', to: '/fabric/explore' },
-    { key: 'sandbox', label: 'Notebook sandbox', icon: 'sandbox', to: '/fabric/sandbox' },
-    { key: 'definitions', label: 'Definitions import', icon: 'definitions', to: '/fabric/definitions' },
+    { key: 'explore', label: '1. Explore', icon: 'explore', to: '/fabric/explore' },
+    { key: 'sandbox', label: '2. Sandbox', icon: 'sandbox', to: '/fabric/sandbox' },
   ],
   products: [
     { key: 'catalog', label: 'Products', icon: 'products', to: '/products' },

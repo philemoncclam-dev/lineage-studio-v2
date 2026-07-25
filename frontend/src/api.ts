@@ -403,6 +403,7 @@ export async function ingest(payload: unknown): Promise<LineageGraph> {
 export interface FabricWorkspace {
   id: string
   name: string
+  description?: string | null
 }
 
 export interface FabricFolder {
@@ -416,6 +417,7 @@ export interface FabricItem {
   name: string
   type: string
   folder_id: string | null
+  description?: string | null
 }
 
 export interface FabricWorkspaceItems {

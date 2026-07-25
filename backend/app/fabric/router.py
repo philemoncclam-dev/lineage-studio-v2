@@ -32,6 +32,7 @@ router = APIRouter(prefix="/fabric", tags=["fabric"])
 class Workspace(BaseModel):
     id: str
     name: str
+    description: str | None = None
 
 
 class Folder(BaseModel):
@@ -45,6 +46,7 @@ class Item(BaseModel):
     name: str
     type: str
     folder_id: str | None = None
+    description: str | None = None
 
 
 class WorkspaceItems(BaseModel):
@@ -96,7 +98,11 @@ def list_workspaces() -> list[Workspace]:
         raw = client.list_workspaces()
     except FabricError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return [Workspace(id=w["id"], name=_name(w)) for w in raw if w.get("id")]
+    return [
+        Workspace(id=w["id"], name=_name(w), description=w.get("description") or None)
+        for w in raw
+        if w.get("id")
+    ]
 
 
 @router.get("/workspaces/{workspace_id}/items", response_model=WorkspaceItems)
@@ -129,6 +135,7 @@ def list_workspace_items(workspace_id: str) -> WorkspaceItems:
             name=_name(it),
             type=it.get("type") or "Unknown",
             folder_id=it.get("folderId") or it.get("folder_id"),
+            description=it.get("description") or None,
         )
         kind = item.type.lower()
         if kind == "notebook":

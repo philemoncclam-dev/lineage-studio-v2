@@ -376,7 +376,19 @@ function SandboxIcon() {
   )
 }
 
-function DetailHeader({ kind, title, subtitle }: { kind: keyof typeof ICONS; title: string; subtitle?: string }) {
+function DetailHeader({
+  kind,
+  title,
+  subtitle,
+  fabricHref,
+  fabricLabel = 'Open in Fabric',
+}: {
+  kind: keyof typeof ICONS
+  title: string
+  subtitle?: string
+  fabricHref?: string
+  fabricLabel?: string
+}) {
   return (
     <div className="fx-detail-head">
       <Icon kind={kind} />
@@ -384,6 +396,18 @@ function DetailHeader({ kind, title, subtitle }: { kind: keyof typeof ICONS; tit
         <h2 className="fx-detail-title">{title}</h2>
         {subtitle && <div className="fx-detail-sub">{subtitle}</div>}
       </div>
+      {fabricHref && (
+        <a
+          className="fx-open fx-open--detail"
+          href={fabricHref}
+          target="_blank"
+          rel="noreferrer"
+          title={fabricLabel}
+          aria-label={fabricLabel}
+        >
+          <OpenFabricIcon />
+        </a>
+      )}
     </div>
   )
 }
@@ -421,12 +445,8 @@ function WorkspaceDetail({ sel }: { sel: Extract<Selected, { kind: 'workspace' }
   const items = useAsync<FabricWorkspaceItems>(() => fetchFabricItems(sel.ws.id), [sel.ws.id])
   return (
     <div className="fx-detail-body">
-      <DetailHeader kind="workspace" title={sel.ws.name} subtitle="Workspace" />
-      <div className="fx-detail-actions">
-        <DetailAction href={fabricUrl.workspace(sel.ws.id)}>
-          <OpenFabricIcon /> Open in Fabric
-        </DetailAction>
-      </div>
+      <DetailHeader kind="workspace" title={sel.ws.name} subtitle="Workspace" fabricHref={fabricUrl.workspace(sel.ws.id)} />
+      {sel.ws.description && <p className="fx-detail-desc">{sel.ws.description}</p>}
       {items.status === 'ok' ? (
         <KeyVals
           rows={[
@@ -471,7 +491,13 @@ function NotebookDetail({ sel }: { sel: Extract<Selected, { kind: 'notebook' }> 
   const [copied, setCopied] = useState(false)
   return (
     <div className="fx-detail-body">
-      <DetailHeader kind="notebook" title={sel.notebook.name} subtitle="Notebook" />
+      <DetailHeader
+        kind="notebook"
+        title={sel.notebook.name}
+        subtitle="Notebook"
+        fabricHref={fabricUrl.notebook(sel.workspaceId, sel.notebook.id)}
+      />
+      {sel.notebook.description && <p className="fx-detail-desc">{sel.notebook.description}</p>}
       <div className="fx-detail-actions">
         <DetailAction
           primary
@@ -480,9 +506,6 @@ function NotebookDetail({ sel }: { sel: Extract<Selected, { kind: 'notebook' }> 
           }
         >
           <SandboxIcon /> Open in sandbox
-        </DetailAction>
-        <DetailAction href={fabricUrl.notebook(sel.workspaceId, sel.notebook.id)}>
-          <OpenFabricIcon /> Open in Fabric
         </DetailAction>
         {source.status === 'ok' && (
           <DetailAction
@@ -513,12 +536,13 @@ function LakehouseDetail({ sel }: { sel: Extract<Selected, { kind: 'lakehouse' }
   const tables = useAsync<FabricTable[]>(() => fetchFabricTables(sel.workspaceId, sel.lakehouse.id), [sel.workspaceId, sel.lakehouse.id])
   return (
     <div className="fx-detail-body">
-      <DetailHeader kind="lakehouse" title={sel.lakehouse.name} subtitle="Lakehouse" />
-      <div className="fx-detail-actions">
-        <DetailAction href={fabricUrl.lakehouse(sel.workspaceId, sel.lakehouse.id)}>
-          <OpenFabricIcon /> Open in Fabric
-        </DetailAction>
-      </div>
+      <DetailHeader
+        kind="lakehouse"
+        title={sel.lakehouse.name}
+        subtitle="Lakehouse"
+        fabricHref={fabricUrl.lakehouse(sel.workspaceId, sel.lakehouse.id)}
+      />
+      {sel.lakehouse.description && <p className="fx-detail-desc">{sel.lakehouse.description}</p>}
       {tables.status === 'ok' ? (
         <KeyVals
           rows={[
@@ -540,12 +564,13 @@ function TableDetail({ sel }: { sel: Extract<Selected, { kind: 'table' }> }) {
   )
   return (
     <div className="fx-detail-body">
-      <DetailHeader kind="table" title={sel.table.name} subtitle={`Table · ${sel.lakehouse.name}`} />
-      <div className="fx-detail-actions">
-        <DetailAction href={fabricUrl.lakehouse(sel.workspaceId, sel.lakehouse.id)}>
-          <OpenFabricIcon /> Open lakehouse in Fabric
-        </DetailAction>
-      </div>
+      <DetailHeader
+        kind="table"
+        title={sel.table.name}
+        subtitle={`Table · ${sel.lakehouse.name}`}
+        fabricHref={fabricUrl.lakehouse(sel.workspaceId, sel.lakehouse.id)}
+        fabricLabel="Open lakehouse in Fabric"
+      />
       {schema.status === 'ok' ? (
         schema.data!.length ? (
           <table className="fx-cols">

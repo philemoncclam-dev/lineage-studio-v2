@@ -70,13 +70,13 @@ def _use(monkeypatch, fake):
 def test_workspaces_are_named_from_display_name(client, monkeypatch):
     _use(monkeypatch, FakeClient(workspaces=[{"id": "ws1", "displayName": "Sales"}]))
     body = client.get("/fabric/workspaces").json()
-    assert body == [{"id": "ws1", "name": "Sales"}]
+    assert body == [{"id": "ws1", "name": "Sales", "description": None}]
 
 
 def test_workspaces_without_an_id_are_dropped(client, monkeypatch):
     _use(monkeypatch, FakeClient(workspaces=[{"displayName": "orphan"}, {"id": "ws2", "displayName": "Ok"}]))
     body = client.get("/fabric/workspaces").json()
-    assert body == [{"id": "ws2", "name": "Ok"}]
+    assert body == [{"id": "ws2", "name": "Ok", "description": None}]
 
 
 def test_items_are_split_by_type_and_carry_folder(client, monkeypatch):
@@ -90,7 +90,9 @@ def test_items_are_split_by_type_and_carry_folder(client, monkeypatch):
     )
     _use(monkeypatch, fake)
     body = client.get("/fabric/workspaces/ws1/items").json()
-    assert body["notebooks"] == [{"id": "n1", "name": "load", "type": "Notebook", "folder_id": "f1"}]
+    assert body["notebooks"] == [
+        {"id": "n1", "name": "load", "type": "Notebook", "folder_id": "f1", "description": None}
+    ]
     assert body["lakehouses"][0]["id"] == "l1"
     assert body["others"][0]["type"] == "Report"
     assert body["folders"] == [{"id": "f1", "name": "ETL", "parent_id": None}]

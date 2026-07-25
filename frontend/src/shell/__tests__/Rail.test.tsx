@@ -34,14 +34,12 @@ describe('Rail (SHELL-01)', () => {
 
   it('each rail item carries its locked accessible name', () => {
     const items: RailItem[] = [
-      { key: 'explore', label: 'Explore workspace', icon: 'explore', to: '/fabric/explore' },
-      { key: 'sandbox', label: 'Notebook sandbox', icon: 'sandbox', to: '/fabric/sandbox' },
-      { key: 'definitions', label: 'Definitions import', icon: 'definitions', to: '/fabric/definitions' },
+      { key: 'explore', label: '1. Explore', icon: 'explore', to: '/fabric/explore' },
+      { key: 'sandbox', label: '2. Sandbox', icon: 'sandbox', to: '/fabric/sandbox' },
     ]
     renderRail(items)
-    expect(screen.getByRole('link', { name: 'Explore workspace' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Notebook sandbox' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Definitions import' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '1. Explore' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '2. Sandbox' })).toBeInTheDocument()
   })
 
   it('renders a single item for a one-destination mode (empty edge / D-05)', () => {

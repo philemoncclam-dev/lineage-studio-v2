@@ -473,7 +473,272 @@
   white-space: pre;
 }
 
-/* --- notebook sandbox --------------------------------------------------- */
+/* --- notebook sandbox (sequence builder) -------------------------------- */
+/* Two-panel like the explorer, but the right (lineage) panel is the star. */
+.fx-explorer.sbx-shell {
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+}
+.sbx-canvas-wrap {
+  overflow: hidden;
+}
+.sbx-canvas-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.sbx-steps {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sbx-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control, 6px);
+  background: var(--color-surface-2, transparent);
+}
+.sbx-step[data-status='error'] {
+  border-color: var(--color-destructive);
+}
+.sbx-step-num {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-accent);
+  color: var(--color-surface-canvas, #0b0d10);
+  font-size: var(--text-micro, 11px);
+  font-weight: 700;
+}
+.sbx-step-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm, 13px);
+}
+.sbx-step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.sbx-step-dot[data-ok] {
+  background: var(--color-success, #4ade80);
+}
+.sbx-step-dot[data-err] {
+  background: var(--color-destructive);
+}
+.sbx-step-ctrls {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.sbx-step-ctrls button {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  border-radius: var(--radius-control, 6px);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.sbx-step-ctrls button:hover:not(:disabled) {
+  background: var(--color-surface-canvas, rgba(255, 255, 255, 0.06));
+  color: var(--color-text-primary);
+}
+.sbx-step-ctrls button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.sbx-add {
+  justify-content: center;
+  width: 100%;
+}
+
+.sbx-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control, 6px);
+  background: var(--color-surface-canvas, rgba(0, 0, 0, 0.2));
+}
+.sbx-picker-input {
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control, 6px);
+  background: var(--color-surface-1, transparent);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--text-sm, 13px);
+}
+.sbx-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 280px;
+  overflow: auto;
+}
+.sbx-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-control, 6px);
+  color: var(--color-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sbx-picker-row:hover {
+  background: var(--color-surface-2, rgba(255, 255, 255, 0.04));
+}
+.sbx-picker-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm, 13px);
+}
+.sbx-picker-ws {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro, 11px);
+}
+.sbx-picker-close {
+  align-self: flex-end;
+}
+
+.sbx-run-bar {
+  flex: 0 0 auto;
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+}
+.sbx-run-bar .fx-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* per-step run report */
+.sbx-step-report {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control, 6px);
+}
+.sbx-step-report[data-status='error'] {
+  border-color: var(--color-destructive);
+}
+.sbx-step-report-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sbx-step-report-status {
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* lineage flow canvas */
+.fx-flow {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card, 8px);
+  background: var(--color-surface-canvas, rgba(0, 0, 0, 0.2));
+  background-image: radial-gradient(var(--color-grid-dot, rgba(255, 255, 255, 0.06)) 1px, transparent 1px);
+  background-size: 22px 22px;
+  overflow: auto;
+  min-height: 220px;
+}
+.fx-flow-canvas {
+  position: relative;
+  margin: auto;
+}
+.fx-flow-edges {
+  position: absolute;
+  inset: 0;
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+.fx-flow-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 12px 8px 14px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-text-tertiary);
+  border-radius: var(--radius-control, 6px);
+  background: var(--color-surface-1, var(--color-surface-2));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+.fx-flow-node[data-kind='notebook'] {
+  border-left-color: var(--color-domain-notebook, var(--color-accent));
+}
+.fx-flow-node[data-kind='pipeline'] {
+  border-left-color: var(--color-edge-writes, #f59e0b);
+}
+.fx-flow-node[data-kind='table'] {
+  border-left-color: var(--color-edge-reads, #38bdf8);
+}
+.fx-flow-badge {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-surface-canvas, #0b0d10);
+  font-size: 10px;
+  font-weight: 700;
+}
+.fx-flow-node-name {
+  font-size: var(--text-sm, 13px);
+  font-weight: 500;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fx-flow-node-sub {
+  font-size: var(--text-micro, 11px);
+  color: var(--color-text-tertiary);
+}
+
+/* --- notebook sandbox (legacy single-run actions, still used) ----------- */
 .sbx-actions {
   display: flex;
   align-items: center;

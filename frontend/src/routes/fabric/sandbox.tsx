@@ -1,16 +1,27 @@
-// /fabric/sandbox — the notebook sandbox. A notebook selected in Explore
-// arrives via ?ws/?item/?name; the Run button executes it through the isolated
-// backend harness (scrubbed env, no Fabric creds, no real writes).
+// /fabric/sandbox — a sequence builder. The user stacks notebooks and pipelines
+// as ordered steps (1, 2, 3 …) on the left; the right panel draws them as a
+// live lineage and, on Run, executes each notebook in the isolated backend
+// harness (scrubbed env, no Fabric creds, no real writes) and reports what each
+// step reads and writes. Pipelines are shown structurally (their activities are
+// not executed by the sandbox).
 //
-// M2a returns a stub (static-analysis) result; M2b swaps in real local-Spark
-// execution behind the same shape, so this view doesn't change when it lands.
-import { useState } from 'react'
+// A notebook opened from Explore arrives via ?ws/?item/?name and seeds step 1.
+import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { runSandbox, type SandboxRunResult } from '../../api'
+import {
+  runSandbox,
+  fetchFabricCatalog,
+  fetchFabricPipelineDefinition,
+  type SandboxRunResult,
+  type FabricCatalogEntry,
+  type FabricPipelineActivity,
+  type LineageGraph,
+} from '../../api'
 import { adapt } from '../../model'
 import { graphToModel } from '../../model/graphToModel'
 import { sandboxRunToGraph } from '../../model/sandboxToGraph'
 import { saveNew } from '../../model-app/localdb'
+import { BarsSpinner } from '../../model-app/ui'
 import '../../views/fabric.css'
 
 interface SandboxSearch {
@@ -28,104 +39,433 @@ export const Route = createFileRoute('/fabric/sandbox')({
   component: SandboxRoute,
 })
 
-type RunState = { status: 'idle' | 'running' | 'done' | 'error'; result?: SandboxRunResult; error?: string }
+type StepKind = 'notebook' | 'pipeline'
+interface Step {
+  key: string
+  kind: StepKind
+  ws: string
+  itemId: string
+  name: string
+}
 
-function SandboxRoute() {
-  const { ws, item, name } = Route.useSearch()
-  const [run, setRun] = useState<RunState>({ status: 'idle' })
+type StepStatus = 'pending' | 'running' | 'ok' | 'error' | 'skipped'
+interface StepResult {
+  status: StepStatus
+  result?: SandboxRunResult
+  activities?: FabricPipelineActivity[]
+  error?: string
+}
 
-  const canRun = !!(ws && item)
+let seq = 0
+const newKey = () => `step-${++seq}`
 
-  const onRun = async () => {
-    setRun({ status: 'running' })
-    try {
-      const result = await runSandbox({ name, workspace_id: ws, item_id: item })
-      setRun({ status: 'done', result })
-    } catch (e) {
-      setRun({ status: 'error', error: e instanceof Error ? e.message : String(e) })
-    }
+const isPipelineEntry = (e: FabricCatalogEntry) =>
+  e.kind === 'item' && (e.item_type ?? '').toLowerCase().includes('pipeline')
+
+// --- generic layered flow layout (reads → notebook → writes, plus order) ---
+type FlowKind = 'notebook' | 'pipeline' | 'table'
+interface FlowNode {
+  id: string
+  kind: FlowKind
+  label: string
+  sub?: string
+  badge?: string
+}
+interface FlowEdge {
+  from: string
+  to: string
+  dashed?: boolean
+}
+
+const NW = 184
+const NH = 58
+const GX = 60
+const GY = 20
+const PAD = 12
+
+function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]) {
+  const incoming = new Map<string, string[]>()
+  nodes.forEach((n) => incoming.set(n.id, []))
+  edges.forEach((e) => {
+    if (incoming.has(e.to)) incoming.get(e.to)!.push(e.from)
+  })
+  const colOf = new Map<string, number>()
+  const visiting = new Set<string>()
+  function col(id: string): number {
+    const c = colOf.get(id)
+    if (c !== undefined) return c
+    if (visiting.has(id)) return 0
+    visiting.add(id)
+    const parents = incoming.get(id) ?? []
+    const v = parents.length ? 1 + Math.max(...parents.map(col)) : 0
+    visiting.delete(id)
+    colOf.set(id, v)
+    return v
   }
+  nodes.forEach((n) => col(n.id))
 
+  const rows = new Map<number, number>()
+  const pos = new Map<string, { x: number; y: number }>()
+  nodes.forEach((n) => {
+    const c = colOf.get(n.id)!
+    const r = rows.get(c) ?? 0
+    rows.set(c, r + 1)
+    pos.set(n.id, { x: c * (NW + GX), y: r * (NH + GY) })
+  })
+  const maxCol = Math.max(0, ...colOf.values())
+  const maxRow = Math.max(1, ...rows.values())
+  return {
+    pos,
+    width: (maxCol + 1) * (NW + GX) - GX,
+    height: maxRow * (NH + GY) - GY,
+  }
+}
+
+function FlowCanvas({ nodes, edges }: { nodes: FlowNode[]; edges: FlowEdge[] }) {
+  const { pos, width, height } = useMemo(() => layoutFlow(nodes, edges), [nodes, edges])
+  const w = width + PAD * 2
+  const h = height + PAD * 2
   return (
-    <div className="purview-page">
-      <h1 className="page-title">Notebook sandbox</h1>
-
-      {!name && (
-        <p className="page-lead">
-          Pick a notebook from <strong>Explore workspace</strong> to send it here. Notebooks run in
-          an isolated local sandbox — never against real Fabric.
-        </p>
-      )}
-
-      {name && (
-        <>
-          <p className="page-lead">
-            <strong>{name}</strong> is queued. Running executes it in an isolated subprocess with no
-            Fabric credentials and no writes to real Fabric.
-          </p>
-
-          <div className="sbx-actions">
-            <button className="sbx-run" onClick={onRun} disabled={!canRun || run.status === 'running'}>
-              {run.status === 'running' ? 'Running…' : 'Run in sandbox'}
-            </button>
-            {!canRun && <span className="fx-note">Missing workspace/item — reopen it from Explore.</span>}
-          </div>
-
-          {run.status === 'error' && <div className="fx-note" data-error="true">{run.error}</div>}
-
-          {run.status === 'done' && run.result && <RunReport result={run.result} notebookName={name!} />}
-        </>
-      )}
+    <div className="fx-flow">
+      <div className="fx-flow-canvas" style={{ width: w, height: h }}>
+        <svg className="fx-flow-edges" width={w} height={h}>
+          <defs>
+            <marker id="fx-flow-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <path d="M0 0l8 4-8 4z" fill="currentColor" />
+            </marker>
+          </defs>
+          {edges.map((e, i) => {
+            const s = pos.get(e.from)
+            const t = pos.get(e.to)
+            if (!s || !t) return null
+            const sx = s.x + NW + PAD
+            const sy = s.y + NH / 2 + PAD
+            const tx = t.x + PAD
+            const ty = t.y + NH / 2 + PAD
+            const mx = (sx + tx) / 2
+            return (
+              <path
+                key={i}
+                d={`M${sx} ${sy}C${mx} ${sy} ${mx} ${ty} ${tx} ${ty}`}
+                fill="none"
+                strokeDasharray={e.dashed ? '4 4' : undefined}
+                markerEnd="url(#fx-flow-arrow)"
+              />
+            )
+          })}
+        </svg>
+        {nodes.map((n) => {
+          const p = pos.get(n.id)!
+          return (
+            <div
+              key={n.id}
+              className="fx-flow-node"
+              data-kind={n.kind}
+              style={{ left: p.x + PAD, top: p.y + PAD, width: NW, height: NH }}
+              title={n.sub ? `${n.label} · ${n.sub}` : n.label}
+            >
+              {n.badge && <span className="fx-flow-badge">{n.badge}</span>}
+              <span className="fx-flow-node-name">{n.label}</span>
+              {n.sub && <span className="fx-flow-node-sub">{n.sub}</span>}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-function RunReport({ result, notebookName }: { result: SandboxRunResult; notebookName: string }) {
-  // Assemble a 4-layer authored model from what the run touched, reusing the
-  // exact graph → model path the graph view's "create model" button uses.
+// Build the flow graph from the steps and (optionally) their run results.
+function buildFlow(steps: Step[], results: Map<string, StepResult>): { nodes: FlowNode[]; edges: FlowEdge[] } {
+  const nodes: FlowNode[] = []
+  const edges: FlowEdge[] = []
+  const tableSeen = new Set<string>()
+  const ensureTable = (name: string) => {
+    const id = `t:${name.toLowerCase()}`
+    if (!tableSeen.has(id)) {
+      tableSeen.add(id)
+      nodes.push({ id, kind: 'table', label: name })
+    }
+    return id
+  }
+
+  steps.forEach((step, i) => {
+    const stepId = `s:${step.key}`
+    const res = results.get(step.key)
+    const sub =
+      res?.status === 'running'
+        ? 'running…'
+        : res?.status === 'error'
+          ? 'error'
+          : step.kind === 'pipeline' && res?.activities
+            ? `${res.activities.length} activities`
+            : undefined
+    nodes.push({ id: stepId, kind: step.kind, label: step.name, sub, badge: String(i + 1) })
+
+    if (res?.result) {
+      for (const r of res.result.reads) edges.push({ from: ensureTable(r), to: stepId })
+      for (const wr of res.result.writes) edges.push({ from: stepId, to: ensureTable(wr) })
+    }
+  })
+
+  // Faint order edges between consecutive steps so the sequence reads clearly
+  // even before a run (and where steps share no table).
+  for (let i = 1; i < steps.length; i++) {
+    edges.push({ from: `s:${steps[i - 1].key}`, to: `s:${steps[i].key}`, dashed: true })
+  }
+  return { nodes, edges }
+}
+
+// Merge several run graphs into one (dedupe nodes by id, edges by endpoints+kind).
+function mergeGraphs(graphs: LineageGraph[]): LineageGraph {
+  const nodes = new Map<string, LineageGraph['nodes'][number]>()
+  const edges = new Map<string, LineageGraph['edges'][number]>()
+  for (const g of graphs) {
+    for (const n of g.nodes) if (!nodes.has(n.id)) nodes.set(n.id, n)
+    for (const e of g.edges) edges.set(`${e.source}|${e.target}|${e.kind}`, e)
+  }
+  return { nodes: [...nodes.values()], edges: [...edges.values()] }
+}
+
+function StepIcon({ kind }: { kind: StepKind }) {
+  return (
+    <svg className="fx-icon" data-kind={kind === 'pipeline' ? 'item' : 'notebook'} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
+      {kind === 'pipeline' ? (
+        <path d="M4 5h6v5H4zM14 14h6v5h-6zM10 7.5h2.5a1.5 1.5 0 0 1 1.5 1.5v6" />
+      ) : (
+        <path d="M6 3h9l4 4v14H6z M15 3v4h4M9 12h6M9 16h6" />
+      )}
+    </svg>
+  )
+}
+
+function SandboxRoute() {
+  const { ws, item, name } = Route.useSearch()
+  const [steps, setSteps] = useState<Step[]>(() =>
+    ws && item && name ? [{ key: newKey(), kind: 'notebook', ws, itemId: item, name }] : [],
+  )
+  const [catalog, setCatalog] = useState<FabricCatalogEntry[] | null>(null)
+  const [catalogErr, setCatalogErr] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerQuery, setPickerQuery] = useState('')
+  const [results, setResults] = useState<Map<string, StepResult>>(new Map())
+  const [running, setRunning] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    fetchFabricCatalog()
+      .then((c) => alive && setCatalog(c))
+      .catch((e) => alive && setCatalogErr(e instanceof Error ? e.message : String(e)))
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const addable = useMemo(() => {
+    if (!catalog) return []
+    const q = pickerQuery.trim().toLowerCase()
+    return catalog
+      .filter((e) => e.kind === 'notebook' || isPipelineEntry(e))
+      .filter((e) => !q || e.name.toLowerCase().includes(q) || e.workspace_name.toLowerCase().includes(q))
+      .slice(0, 60)
+  }, [catalog, pickerQuery])
+
+  const addStep = (e: FabricCatalogEntry) => {
+    setSteps((s) => [
+      ...s,
+      { key: newKey(), kind: isPipelineEntry(e) ? 'pipeline' : 'notebook', ws: e.workspace_id, itemId: e.id, name: e.name },
+    ])
+    setPickerOpen(false)
+    setPickerQuery('')
+  }
+  const removeStep = (key: string) => setSteps((s) => s.filter((x) => x.key !== key))
+  const move = (key: string, dir: -1 | 1) =>
+    setSteps((s) => {
+      const i = s.findIndex((x) => x.key === key)
+      const j = i + dir
+      if (i < 0 || j < 0 || j >= s.length) return s
+      const copy = s.slice()
+      ;[copy[i], copy[j]] = [copy[j], copy[i]]
+      return copy
+    })
+
+  const runAll = async () => {
+    setRunning(true)
+    const next = new Map<string, StepResult>()
+    steps.forEach((s) => next.set(s.key, { status: 'pending' }))
+    setResults(new Map(next))
+
+    for (const step of steps) {
+      next.set(step.key, { status: 'running' })
+      setResults(new Map(next))
+      try {
+        if (step.kind === 'notebook') {
+          const result = await runSandbox({ name: step.name, workspace_id: step.ws, item_id: step.itemId })
+          next.set(step.key, {
+            status: result.ok ? 'ok' : 'error',
+            result,
+            error: result.ok ? undefined : result.error ?? undefined,
+          })
+        } else {
+          const activities = await fetchFabricPipelineDefinition(step.ws, step.itemId)
+          next.set(step.key, { status: 'ok', activities })
+        }
+      } catch (e) {
+        next.set(step.key, { status: 'error', error: e instanceof Error ? e.message : String(e) })
+      }
+      setResults(new Map(next))
+    }
+    setRunning(false)
+  }
+
+  const flow = useMemo(() => buildFlow(steps, results), [steps, results])
+  const ran = results.size > 0
+
+  const notebookRuns = steps
+    .map((s) => ({ s, r: results.get(s.key)?.result }))
+    .filter((x): x is { s: Step; r: SandboxRunResult } => !!x.r)
+
   const createModel = () => {
-    const graph = sandboxRunToGraph(result, notebookName)
-    const draft = graphToModel(adapt(graph))
-    const saved = saveNew({ name: `${notebookName} — model`, nodes: draft.nodes, edges: draft.edges, tags: [] })
+    const merged = mergeGraphs(notebookRuns.map(({ s, r }) => sandboxRunToGraph(r, s.name)))
+    const draft = graphToModel(adapt(merged))
+    const label = notebookRuns.length === 1 ? notebookRuns[0].s.name : 'Sandbox sequence'
+    const saved = saveNew({ name: `${label} — model`, nodes: draft.nodes, edges: draft.edges, tags: [] })
     window.location.assign(`/model/models/${saved.id}`)
   }
 
-  const hasFlow = result.reads.length > 0 || result.writes.length > 0
+  const anyBreach = notebookRuns.some(({ r }) => r.saw_credentials)
+  const hasFlowOutput = notebookRuns.some(({ r }) => r.reads.length || r.writes.length)
 
   return (
-    <div className="sbx-report">
-      <div className="sbx-safety" data-breach={result.saw_credentials}>
-        {result.saw_credentials
-          ? '⚠ Isolation breach: credentials were visible to the sandbox.'
-          : `✓ Ran isolated — no Fabric credentials reachable · engine: ${result.engine}`}
-      </div>
+    <div className="fx-page">
+      <div className="fx-explorer sbx-shell">
+        {/* Left: the step builder */}
+        <div className="fx-explorer-tree">
+          <div className="fx-panel-head">Sequence</div>
+          <div className="sbx-steps">
+            {steps.length === 0 && (
+              <p className="fx-empty">Add notebooks and pipelines to build a run sequence. They execute top-to-bottom.</p>
+            )}
+            {steps.map((step, i) => {
+              const st = results.get(step.key)?.status
+              return (
+                <div className="sbx-step" key={step.key} data-status={st}>
+                  <span className="sbx-step-num">{i + 1}</span>
+                  <StepIcon kind={step.kind} />
+                  <span className="sbx-step-name" title={step.name}>{step.name}</span>
+                  {st === 'running' && <BarsSpinner size={14} />}
+                  {st === 'ok' && <span className="sbx-step-dot" data-ok />}
+                  {st === 'error' && <span className="sbx-step-dot" data-err />}
+                  <div className="sbx-step-ctrls">
+                    <button onClick={() => move(step.key, -1)} disabled={i === 0} aria-label="Move up">↑</button>
+                    <button onClick={() => move(step.key, 1)} disabled={i === steps.length - 1} aria-label="Move down">↓</button>
+                    <button onClick={() => removeStep(step.key)} aria-label="Remove">×</button>
+                  </div>
+                </div>
+              )
+            })}
 
-      {!result.ok && <div className="fx-note" data-error="true">{result.error}</div>}
+            {pickerOpen ? (
+              <div className="sbx-picker">
+                <input
+                  className="sbx-picker-input"
+                  autoFocus
+                  placeholder="Search notebooks & pipelines…"
+                  value={pickerQuery}
+                  onChange={(e) => setPickerQuery(e.target.value)}
+                />
+                <div className="sbx-picker-list">
+                  {catalogErr && <div className="fx-note" data-error="true">{catalogErr}</div>}
+                  {!catalog && !catalogErr && <div className="fx-note"><BarsSpinner size={14} /> Loading…</div>}
+                  {addable.map((e) => (
+                    <button className="sbx-picker-row" key={`${e.kind}:${e.workspace_id}:${e.id}`} onClick={() => addStep(e)}>
+                      <StepIcon kind={isPipelineEntry(e) ? 'pipeline' : 'notebook'} />
+                      <span className="sbx-picker-name">{e.name}</span>
+                      <span className="sbx-picker-ws">{e.workspace_name}</span>
+                    </button>
+                  ))}
+                  {catalog && addable.length === 0 && <div className="fx-note">No matches.</div>}
+                </div>
+                <button className="fx-btn sbx-picker-close" onClick={() => setPickerOpen(false)}>Done</button>
+              </div>
+            ) : (
+              <button className="fx-btn sbx-add" onClick={() => setPickerOpen(true)}>+ Add step</button>
+            )}
+          </div>
 
-      {result.ok && hasFlow && (
-        <div className="sbx-actions">
-          <button className="sbx-run" onClick={createModel} title="Build a 4-layer authored model from this run">
-            Create model from this run →
-          </button>
-          <span className="fx-note">Assembles the notebook + its read/write tables as an editable model.</span>
+          <div className="sbx-run-bar">
+            <button className="fx-btn fx-btn--primary" onClick={runAll} disabled={steps.length === 0 || running}>
+              {running ? 'Running…' : `Run sequence${steps.length ? ` (${steps.length})` : ''}`}
+            </button>
+          </div>
         </div>
-      )}
 
-      <div className="sbx-io">
-        <div>
-          <span className="sbx-io-label">Reads</span>
-          {result.reads.length ? result.reads.map((r) => <code key={r} className="sbx-chip">{r}</code>) : <span className="fx-note">none</span>}
-        </div>
-        <div>
-          <span className="sbx-io-label">Writes</span>
-          {result.writes.length ? result.writes.map((w) => <code key={w} className="sbx-chip sbx-write">{w}</code>) : <span className="fx-note">none</span>}
-        </div>
-      </div>
+        {/* Right: the lineage + report */}
+        <div className="fx-explorer-detail sbx-canvas-wrap">
+          {steps.length === 0 ? (
+            <div className="fx-detail-empty">
+              <StepIcon kind="notebook" />
+              <p>Your sequence lineage will appear here as you add notebooks and pipelines.</p>
+            </div>
+          ) : (
+            <div className="sbx-canvas-body">
+              <FlowCanvas nodes={flow.nodes} edges={flow.edges} />
 
-      <div className="sbx-log">
-        {result.log.map((line, i) => (
-          <div key={i} className="sbx-log-line">{line}</div>
-        ))}
+              {ran && (
+                <div className="sbx-report">
+                  {notebookRuns.length > 0 && (
+                    <div className="sbx-safety" data-breach={anyBreach}>
+                      {anyBreach
+                        ? '⚠ Isolation breach: credentials were visible to the sandbox.'
+                        : `✓ Ran isolated — no Fabric credentials reachable · engine: ${notebookRuns[0].r.engine}`}
+                    </div>
+                  )}
+
+                  {steps.map((step, i) => {
+                    const r = results.get(step.key)
+                    if (!r) return null
+                    return (
+                      <div className="sbx-step-report" key={step.key} data-status={r.status}>
+                        <div className="sbx-step-report-head">
+                          <span className="sbx-step-num">{i + 1}</span>
+                          <StepIcon kind={step.kind} />
+                          <strong>{step.name}</strong>
+                          <span className="sbx-step-report-status">{r.status}</span>
+                        </div>
+                        {r.error && <div className="fx-note" data-error="true">{r.error}</div>}
+                        {r.result && (
+                          <div className="sbx-io">
+                            <div>
+                              <span className="sbx-io-label">Reads</span>
+                              {r.result.reads.length ? r.result.reads.map((x) => <code key={x} className="sbx-chip">{x}</code>) : <span className="fx-note">none</span>}
+                            </div>
+                            <div>
+                              <span className="sbx-io-label">Writes</span>
+                              {r.result.writes.length ? r.result.writes.map((x) => <code key={x} className="sbx-chip sbx-write">{x}</code>) : <span className="fx-note">none</span>}
+                            </div>
+                          </div>
+                        )}
+                        {step.kind === 'pipeline' && r.activities && (
+                          <div className="fx-note">
+                            Pipeline with {r.activities.length} activities — shown structurally; the sandbox doesn’t execute pipelines.
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  {hasFlowOutput && (
+                    <div className="sbx-actions">
+                      <button className="fx-btn fx-btn--primary" onClick={createModel} title="Build an authored model from these runs">
+                        Create model from this run →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

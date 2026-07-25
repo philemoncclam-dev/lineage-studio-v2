@@ -9,7 +9,7 @@
 // Detail data comes from two read-only endpoints added alongside the tree:
 // /notebooks/{id}/source (decoded cells) and /tables/{name}/schema (OneLake
 // Delta columns) — see backend/app/fabric/router.py.
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { BarsSpinner } from '../../model-app/ui'
@@ -20,11 +20,13 @@ import {
   fetchFabricTables,
   fetchFabricNotebookSource,
   fetchFabricTableSchema,
+  fetchFabricPipelineDefinition,
   type FabricWorkspace,
   type FabricWorkspaceItems,
   type FabricItem,
   type FabricTable,
   type FabricColumn,
+  type FabricPipelineActivity,
 } from '../../api'
 import '../../views/fabric.css'
 
@@ -131,23 +133,31 @@ interface RowProps {
   open?: boolean
   leaf?: boolean
   selected?: boolean
-  onPrimary?: () => void
+  /** Select the row (drives the detail panel). Never collapses a branch. */
+  onSelect?: () => void
+  /** Expand/collapse a branch — the chevron only. Absent on leaves. */
+  onToggle?: () => void
   fabricHref?: string
   hint?: string
 }
 
-function Row({ depth, kind, label, meta, open, leaf, selected, onPrimary, fabricHref, hint }: RowProps) {
+function Row({ depth, kind, label, meta, open, leaf, selected, onSelect, onToggle, fabricHref, hint }: RowProps) {
+  const pad = 8 + depth * 18
   return (
-    <div className="fx-row" data-open={open} data-selected={selected || undefined}>
-      <button
-        className="fx-row-main"
-        style={{ paddingLeft: 8 + depth * 18 }}
-        onClick={onPrimary}
-        disabled={!onPrimary}
-        aria-expanded={leaf ? undefined : !!open}
-        title={hint}
-      >
-        <Chevron hidden={leaf} />
+    <div className="fx-row" style={{ paddingLeft: pad }} data-open={open} data-selected={selected || undefined}>
+      {leaf ? (
+        <span className="fx-toggle-spacer" aria-hidden />
+      ) : (
+        <button
+          className="fx-toggle"
+          onClick={onToggle}
+          aria-label={open ? 'Collapse' : 'Expand'}
+          aria-expanded={!!open}
+        >
+          <Chevron />
+        </button>
+      )}
+      <button className="fx-row-main" onClick={onSelect} disabled={!onSelect} title={hint}>
         <Icon kind={kind} />
         <span className="fx-label">{label}</span>
         {meta && <span className="fx-meta">{meta}</span>}
@@ -181,7 +191,7 @@ function NotebookRow({ workspaceId, notebook, depth }: { workspaceId: string; no
       leaf
       selected={selectedKey === key}
       hint="Show notebook code"
-      onPrimary={() => select({ kind: 'notebook', key, workspaceId, notebook })}
+      onSelect={() => select({ kind: 'notebook', key, workspaceId, notebook })}
       fabricHref={fabricUrl.notebook(workspaceId, notebook.id)}
     />
   )
@@ -199,7 +209,7 @@ function OtherRow({ workspaceId, item, depth }: { workspaceId: string; item: Fab
       leaf
       selected={selectedKey === key}
       hint="Show details"
-      onPrimary={() => select({ kind: 'item', key, workspaceId, item })}
+      onSelect={() => select({ kind: 'item', key, workspaceId, item })}
     />
   )
 }
@@ -218,10 +228,11 @@ function LakehouseNode({ workspaceId, lakehouse, depth }: { workspaceId: string;
         label={lakehouse.name}
         open={open}
         selected={selectedKey === key}
-        onPrimary={() => {
+        onSelect={() => {
           select({ kind: 'lakehouse', key, workspaceId, lakehouse })
-          setOpen((o) => !o)
+          setOpen(true)
         }}
+        onToggle={() => setOpen((o) => !o)}
         fabricHref={lhHref}
       />
       {open && (
@@ -243,7 +254,7 @@ function LakehouseNode({ workspaceId, lakehouse, depth }: { workspaceId: string;
                   leaf
                   selected={selectedKey === tKey}
                   hint="Show columns"
-                  onPrimary={() => select({ kind: 'table', key: tKey, workspaceId, lakehouse, table: t })}
+                  onSelect={() => select({ kind: 'table', key: tKey, workspaceId, lakehouse, table: t })}
                   fabricHref={lhHref}
                 />
               )
@@ -311,10 +322,11 @@ function FolderNode({
         label={name}
         open={open}
         selected={selectedKey === key}
-        onPrimary={() => {
+        onSelect={() => {
           select({ kind: 'folder', key, name, workspaceId, folderId, items })
-          setOpen((o) => !o)
+          setOpen(true)
         }}
+        onToggle={() => setOpen((o) => !o)}
       />
       {open && <FolderBranch parentId={folderId} items={items} workspaceId={workspaceId} depth={depth + 1} />}
     </>
@@ -340,10 +352,11 @@ function WorkspaceNode({ workspace, depth }: { workspace: FabricWorkspace; depth
         label={workspace.name}
         open={open}
         selected={selectedKey === key}
-        onPrimary={() => {
+        onSelect={() => {
           select({ kind: 'workspace', key, ws: workspace })
-          setOpen((o) => !o)
+          setOpen(true)
         }}
+        onToggle={() => setOpen((o) => !o)}
         fabricHref={fabricUrl.workspace(workspace.id)}
       />
       {open && (
@@ -629,13 +642,130 @@ function TableDetail({ sel }: { sel: Extract<Selected, { kind: 'table' }> }) {
   )
 }
 
+// Friendlier labels for the noisiest Fabric activity type names; anything else
+// falls through as-is.
+const ACTIVITY_LABEL: Record<string, string> = {
+  TridentNotebook: 'Notebook',
+  Copy: 'Copy data',
+  RefreshDataflow: 'Dataflow',
+  SparkJobDefinition: 'Spark job',
+  ExecutePipeline: 'Pipeline',
+  Lookup: 'Lookup',
+  IfCondition: 'If condition',
+  ForEach: 'For each',
+  SqlServerStoredProcedure: 'Stored procedure',
+  WebActivity: 'Web',
+  Wait: 'Wait',
+}
+const activityLabel = (t: string) => ACTIVITY_LABEL[t] ?? t
+
+const NODE_W = 176
+const NODE_H = 54
+const GAP_X = 48
+const GAP_Y = 16
+const PAD = 10
+
+// Left-to-right layered layout: an activity's column is one past its deepest
+// dependency (Fabric's own reading order), rows stack within a column.
+function layoutPipeline(acts: FabricPipelineActivity[]) {
+  const byName = new Map(acts.map((a) => [a.name, a]))
+  const colOf = new Map<string, number>()
+  const visiting = new Set<string>()
+  function col(name: string): number {
+    const cached = colOf.get(name)
+    if (cached !== undefined) return cached
+    if (visiting.has(name)) return 0 // defensive cycle guard
+    visiting.add(name)
+    const deps = (byName.get(name)?.depends_on ?? []).filter((d) => byName.has(d))
+    const c = deps.length ? 1 + Math.max(...deps.map(col)) : 0
+    visiting.delete(name)
+    colOf.set(name, c)
+    return c
+  }
+  acts.forEach((a) => col(a.name))
+
+  const rows = new Map<number, number>()
+  const pos = new Map<string, { x: number; y: number }>()
+  acts.forEach((a) => {
+    const c = colOf.get(a.name)!
+    const r = rows.get(c) ?? 0
+    rows.set(c, r + 1)
+    pos.set(a.name, { x: c * (NODE_W + GAP_X), y: r * (NODE_H + GAP_Y) })
+  })
+
+  const maxCol = Math.max(0, ...colOf.values())
+  const maxRow = Math.max(1, ...rows.values())
+  const width = (maxCol + 1) * (NODE_W + GAP_X) - GAP_X
+  const height = maxRow * (NODE_H + GAP_Y) - GAP_Y
+  const edges = acts.flatMap((a) =>
+    a.depends_on.filter((d) => byName.has(d)).map((d) => ({ from: d, to: a.name })),
+  )
+  return { pos, edges, width, height }
+}
+
+function PipelineCanvas({ activities }: { activities: FabricPipelineActivity[] }) {
+  const { pos, edges, width, height } = useMemo(() => layoutPipeline(activities), [activities])
+  const w = width + PAD * 2
+  const h = height + PAD * 2
+  return (
+    <div className="fx-pipe">
+      <div className="fx-pipe-canvas" style={{ width: w, height: h }}>
+        <svg className="fx-pipe-edges" width={w} height={h}>
+          <defs>
+            <marker id="fx-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <path d="M0 0l8 4-8 4z" fill="currentColor" />
+            </marker>
+          </defs>
+          {edges.map((e, i) => {
+            const s = pos.get(e.from)!
+            const t = pos.get(e.to)!
+            const sx = s.x + NODE_W + PAD
+            const sy = s.y + NODE_H / 2 + PAD
+            const tx = t.x + PAD
+            const ty = t.y + NODE_H / 2 + PAD
+            const mx = (sx + tx) / 2
+            return (
+              <path
+                key={i}
+                d={`M${sx} ${sy}C${mx} ${sy} ${mx} ${ty} ${tx} ${ty}`}
+                fill="none"
+                markerEnd="url(#fx-arrow)"
+              />
+            )
+          })}
+        </svg>
+        {activities.map((a) => {
+          const p = pos.get(a.name)!
+          return (
+            <div
+              key={a.name}
+              className="fx-pipe-node"
+              style={{ left: p.x + PAD, top: p.y + PAD, width: NODE_W, height: NODE_H }}
+              title={`${activityLabel(a.type)} · ${a.name}`}
+            >
+              <span className="fx-pipe-node-type">{activityLabel(a.type)}</span>
+              <span className="fx-pipe-node-name">{a.name}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function ItemDetail({ sel }: { sel: Extract<Selected, { kind: 'item' }> }) {
+  const isPipeline = sel.item.type.toLowerCase().includes('pipeline')
+  const pipeline = useAsync<FabricPipelineActivity[]>(
+    () => fetchFabricPipelineDefinition(sel.workspaceId, sel.item.id),
+    [sel.workspaceId, sel.item.id],
+    isPipeline,
+  )
   return (
     <div className="fx-detail-body">
       <DetailHeader
         kind="item"
         title={sel.item.name}
-        subtitle={sel.item.type}
+        subtitle={activityLabel(sel.item.type)}
         fabricHref={fabricUrl.workspace(sel.workspaceId)}
         fabricLabel="Open workspace in Fabric"
       />
@@ -646,9 +776,21 @@ function ItemDetail({ sel }: { sel: Extract<Selected, { kind: 'item' }> }) {
           ['ID', <code>{sel.item.id}</code>],
         ]}
       />
-      <div className="fx-note">
-        This item type isn’t modelled in the toolkit yet — only notebooks and lakehouse tables feed lineage.
-      </div>
+      {isPipeline ? (
+        pipeline.status === 'ok' ? (
+          pipeline.data!.length ? (
+            <PipelineCanvas activities={pipeline.data!} />
+          ) : (
+            <div className="fx-note">This pipeline has no activities.</div>
+          )
+        ) : (
+          <Note state={pipeline} />
+        )
+      ) : (
+        <div className="fx-note">
+          This item type isn’t modelled in the toolkit yet — only notebooks and lakehouse tables feed lineage.
+        </div>
+      )}
     </div>
   )
 }

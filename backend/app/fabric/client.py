@@ -267,3 +267,16 @@ class FabricClient:
                 f"— the service principal may lack access to that workspace: {exc}"
             ) from exc
         return payload.get("definition") or payload
+
+    def get_item_definition(self, workspace_id: str, item_id: str) -> dict:
+        """The definition (base64 `parts`) of any item — pipelines, etc.
+
+        Same `getDefinition` call as `get_notebook_definition`, without the
+        notebook-flavoured error wrapping, for callers that read other item
+        types (the pipeline explorer).
+        """
+        payload = self.request(
+            "POST",
+            f"/workspaces/{workspace_id}/items/{item_id}/getDefinition",
+        )
+        return payload.get("definition") or payload

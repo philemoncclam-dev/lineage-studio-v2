@@ -478,6 +478,21 @@ export async function fetchFabricNotebookSource(
   return res.json()
 }
 
+export interface FabricPipelineActivity {
+  name: string
+  type: string
+  depends_on: string[]
+}
+
+export async function fetchFabricPipelineDefinition(
+  workspaceId: string,
+  itemId: string,
+): Promise<FabricPipelineActivity[]> {
+  const res = await fetch(`${BASE}/fabric/workspaces/${workspaceId}/pipelines/${itemId}/definition`)
+  if (!res.ok) return detail(res, 'pipeline definition')
+  return res.json()
+}
+
 export interface FabricColumn {
   name: string
   type?: string | null

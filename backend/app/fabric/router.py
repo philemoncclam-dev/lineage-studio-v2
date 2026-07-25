@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from ..config import get_settings
 from .client import FabricClient, FabricError
 from .notebooks import NotebookDecodeError, fetch_notebook_source
+from .pipelines import PipelineActivity, parse_pipeline_activities
 from .schema import fetch_table_schema, table_dirs_for_lakehouse
 
 router = APIRouter(prefix="/fabric", tags=["fabric"])
@@ -219,3 +220,22 @@ def get_table_schema(
         )
     cols = fetch_table_schema(client, workspace_id, table_dir)
     return [Column(name=c.name, type=c.type) for c in cols]
+
+
+@router.get(
+    "/workspaces/{workspace_id}/pipelines/{item_id}/definition",
+    response_model=list[PipelineActivity],
+)
+def get_pipeline_definition(workspace_id: str, item_id: str) -> list[PipelineActivity]:
+    """The activity graph of one Data Pipeline, for the detail panel's canvas.
+
+    Reads the item's `getDefinition` and parses `pipeline-content.json`'s
+    activities + dependsOn edges — the same shape Fabric's authoring canvas
+    draws. A refused read is a 502; an empty list means no activities.
+    """
+    client = _client()
+    try:
+        definition = client.get_item_definition(workspace_id, item_id)
+    except FabricError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return parse_pipeline_activities(definition)

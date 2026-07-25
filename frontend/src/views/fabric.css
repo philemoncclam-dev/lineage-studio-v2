@@ -101,6 +101,32 @@
   cursor: default;
 }
 
+/* Chevron is its own control so expanding/collapsing is separate from
+   selecting — selecting a branch must never collapse it. */
+.fx-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control, 6px);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+.fx-toggle:hover {
+  background: var(--color-surface-canvas, rgba(255, 255, 255, 0.06));
+  color: var(--color-text-primary);
+}
+.fx-toggle-spacer {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+}
+
 /* "Open in Fabric" — quiet until the row is hovered or the link is focused. */
 .fx-open {
   flex: 0 0 auto;
@@ -362,6 +388,55 @@
   font-family: var(--font-mono);
   color: var(--color-text-secondary);
   font-size: var(--text-micro, 12px);
+}
+
+/* pipeline canvas — a Fabric-like left-to-right flow of activity cards joined
+   by dependency arrows. Nodes are absolutely positioned over an SVG edge layer. */
+.fx-pipe {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card, 8px);
+  background: var(--color-surface-canvas, rgba(0, 0, 0, 0.2));
+  background-image: radial-gradient(var(--color-grid-dot, rgba(255, 255, 255, 0.06)) 1px, transparent 1px);
+  background-size: 20px 20px;
+  overflow: auto;
+  max-height: calc(100vh - 360px);
+}
+.fx-pipe-canvas {
+  position: relative;
+}
+.fx-pipe-edges {
+  position: absolute;
+  inset: 0;
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+.fx-pipe-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-control, 6px);
+  background: var(--color-surface-1, var(--color-surface-2));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+.fx-pipe-node-type {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.fx-pipe-node-name {
+  color: var(--color-text-primary);
+  font-size: var(--text-sm, 13px);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* code viewer — a gutter of line numbers beside a mono <pre>. */

@@ -212,6 +212,45 @@ def test_table_schema_resolves_schema_qualified_name(client, monkeypatch):
     assert resp.json() == [{"name": "id", "type": "bigint"}]
 
 
+def test_pipeline_definition_parses_activities_and_edges(client, monkeypatch):
+    """The pipeline canvas path: definition → activities with dependsOn edges."""
+    content = json.dumps(
+        {
+            "properties": {
+                "activities": [
+                    {"name": "Copy orders", "type": "Copy", "dependsOn": []},
+                    {
+                        "name": "Run notebook",
+                        "type": "TridentNotebook",
+                        "dependsOn": [{"activity": "Copy orders", "dependencyConditions": ["Succeeded"]}],
+                    },
+                ]
+            }
+        }
+    ).encode()
+
+    class PipelineClient:
+        def get_item_definition(self, ws, item):
+            payload = base64.b64encode(content).decode()
+            return {"parts": [{"path": "pipeline-content.json", "payload": payload}]}
+
+    _use(monkeypatch, PipelineClient())
+    body = client.get("/fabric/workspaces/ws1/pipelines/p1/definition").json()
+    assert body == [
+        {"name": "Copy orders", "type": "Copy", "depends_on": []},
+        {"name": "Run notebook", "type": "TridentNotebook", "depends_on": ["Copy orders"]},
+    ]
+
+
+def test_pipeline_definition_without_content_is_empty(client, monkeypatch):
+    class PipelineClient:
+        def get_item_definition(self, ws, item):
+            return {"parts": [{"path": ".platform", "payload": ""}]}
+
+    _use(monkeypatch, PipelineClient())
+    assert client.get("/fabric/workspaces/ws1/pipelines/p1/definition").json() == []
+
+
 def test_table_schema_unknown_table_is_404(client, monkeypatch):
     class SchemaClient:
         def onelake_list(self, ws, path, recursive=False):

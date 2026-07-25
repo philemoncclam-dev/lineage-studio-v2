@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import type { CatalogModelData, CatalogMatch } from "../types";
 import { searchCatalog, findRelated } from "../catalog/search";
-import { Button, Input } from "../ui";
+import { BarsSpinner, Button, Input } from "../ui";
 
 export default function CatalogSearchPage() {
   const navigate = useNavigate();
@@ -68,7 +68,7 @@ export default function CatalogSearchPage() {
 
       {error && <div className="error">{error}</div>}
       {loading ? (
-        <p className="empty">Loading…</p>
+        <p className="empty"><span className="loading-row"><BarsSpinner size={16} />Loading…</span></p>
       ) : (
         <>
           <div className="section-label">

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import type { Model, ModelRole, ModelVersion, ModelVersionSummary } from "../types";
-import { Button, Select } from "../ui";
+import { BarsSpinner, Button, Select } from "../ui";
 import Canvas from "../canvas/Canvas";
 import { SelectionContext } from "../editor/selection";
 import { diffModels } from "../editor/diffModels";
@@ -159,7 +159,7 @@ export default function VersionHistoryPage() {
     }
   }
 
-  if (loading) return <div className="home"><p className="empty">Loading…</p></div>;
+  if (loading) return <div className="home"><p className="empty"><span className="loading-row"><BarsSpinner size={16} />Loading…</span></p></div>;
   if (error && !model)
     return (
       <div className="home">
@@ -303,7 +303,7 @@ export default function VersionHistoryPage() {
               />
             </SelectionContext.Provider>
           ) : (
-            <p style={{ padding: "2rem" }}>Loading…</p>
+            <p style={{ padding: "2rem" }} className="loading-row"><BarsSpinner size={16} />Loading…</p>
           )}
         </div>
       </div>

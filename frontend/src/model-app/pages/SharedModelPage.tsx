@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Icon } from "../ui/Icon";
-import { Button } from "../ui";
+import { BarsSpinner, Button } from "../ui";
 import Canvas from "../canvas/Canvas";
 import { SelectionContext } from "../editor/selection";
 import { lineageNarrative } from "../editor/lineageNarrative";
@@ -62,7 +62,12 @@ export default function SharedModelPage() {
       </div>
     );
   }
-  if (!model) return <p style={{ padding: "2rem" }}>Loading…</p>;
+  if (!model)
+    return (
+      <p style={{ padding: "2rem" }} className="loading-row">
+        <BarsSpinner size={16} />Loading…
+      </p>
+    );
 
   const selectedNode = model.nodes.find((n) => n.id === selectedId) ?? null;
 

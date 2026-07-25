@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { fetchShare, errorText, type SharedModel } from "../share";
-import { Button } from "../ui";
+import { BarsSpinner, Button } from "../ui";
 
 export default function SharedOverviewPage() {
   const { token } = useParams<{ token: string }>();
@@ -28,7 +28,12 @@ export default function SharedOverviewPage() {
       </div>
     );
   }
-  if (!shared) return <p style={{ padding: "2rem" }}>Loading…</p>;
+  if (!shared)
+    return (
+      <p style={{ padding: "2rem" }} className="loading-row">
+        <BarsSpinner size={16} />Loading…
+      </p>
+    );
 
   const fmt = (s: string) => (s ? new Date(s).toLocaleString() : "—");
 

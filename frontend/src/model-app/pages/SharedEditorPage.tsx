@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Icon } from "../ui/Icon";
+import { BarsSpinner } from "../ui";
 import Canvas from "../canvas/Canvas";
 import ContextMenu from "../canvas/ContextMenu";
 import type { MenuTarget } from "../canvas/menu";
@@ -93,7 +94,12 @@ export default function SharedEditorPage() {
       </div>
     );
   }
-  if (!ed.model) return <p style={{ padding: "2rem" }}>Loading…</p>;
+  if (!ed.model)
+    return (
+      <p style={{ padding: "2rem" }} className="loading-row">
+        <BarsSpinner size={16} />Loading…
+      </p>
+    );
 
   // The share exists but isn't editable — send the visitor to the read-only view
   // rather than presenting an editor whose every action would silently no-op.

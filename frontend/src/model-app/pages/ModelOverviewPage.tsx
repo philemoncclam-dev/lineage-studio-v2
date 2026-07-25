@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { isSignedIn } from "../supabase";
 import type { Model, ModelRole, ShareEntry, Comment } from "../types";
-import { Button, Input, Textarea } from "../ui";
+import { BarsSpinner, Button, Input, Textarea } from "../ui";
 import { tagColor } from "../editor/tags";
 
 export default function ModelOverviewPage() {
@@ -131,7 +131,7 @@ export default function ModelOverviewPage() {
     }
   }
 
-  if (loading) return <div className="home"><p className="empty">Loading…</p></div>;
+  if (loading) return <div className="home"><p className="empty"><span className="loading-row"><BarsSpinner size={16} />Loading…</span></p></div>;
   if (error && !model)
     return (
       <div className="home">

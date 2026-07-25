@@ -1,4 +1,7 @@
 // Reusable styled primitives — one design system shared across the app.
+export { BarsSpinner } from "./bars-spinner";
+export type { BarsSpinnerProps } from "./bars-spinner";
+
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import type { Model, ModelSummary, NodeType } from "../types";
-import { Button, Input } from "../ui";
+import { BarsSpinner, Button, Input } from "../ui";
 import ImportModel from "../editor/ImportModel";
 import { ThemeToggle } from "../theme";
 import { relativeTime } from "../connectors/connections";
@@ -120,7 +120,7 @@ export default function HomePage() {
         <div className="section-label">Your models</div>
 
         {loading ? (
-          <p className="empty">Loading…</p>
+          <p className="empty"><span className="loading-row"><BarsSpinner size={16} />Loading…</span></p>
         ) : models.length === 0 ? (
           <div className="home2-emptystate">
             <span className="brand-mark home2-empty-mark">L</span>

@@ -10,6 +10,7 @@
 // schema fetch is the Phase-2 sandbox work (see FABRIC-TOOLKIT-PLAN.md).
 import { useEffect, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { BarsSpinner } from '../../model-app/ui'
 import {
   fetchFabricStatus,
   fetchFabricWorkspaces,
@@ -132,7 +133,12 @@ function Row({ depth, kind, label, meta, open, leaf, onPrimary, fabricHref, hint
 }
 
 function Note({ state }: { state: Async<unknown> }) {
-  if (state.status === 'loading') return <div className="fx-note">Loading…</div>
+  if (state.status === 'loading')
+    return (
+      <div className="fx-note">
+        <span className="loading-row"><BarsSpinner size={16} />Loading…</span>
+      </div>
+    )
   if (state.status === 'error') return <div className="fx-note" data-error="true">{state.error}</div>
   return null
 }

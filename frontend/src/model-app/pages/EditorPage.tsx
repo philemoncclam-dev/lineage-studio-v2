@@ -32,7 +32,7 @@ import { screenToScrollSpace } from "../realtime/cursorMapping";
 import { describeContestedBanner } from "../realtime/conflictDetection";
 import { api } from "../api";
 import type { Model } from "../types";
-import { Button } from "../ui";
+import { BarsSpinner, Button } from "../ui";
 import { ThemeToggle } from "../theme";
 import { Tour } from "../tour/Tour";
 import { hasSeenTour } from "../tour/tourSeen";
@@ -391,7 +391,12 @@ export default function EditorPage() {
   useEffect(() => () => publishModelRailState(null), []);
 
   if (ed.error) return <div className="error">{ed.error}</div>;
-  if (!ed.model) return <p style={{ padding: "2rem" }}>Loading…</p>;
+  if (!ed.model)
+    return (
+      <p style={{ padding: "2rem" }} className="loading-row">
+        <BarsSpinner size={16} />Loading…
+      </p>
+    );
 
   const selectedNode = ed.model.nodes.find((n) => n.id === ed.selectedId) ?? null;
   const selectedEdge =

@@ -9,6 +9,7 @@ import { adapt, ModelProvider, sampleModel } from '../model'
 import { readGraphStash } from '../graphStash'
 import AppShell from '../shell/AppShell'
 import GraphSnapshotBanner from '../shell/GraphSnapshotBanner'
+import { BarsSpinner } from '../model-app/ui'
 
 export interface RouterContext {
   graph: LineageGraph | null
@@ -65,7 +66,10 @@ function RootPending() {
   return (
     <AppShell overlays={false}>
       <div className="canvas-skeleton" role="status" aria-live="polite">
-        Loading graph…
+        <span className="loading-row">
+          <BarsSpinner size={18} />
+          Loading graph…
+        </span>
       </div>
     </AppShell>
   )

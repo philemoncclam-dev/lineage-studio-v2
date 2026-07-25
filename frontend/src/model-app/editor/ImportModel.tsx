@@ -5,7 +5,7 @@
 import { useState } from "react";
 import Modal from "./Modal";
 import FileDrop from "./FileDrop";
-import { Button } from "../ui";
+import { BarsSpinner, Button } from "../ui";
 import { importAny, resultToModel, summarize, type ImportResult } from "./importAny";
 import type { Model } from "../types";
 
@@ -78,7 +78,7 @@ export default function ImportModel({
         hint="JSON model, {nodes, edges}, spreadsheets or CSV/TSV"
       />
 
-      {loading && !result && <div className="import-loading">Reading file…</div>}
+      {loading && !result && <div className="import-loading loading-row"><BarsSpinner size={16} />Reading file…</div>}
 
       {result && counts && (
         <div className="import-preview">

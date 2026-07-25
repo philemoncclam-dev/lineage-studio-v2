@@ -3,6 +3,7 @@
 // the authored model in the modelling tab, and the request-access workflow.
 import { useEffect, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { BarsSpinner } from '../../model-app/ui'
 import {
   fetchProduct,
   fetchProductDomains,
@@ -121,7 +122,7 @@ function ProductDetail() {
   }, [productId])
 
   if (error) return <div className="dp-page"><div className="dp-error">{error}</div></div>
-  if (!product) return <div className="dp-page"><div className="dp-empty">Loading…</div></div>
+  if (!product) return <div className="dp-page"><div className="dp-empty loading-row"><BarsSpinner size={16} />Loading…</div></div>
 
   return (
     <div className="dp-page">

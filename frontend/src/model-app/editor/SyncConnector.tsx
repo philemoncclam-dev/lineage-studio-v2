@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import Modal from "./Modal";
 import RuntimeNotebookLineage from "./RuntimeNotebookLineage";
-import { Button, Select } from "../ui";
+import { BarsSpinner, Button, Select } from "../ui";
 import type { LineageEdge, LineageNode, Model } from "../types";
 import { CONNECTOR_LIST, CONNECTORS } from "../connectors";
 import { reconcileConnectorSync, dropNodes, type ReconcileResult } from "../connectors/reconcile";
@@ -565,7 +565,7 @@ export default function SyncConnector({ model, onApply, onClose, initialConnecto
                 </p>
               </>
             ) : connectorId === "fabric" && fabricAccount && workspacesLoading ? (
-              <p className="sync-field-help">Loading your workspaces…</p>
+              <p className="sync-field-help loading-row"><BarsSpinner size={14} />Loading your workspaces…</p>
             ) : (
               <>
                 <label className="ui-field-label" htmlFor="sync-workspace-id">

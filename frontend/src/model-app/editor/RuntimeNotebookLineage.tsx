@@ -12,7 +12,7 @@
 // listWorkspaceLakehouses) with the ordinary read token, so nothing in this
 // screen mutates a workspace.
 import { useEffect, useState } from "react";
-import { Button, Select } from "../ui";
+import { BarsSpinner, Button, Select } from "../ui";
 import { useToast } from "../ui/toast";
 import {
   listWorkspaceNotebooks,
@@ -176,7 +176,7 @@ export default function RuntimeNotebookLineage({
       {/* Which notebooks to analyze */}
       <label className="ui-field-label">Notebooks to analyze</label>
       {notebooksError && <div className="import-error">{notebooksError}</div>}
-      {!notebooks && !notebooksError && <div className="muted">Loading notebooks…</div>}
+      {!notebooks && !notebooksError && <div className="muted loading-row"><BarsSpinner size={16} />Loading notebooks…</div>}
       {notebooks && notebooks.length === 0 && (
         <div className="muted">No notebooks found in this workspace.</div>
       )}

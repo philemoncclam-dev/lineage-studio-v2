@@ -9,7 +9,9 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { MODE_LABEL, MODE_LANDING, modeFromPathname, type ModeKey } from './railConfig'
 
-const MODE_ORDER: ModeKey[] = ['graph', 'model', 'fabric', 'products']
+// Knowledge Graph and Data Products are disabled as mode-switch destinations —
+// their routes still exist but are no longer reachable from the mode menu.
+const MODE_ORDER: ModeKey[] = ['model', 'fabric']
 
 function LogoMark() {
   // Abstract mark, not a wordmark — the trigger is icon-only per the rail's

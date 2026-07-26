@@ -15,13 +15,8 @@ import {
   type SandboxRunResult,
   type FabricCatalogEntry,
   type FabricPipelineActivity,
-  type LineageGraph,
 } from '../../api'
-import { adapt } from '../../model'
-import { graphToModel } from '../../model/graphToModel'
-import { sandboxRunToGraph } from '../../model/sandboxToGraph'
-import { saveNew } from '../../model-app/localdb'
-import { BarsSpinner } from '../../model-app/ui'
+import { BarsSpinner } from '../../shell/BarsSpinner'
 import '../../views/fabric.css'
 
 interface SandboxSearch {
@@ -245,17 +240,6 @@ function buildFlow(steps: Step[], results: Map<string, StepResult>): { nodes: Fl
   return { nodes, edges }
 }
 
-// Merge several run graphs into one (dedupe nodes by id, edges by endpoints+kind).
-function mergeGraphs(graphs: LineageGraph[]): LineageGraph {
-  const nodes = new Map<string, LineageGraph['nodes'][number]>()
-  const edges = new Map<string, LineageGraph['edges'][number]>()
-  for (const g of graphs) {
-    for (const n of g.nodes) if (!nodes.has(n.id)) nodes.set(n.id, n)
-    for (const e of g.edges) edges.set(`${e.source}|${e.target}|${e.kind}`, e)
-  }
-  return { nodes: [...nodes.values()], edges: [...edges.values()] }
-}
-
 function StepIcon({ kind }: { kind: StepKind }) {
   return (
     <svg className="fx-icon" data-kind={kind === 'pipeline' ? 'item' : 'notebook'} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
@@ -394,16 +378,7 @@ function SandboxRoute() {
     .flatMap((s) => (results.get(s.key)?.runs ?? []).map((e) => ({ s, name: e.name, r: e.result })))
     .filter((x): x is { s: Step; name: string; r: SandboxRunResult } => !!x.r)
 
-  const createModel = () => {
-    const merged = mergeGraphs(notebookRuns.map(({ name, r }) => sandboxRunToGraph(r, name)))
-    const draft = graphToModel(adapt(merged))
-    const label = notebookRuns.length === 1 ? notebookRuns[0].name : 'Sandbox sequence'
-    const saved = saveNew({ name: `${label} — model`, nodes: draft.nodes, edges: draft.edges, tags: [] })
-    window.location.assign(`/model/models/${saved.id}`)
-  }
-
   const anyBreach = notebookRuns.some(({ r }) => r.saw_credentials)
-  const hasFlowOutput = notebookRuns.some(({ r }) => r.reads.length || r.writes.length)
 
   return (
     <div className="fx-page">
@@ -531,13 +506,6 @@ function SandboxRoute() {
                     )
                   })}
 
-                  {hasFlowOutput && (
-                    <div className="sbx-actions">
-                      <button className="fx-btn fx-btn--primary" onClick={createModel} title="Build an authored model from these runs">
-                        Create model from this run →
-                      </button>
-                    </div>
-                  )}
                 </div>
               )}
             </div>

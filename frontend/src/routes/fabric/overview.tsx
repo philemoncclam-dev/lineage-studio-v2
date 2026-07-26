@@ -13,7 +13,7 @@
 // tenant is crawled once no matter how many consumers are mounted.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { BarsSpinner } from '../../model-app/ui'
+import { BarsSpinner } from '../../shell/BarsSpinner'
 import { fetchFabricStatus, type FabricCatalogEntry } from '../../api'
 import { loadCatalog } from '../../shell/catalogCache'
 import {

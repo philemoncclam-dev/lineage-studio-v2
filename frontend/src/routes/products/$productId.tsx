@@ -3,7 +3,7 @@
 // the authored model in the modelling tab, and the request-access workflow.
 import { useEffect, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { BarsSpinner } from '../../model-app/ui'
+import { BarsSpinner } from '../../shell/BarsSpinner'
 import {
   fetchProduct,
   fetchProductDomains,
@@ -165,12 +165,14 @@ function ProductDetail() {
           {(product.model_id || product.model_name) && (
             <section className="dp-section">
               <h2 className="dp-section-title">Associated model</h2>
-              <Link to="/model" className="dp-modellink">
+              {/* Modeling mode is being rebuilt from scratch — there is no
+                  model route to link to yet, so this renders as inert text. */}
+              <span className="dp-modellink" aria-disabled="true">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path d="M12 3.5 3.5 8l8.5 4.5L20.5 8z" /><path d="M3.5 12 12 16.5 20.5 12" />
                 </svg>
-                {product.model_name || 'Open in modelling tab'}
-              </Link>
+                {product.model_name || 'Model'}
+              </span>
             </section>
           )}
         </div>

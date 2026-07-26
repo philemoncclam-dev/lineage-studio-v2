@@ -3,7 +3,7 @@ import { routeTree } from './routeTree.gen'
 
 export const router = createRouter({
   routeTree,
-  context: { graph: null, fetchedAt: null, snapshotLabel: null },
+  context: { graph: null, fetchedAt: null },
 })
 
 declare module '@tanstack/react-router' {

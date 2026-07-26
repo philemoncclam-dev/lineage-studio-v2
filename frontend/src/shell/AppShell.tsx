@@ -5,10 +5,8 @@
 import { type ReactNode, lazy, Suspense, useEffect, useState } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { useRouterState } from '@tanstack/react-router'
-import Inspector from './Inspector'
 import ModeMenu from './ModeMenu'
 import Rail from './Rail'
-import ModelEditorRail from './ModelEditorRail'
 import RailBottomCluster from './RailBottomCluster'
 import { modeFromPathname, railConfig } from './railConfig'
 import '../styles/components.css'
@@ -57,12 +55,11 @@ export default function AppShell({ children, overlays = true }: { children: Reac
       <div className="shell">
         <div className="shell-rail-col">
           <ModeMenu />
-          {mode === 'model' ? <ModelEditorRail /> : <Rail items={railConfig[mode]} />}
+          <Rail items={railConfig[mode]} />
           <RailBottomCluster onOpenSearch={openPalette} />
         </div>
         <div className="shell-canvas">
           {children}
-          {overlays && <Inspector />}
         </div>
       </div>
       {overlays && paletteMounted && (

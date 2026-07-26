@@ -12,7 +12,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { BarsSpinner } from '../../model-app/ui'
+import { BarsSpinner } from '../../shell/BarsSpinner'
 import {
   fetchFabricStatus,
   fetchFabricWorkspaces,

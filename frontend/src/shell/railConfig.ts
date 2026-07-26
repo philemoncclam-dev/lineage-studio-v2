@@ -12,7 +12,7 @@
 // yet, so every item points at the mode's own root view rather than a
 // distinct sub-page.
 
-export type ModeKey = 'graph' | 'model' | 'fabric' | 'products'
+export type ModeKey = 'fabric' | 'products'
 
 export type RailIconName =
   | 'scope'
@@ -36,14 +36,6 @@ export interface RailItem {
 }
 
 export const railConfig: Record<ModeKey, RailItem[]> = {
-  graph: [
-    { key: 'drill-scope', label: 'Drill scope', icon: 'scope', to: '/graph' },
-    { key: 'filters', label: 'Filters', icon: 'filter', to: '/graph' },
-    { key: 'layout', label: 'Layout', icon: 'layout', to: '/graph' },
-  ],
-  model: [
-    { key: 'layers', label: 'Model layers', icon: 'layers', to: '/model' },
-  ],
   fabric: [
     { key: 'overview', label: 'Overview', icon: 'dashboard', to: '/fabric/overview' },
     { key: 'explore', label: '1. Explore', icon: 'explore', to: '/fabric/explore' },
@@ -58,16 +50,12 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
 }
 
 export function modeFromPathname(pathname: string): ModeKey {
-  if (pathname.startsWith('/model')) return 'model'
-  if (pathname.startsWith('/fabric')) return 'fabric'
   if (pathname.startsWith('/products')) return 'products'
-  return 'graph'
+  return 'fabric'
 }
 
 /** Where the app-logo mode menu (D-02) navigates each mode to. */
 export const MODE_LANDING: Record<ModeKey, string> = {
-  graph: '/graph',
-  model: '/model',
   // /fabric has no index route (route.tsx is a pathless layout) — Overview is
   // the mode's landing destination.
   fabric: '/fabric/overview',
@@ -75,8 +63,6 @@ export const MODE_LANDING: Record<ModeKey, string> = {
 }
 
 export const MODE_LABEL: Record<ModeKey, string> = {
-  graph: 'Knowledge Graph',
-  model: 'Modeling',
   fabric: 'Fabric Toolkit',
   products: 'Data Products',
 }

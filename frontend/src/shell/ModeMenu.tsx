@@ -11,7 +11,7 @@ import { MODE_LABEL, MODE_LANDING, modeFromPathname, type ModeKey } from './rail
 
 // Knowledge Graph and Data Products are disabled as mode-switch destinations —
 // their routes still exist but are no longer reachable from the mode menu.
-const MODE_ORDER: ModeKey[] = ['model', 'fabric']
+const MODE_ORDER: ModeKey[] = ['fabric']
 
 function LogoMark() {
   // Abstract mark, not a wordmark — the trigger is icon-only per the rail's

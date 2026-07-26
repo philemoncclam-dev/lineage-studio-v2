@@ -9,6 +9,7 @@ import ModeMenu from './ModeMenu'
 import Rail from './Rail'
 import RailBottomCluster from './RailBottomCluster'
 import { modeFromPathname, railConfig } from './railConfig'
+import { requestSearch } from './searchBridge'
 import '../styles/components.css'
 import '../styles/shell.css'
 
@@ -32,6 +33,10 @@ export default function AppShell({ children, overlays = true }: { children: Reac
   // (preserving its close animation) instead of unmounting each time.
   const [paletteMounted, setPaletteMounted] = useState(false)
   const openPalette = () => {
+    // A page may own search for its own content (the Model Viewer searches the
+    // open model). If one has claimed the trigger, defer to it entirely rather
+    // than opening the catalog palette on top of it.
+    if (requestSearch()) return
     setPaletteMounted(true)
     setPaletteOpen(true)
   }

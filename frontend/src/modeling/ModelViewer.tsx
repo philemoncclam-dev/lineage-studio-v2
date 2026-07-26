@@ -17,11 +17,15 @@
 // while scrolling down a tall model while staying aligned with their columns.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { buildIndex } from '../model/index'
+import { ancestorsOf, buildIndex } from '../model/index'
+import { registerSearchHandler } from '../shell/searchBridge'
+import ModelSearch from './ModelSearch'
+import type { SearchHit } from './searchModel'
 import { addTransition, deleteEntities, removeTransitions, renameEntity } from '../model/edit'
 import { hitTestTransitions } from './edgeGeometry'
 import {
   CARD_HEADER_HEIGHT,
+  CARD_WIDTH,
   INDENT,
   LAYER_HEADER_HEIGHT,
   ROW_HEIGHT,
@@ -63,6 +67,9 @@ export default function ModelViewer({
   const [connectFrom, setConnectFrom] = useState<EntityId | null>(null)
   /** Entity whose name is being edited in place. */
   const [editing, setEditing] = useState<EntityId | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  /** Entity to scroll into view once the layout reflects any expansion. */
+  const [reveal, setReveal] = useState<EntityId | null>(null)
 
   const index = useMemo(() => buildIndex(model), [model])
   const layout = useMemo(() => layoutModel(model, collapsed), [model, collapsed])
@@ -97,6 +104,47 @@ export default function ModelViewer({
     const host = scrollRef.current
     if (host) setScroll({ x: host.scrollLeft, y: host.scrollTop })
   }
+
+  // Claim the shell's search triggers (rail button and Cmd+K) while mounted.
+  useEffect(() => registerSearchHandler(() => setSearchOpen(true)), [])
+
+  /**
+   * Selects every entity carrying the picked name and brings the first into
+   * view, expanding whatever was collapsed over it.
+   */
+  const onPickSearchHit = (hit: SearchHit) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      // A match can be buried under collapsed ancestors, and a collapsed layer
+      // renders no cards at all. Selecting something invisible would look like
+      // the search silently failed, so open the path to every match.
+      for (const id of hit.ids) {
+        next.delete(id)
+        for (const ancestor of ancestorsOf(index, id)) next.delete(ancestor.id)
+      }
+      return next
+    })
+    setSelection(new Set(hit.ids))
+    setSelectedEdges(new Set())
+    setReveal(hit.ids[0])
+    setSearchOpen(false)
+  }
+
+  // Runs after the layout has been recomputed for any expansion above, so the
+  // anchor we scroll to is the final one rather than a pre-expansion position.
+  useEffect(() => {
+    if (!reveal) return
+    const anchor = layout.anchors.get(reveal)
+    const host = scrollRef.current
+    if (anchor && host) {
+      host.scrollTo({
+        left: Math.max(0, anchor.left - host.clientWidth / 2 + CARD_WIDTH / 2),
+        top: Math.max(0, anchor.cy - host.clientHeight / 2),
+        behavior: 'smooth',
+      })
+    }
+    setReveal(null)
+  }, [reveal, layout])
 
   const toggle = (id: EntityId) => {
     setCollapsed((prev) => {
@@ -242,6 +290,14 @@ export default function ModelViewer({
 
   return (
     <div className="mv-host" data-connecting={connectFrom ? true : undefined}>
+      {searchOpen && (
+        <ModelSearch
+          index={index}
+          onPick={onPickSearchHit}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
+
       {/* Pinned layer band — one continuous row, counter-scrolled horizontally. */}
       <div className="mv-band" style={{ height: LAYER_HEADER_HEIGHT }}>
         <div className="mv-band-inner" style={{ transform: `translateX(${-scroll.x}px)` }}>

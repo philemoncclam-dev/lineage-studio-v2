@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as FabricRouteRouteImport } from './routes/fabric/route'
+import { Route as ModelRouteImport } from './routes/model'
 import { Route as ProductsRouteRouteImport } from './routes/products/route'
 import { Route as FabricExploreRouteImport } from './routes/fabric/explore'
 import { Route as FabricOverviewRouteImport } from './routes/fabric/overview'
@@ -29,6 +30,11 @@ const IndexRoute = IndexRouteImport.update({
 const FabricRouteRoute = FabricRouteRouteImport.update({
   id: '/fabric',
   path: '/fabric',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModelRoute = ModelRouteImport.update({
+  id: '/model',
+  path: '/model',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProductsRouteRoute = ProductsRouteRouteImport.update({
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/fabric': typeof FabricRouteRouteWithChildren
   '/products': typeof ProductsRouteRouteWithChildren
+  '/model': typeof ModelRoute
   '/fabric/explore': typeof FabricExploreRoute
   '/fabric/overview': typeof FabricOverviewRoute
   '/fabric/sandbox': typeof FabricSandboxRoute
@@ -93,6 +100,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/fabric': typeof FabricRouteRouteWithChildren
+  '/model': typeof ModelRoute
   '/fabric/explore': typeof FabricExploreRoute
   '/fabric/overview': typeof FabricOverviewRoute
   '/fabric/sandbox': typeof FabricSandboxRoute
@@ -107,6 +115,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/fabric': typeof FabricRouteRouteWithChildren
   '/products': typeof ProductsRouteRouteWithChildren
+  '/model': typeof ModelRoute
   '/fabric/explore': typeof FabricExploreRoute
   '/fabric/overview': typeof FabricOverviewRoute
   '/fabric/sandbox': typeof FabricSandboxRoute
@@ -122,6 +131,7 @@ export interface FileRouteTypes {
     | '/'
     | '/fabric'
     | '/products'
+    | '/model'
     | '/fabric/explore'
     | '/fabric/overview'
     | '/fabric/sandbox'
@@ -134,6 +144,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/fabric'
+    | '/model'
     | '/fabric/explore'
     | '/fabric/overview'
     | '/fabric/sandbox'
@@ -147,6 +158,7 @@ export interface FileRouteTypes {
     | '/'
     | '/fabric'
     | '/products'
+    | '/model'
     | '/fabric/explore'
     | '/fabric/overview'
     | '/fabric/sandbox'
@@ -161,6 +173,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   FabricRouteRoute: typeof FabricRouteRouteWithChildren
   ProductsRouteRoute: typeof ProductsRouteRouteWithChildren
+  ModelRoute: typeof ModelRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -177,6 +190,13 @@ declare module '@tanstack/react-router' {
       path: '/fabric'
       fullPath: '/fabric'
       preLoaderRoute: typeof FabricRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/model': {
+      id: '/model'
+      path: '/model'
+      fullPath: '/model'
+      preLoaderRoute: typeof ModelRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/products': {
@@ -285,6 +305,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   FabricRouteRoute: FabricRouteRouteWithChildren,
   ProductsRouteRoute: ProductsRouteRouteWithChildren,
+  ModelRoute: ModelRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

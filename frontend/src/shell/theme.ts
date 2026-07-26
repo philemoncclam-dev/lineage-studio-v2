@@ -15,9 +15,6 @@ export function setTheme(theme: Theme | null): void {
     document.documentElement.removeAttribute('data-theme') // falls back to OS prefers-color-scheme
     localStorage.removeItem(THEME_STORAGE_KEY)
   }
-  // canvasTokens.ts's MutationObserver (wired once in main.tsx via
-  // initCanvasTokenCache()) picks up the attribute change automatically —
-  // no manual invalidateCanvasTokens() call belongs here.
 }
 
 export function getTheme(): Theme | null {
@@ -25,15 +22,17 @@ export function getTheme(): Theme | null {
   return attr === 'light' || attr === 'dark' ? attr : null
 }
 
-/** Applies a persisted theme choice before first paint. Call once at boot. */
+/**
+ * Applies the app theme before first paint. Call once at boot.
+ *
+ * The app is pinned to light: the Model Viewer is a dense document surface
+ * (thin rules, hairline transitions, colour-coded classification badges) and
+ * that idiom is designed for a light canvas. The dark values in tokens.css are
+ * kept — every primitive is still a light-dark() pair — so this is a one-line
+ * reversal if we ever reintroduce the toggle.
+ */
 export function initTheme(): void {
-  const stored = localStorage.getItem(THEME_STORAGE_KEY)
-  if (stored === 'light' || stored === 'dark') {
-    document.documentElement.setAttribute('data-theme', stored)
-  }
-  // No stored value: leave data-theme unset — tokens.css's
-  // `color-scheme: light dark` + every tier-1 light-dark() primitive already
-  // falls back to the OS preference with no attribute present.
+  document.documentElement.setAttribute('data-theme', 'light')
 }
 
 export function isDarkResolved(): boolean {

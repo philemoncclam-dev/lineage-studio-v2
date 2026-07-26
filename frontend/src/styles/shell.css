@@ -405,3 +405,13 @@
   border-radius: var(--radius-input);
   padding: 0;
 }
+
+/* ===== Model-editor rail overflow ("More tools") =====
+   Reuses the mode menu's surface so the two popovers in the rail column read
+   as one component; the rows differ only by carrying the action's rail glyph
+   so the icon a user has half-learned still maps to the label. */
+.rail-more-item { user-select: none; }
+.rail-more-item[data-disabled] { opacity: .4; pointer-events: none; }
+.rail-more-icon { display: grid; place-items: center; width: 16px; height: 16px; flex: none; }
+.rail-more-icon svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.rail-more-sep { height: 1px; margin: var(--spacing-1) 0; background: var(--color-border); }

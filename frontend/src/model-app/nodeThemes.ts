@@ -13,6 +13,10 @@ export type HeaderStyle = "plain" | "tinted" | "filled" | "outline";
 export type EdgeWidth = "thin" | "medium" | "thick";
 
 export interface NodeStyle {
+  // Per-type accent colors. "" means "follow the shell's palette" — the
+  // --t-layer/--t-object/--t-group/--t-attr tokens in ui/theme.css, which
+  // alias the host design system. Only a non-empty value overrides them, so
+  // the default look tracks the app instead of pinning four hex literals.
   layerColor: string;
   objectColor: string;
   groupColor: string;
@@ -42,16 +46,19 @@ export const EDGE_WIDTH_PX: Record<EdgeWidth, string> = {
   thick: "2.6",
 };
 
+// The default is now "inherit everything from the shell": no color overrides,
+// square corners, tinted headers. The named presets below stay as opt-in
+// flavours for anyone who wants a different canvas look.
 export const NODE_STYLE_DEFAULT: NodeStyle = {
-  layerColor: "#6e7b8f",
-  objectColor: "#4a90e2",
-  groupColor: "#5aa9a0",
-  attrColor: "#8e8e93",
+  layerColor: "",
+  objectColor: "",
+  groupColor: "",
+  attrColor: "",
   edgeColor: "",
   outlineColor: "",
-  corners: "rounded",
+  corners: "flat",
   shadow: true,
-  headerStyle: "plain",
+  headerStyle: "tinted",
   edgeWidth: "medium",
 };
 
@@ -133,14 +140,20 @@ export function matchPreset(style: NodeStyle): string | null {
 // Write the whole style onto :root as CSS variables + a header-style attribute.
 export function applyNodeStyle(s: NodeStyle): void {
   const root = document.documentElement;
-  root.style.setProperty("--t-layer", s.layerColor);
-  root.style.setProperty("--t-object", s.objectColor);
-  root.style.setProperty("--t-group", s.groupColor);
-  root.style.setProperty("--t-attr", s.attrColor);
+  // An empty color clears the inline override so ui/theme.css's token shows
+  // through — setting it to "" instead would blank the variable entirely.
+  const color = (prop: string, value: string) => {
+    if (value) root.style.setProperty(prop, value);
+    else root.style.removeProperty(prop);
+  };
+  color("--t-layer", s.layerColor);
+  color("--t-object", s.objectColor);
+  color("--t-group", s.groupColor);
+  color("--t-attr", s.attrColor);
   root.style.setProperty("--edge-color", s.edgeColor || "var(--edge)");
   root.style.setProperty("--node-outline", s.outlineColor || "var(--border)");
   root.style.setProperty("--edge-width", EDGE_WIDTH_PX[s.edgeWidth]);
-  root.style.setProperty("--node-radius", s.corners === "flat" ? "3px" : "var(--r-lg)");
+  root.style.setProperty("--node-radius", s.corners === "flat" ? "0" : "6px");
   root.style.setProperty("--node-shadow", s.shadow ? "var(--sh-2)" : "none");
   root.style.setProperty("--node-shadow-hover", s.shadow ? "var(--sh-3)" : "none");
   root.setAttribute("data-header-style", s.headerStyle);

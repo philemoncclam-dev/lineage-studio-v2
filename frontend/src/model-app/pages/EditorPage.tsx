@@ -33,7 +33,6 @@ import { describeContestedBanner } from "../realtime/conflictDetection";
 import { api } from "../api";
 import type { Model } from "../types";
 import { BarsSpinner, Button } from "../ui";
-import { ThemeToggle } from "../theme";
 import { Tour } from "../tour/Tour";
 import { hasSeenTour } from "../tour/tourSeen";
 import { publishModelRailState, subscribeModelRailActions } from "../railBridge";
@@ -669,7 +668,6 @@ export default function EditorPage() {
             >
               ？
             </button>
-            <ThemeToggle keyTip="K" />
             <Button variant="secondary" keyTip="A" onClick={() => setModal("share")}>
               Share
             </Button>

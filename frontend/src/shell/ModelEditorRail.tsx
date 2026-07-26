@@ -6,6 +6,7 @@
 // page), it falls back to the static railConfig items.
 import { Fragment, useSyncExternalStore, type ReactNode } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import {
   getModelRailState,
@@ -72,6 +73,10 @@ const ICONS: Record<ModelRailAction, ReactNode> = {
   ),
 }
 
+const MORE_ICON = (
+  <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="12" cy="19" r="1.4" /></svg>
+)
+
 interface Item {
   action: ModelRailAction
   label: string
@@ -106,39 +111,90 @@ function RailActionButton({ item }: { item: Item }) {
   )
 }
 
+/** The overflow menu — same action bridge, rendered as labelled rows. */
+function RailMoreMenu({ items }: { items: Item[] }) {
+  return (
+    <DropdownMenu.Root>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild>
+          <DropdownMenu.Trigger asChild>
+            <button type="button" className="rail-item rail-action">
+              {MORE_ICON}
+              <VisuallyHidden>More tools</VisuallyHidden>
+            </button>
+          </DropdownMenu.Trigger>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content className="rail-tooltip" side="right" sideOffset={8}>
+            More tools
+            <Tooltip.Arrow className="rail-tooltip-arrow" />
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content className="mode-menu" side="right" align="start" sideOffset={8}>
+          {items.map((item) => (
+            <Fragment key={item.action}>
+              {item.sepBefore && <DropdownMenu.Separator className="rail-more-sep" />}
+              <DropdownMenu.Item
+                className="mode-menu-item rail-more-item"
+                disabled={item.disabled}
+                onSelect={() => sendModelRailAction(item.action)}
+              >
+                <span className="rail-more-icon">{ICONS[item.action]}</span>
+                <span>{item.label}</span>
+              </DropdownMenu.Item>
+            </Fragment>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  )
+}
+
 export default function ModelEditorRail() {
   const state = useSyncExternalStore(subscribeModelRailState, getModelRailState)
 
   if (!state) return <Rail items={railConfig.model} />
 
-  const items: Item[] = [
+  // Seventeen icon-only buttons made the rail unreadable — nothing stood out,
+  // so everything had to be hovered to be identified. The split below is by
+  // reach, not by category: what you touch while actually modelling stays on
+  // the rail; what you touch once a session moves behind "More", where it
+  // gets a text label and is easier to find than an anonymous glyph was.
+  const primary: Item[] = [
     { action: 'home', label: 'Model library' },
-    { action: 'overview', label: 'Model overview' },
-    ...(state.showHistory ? [{ action: 'history', label: 'Version history' } as Item] : []),
     { action: 'search', label: 'Search', active: state.panel === 'search', sepBefore: true },
     { action: 'details', label: 'Details', active: state.panel === 'details' },
     { action: 'filter', label: 'Filter', active: state.panel === 'filter' || state.filterActive },
-    { action: 'tags', label: 'Tags', active: state.panel === 'tags' },
     { action: 'validate', label: 'Validate', active: state.panel === 'validation', badge: state.validationCount },
     { action: 'add', label: 'Add node', active: state.addMenuOpen, sepBefore: true },
-    { action: 'map', label: 'Map attributes' },
-    { action: 'tidy', label: 'Tidy layout' },
-    { action: 'import', label: 'Import' },
-    { action: 'export', label: 'Export' },
-    { action: 'graph', label: 'Open in graph view' },
     { action: 'undo', label: 'Undo', disabled: !state.canUndo, sepBefore: true },
     { action: 'redo', label: 'Redo', disabled: !state.canRedo },
+  ]
+
+  const overflow: Item[] = [
+    { action: 'overview', label: 'Model overview' },
+    ...(state.showHistory ? [{ action: 'history', label: 'Version history' } as Item] : []),
+    { action: 'graph', label: 'Open in graph view' },
+    { action: 'tags', label: 'Tags', sepBefore: true },
+    { action: 'map', label: 'Map attributes' },
+    { action: 'tidy', label: 'Tidy layout' },
+    { action: 'import', label: 'Import', sepBefore: true },
+    { action: 'export', label: 'Export' },
     { action: 'settings', label: 'Editor settings', sepBefore: true },
   ]
 
   return (
     <nav className="rail rail-model" aria-label="Model editor tools">
-      {items.map((item) => (
+      {primary.map((item) => (
         <Fragment key={item.action}>
           {item.sepBefore && <span className="rail-sep" aria-hidden />}
           <RailActionButton item={item} />
         </Fragment>
       ))}
+      <span className="rail-sep" aria-hidden />
+      <RailMoreMenu items={overflow} />
     </nav>
   )
 }

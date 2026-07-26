@@ -1,5 +1,5 @@
-// Display settings dialog. Appearance + a composable node style (presets that
-// set everything at once, plus granular controls for corners, shadow, header
+// Display settings dialog. A composable node style (presets that set
+// everything at once, plus granular controls for corners, shadow, header
 // style, edges, and per-type colors) + canvas/layout toggles. Everything reads
 // and writes the shared settings store (see ../settings), persisted live.
 import { useState } from "react";
@@ -241,24 +241,10 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
         Changes how models look for you — no data is altered, and settings apply to every model on this device.
       </p>
 
-      {/* Appearance: light / dark. */}
-      <section className="settings-section">
-        <h4 className="settings-section-title">Appearance</h4>
-        <div className="settings-segmented" role="radiogroup" aria-label="Appearance">
-          {(["light", "dark"] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              role="radio"
-              aria-checked={settings.appearance === mode}
-              className={`settings-segment${settings.appearance === mode ? " is-active" : ""}`}
-              onClick={() => setSetting("appearance", mode)}
-            >
-              {mode === "light" ? "Light" : "Dark"}
-            </button>
-          ))}
-        </div>
-      </section>
+      {/* No Appearance control: light/dark is the host shell's decision, and
+          the editor now renders in the shell's tokens. A second switch here
+          used to write data-theme on <html> for the whole app — including the
+          Fabric screens — and leave it there after you navigated away. */}
 
       {/* Presets: one click sets every node-style knob below. Built-ins first,
           then any the user has saved (deletable). */}

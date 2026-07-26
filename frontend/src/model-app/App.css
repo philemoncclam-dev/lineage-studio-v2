@@ -55,7 +55,7 @@
 .brand-mark {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--accent);
   display: grid;
   place-items: center;
@@ -269,7 +269,7 @@
   width: 44px;
   height: 44px;
   font-size: 20px;
-  border-radius: 12px;
+  border-radius: 0;
   margin: 0 auto 16px;
 }
 .home2-emptystate h2 {
@@ -385,7 +385,7 @@
 .type-dot {
   width: 9px;
   height: 9px;
-  border-radius: 3px;
+  border-radius: 0;
   flex: 0 0 auto;
 }
 .model-card2-meta {
@@ -1035,7 +1035,7 @@ span.editor-name:hover {
   place-items: center;
   width: 18px;
   height: 18px;
-  border-radius: 5px;
+  border-radius: 0;
   background: var(--surface-3);
   border: 1px solid var(--border);
   font-size: 11px;
@@ -1071,7 +1071,7 @@ span.editor-name:hover {
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 5px;
+  border-radius: 0;
   background: var(--accent);
   color: #fff;
   font-size: 11px;
@@ -1875,7 +1875,7 @@ span.editor-name:hover {
   text-align: left;
   background: transparent;
   border: none;
-  border-radius: 5px;
+  border-radius: 0;
   color: var(--text);
   font: 12.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   padding: 6px 8px;
@@ -2245,18 +2245,23 @@ span.editor-name:hover {
   overflow: hidden;
   transition: box-shadow var(--ease), border-color var(--ease);
 }
+/* Hovering a card commits to the accent border rather than a heavier shadow:
+   on a dark canvas a drop shadow barely reads, but a border colour change is
+   unambiguous at any zoom. */
 .object-container:hover {
   box-shadow: var(--node-shadow-hover, var(--sh-2));
+  border-color: var(--accent);
 }
-/* Object band header (the container's title row). Clean white bar with a small
-   type-colored dot for accent and a hairline divider — no heavy grey fill. */
+/* Object band header (the container's title row). A filled strip over the
+   card's body, so the card reads as header + content the way a table does —
+   the type-colored dot supplies the accent and the fill supplies the tier. */
 .ocontainer-band {
   position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 9px 12px;
-  background: var(--surface);
+  background: var(--surface-2);
   border-bottom: 1px solid var(--border);
   cursor: pointer;
   font-size: 12px;
@@ -2304,6 +2309,8 @@ span.editor-name:hover {
   outline-offset: -2px;
   border-radius: var(--r);
 }
+/* A table section's own header. One tier quieter than the object band above
+   it — a wash rather than a fill — so the two never compete for the eye. */
 .otable-header {
   position: relative;
   display: flex;
@@ -2312,6 +2319,7 @@ span.editor-name:hover {
   padding: 7px 12px;
   color: var(--text);
   font-weight: 600;
+  background: color-mix(in oklch, var(--surface-2) 55%, var(--surface));
   border-bottom: 1px solid var(--border);
   cursor: pointer;
 }
@@ -2335,15 +2343,18 @@ span.editor-name:hover {
   letter-spacing: 0.05em;
   color: var(--text-secondary);
 }
-/* Quiet neutral pill — the attribute count reads as metadata, not a CTA. */
+/* Quiet neutral chip — the attribute count reads as metadata, not a CTA. It
+   sits on the washed table header, so it takes a border rather than a fill;
+   a fill one tier up would be invisible against its own backdrop. */
 .otable-count {
   flex: 0 0 auto;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-tertiary);
-  background: var(--surface-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--r-pill);
-  padding: 1px 8px;
+  padding: 0 7px;
   min-width: 20px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -2444,9 +2455,19 @@ span.editor-name:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Dark needs a stronger tint to survive against a dark card, and a weaker mix
+   into the (light) text so the label stays legible. `data-theme` is only set
+   when a theme is pinned, so the OS-preference case is matched too — without
+   the media query the chips lose contrast on any un-pinned dark load. */
 :root[data-theme="dark"] .attr-tag-chip {
   background: color-mix(in srgb, var(--chip-color, var(--accent)) 26%, var(--surface));
   color: color-mix(in srgb, var(--chip-color, var(--accent)) 55%, var(--text));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .attr-tag-chip {
+    background: color-mix(in srgb, var(--chip-color, var(--accent)) 26%, var(--surface));
+    color: color-mix(in srgb, var(--chip-color, var(--accent)) 55%, var(--text));
+  }
 }
 /* Apple-HIG-style SVG icons (src/ui/Icon.tsx). Align to the text they sit
    beside and never squish inside flex rows. */
@@ -2664,7 +2685,7 @@ span.editor-name:hover {
   flex: 0 0 auto;
   width: 8px;
   height: 8px;
-  border-radius: 2px;
+  border-radius: 0;
   display: inline-block;
 }
 .type-layer {
@@ -3027,7 +3048,7 @@ span.editor-name:hover {
 .share-view-badge {
   font-size: 12px;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--surface-2);
   color: var(--text-secondary);
   border: 1px solid var(--border);
@@ -3232,7 +3253,7 @@ span.editor-name:hover {
 .import-defstat {
   display: inline-block;
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: 0;
   font-weight: 600;
   margin-right: 8px;
 }
@@ -3498,7 +3519,7 @@ span.editor-name:hover {
   font: 600 13px/1 inherit;
   padding: 7px 14px;
   border: none;
-  border-radius: calc(var(--r-sm) - 2px);
+  border-radius: 0;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -4246,7 +4267,7 @@ span.editor-name:hover {
 .import-stat {
   font-size: 12px;
   padding: 3px 8px;
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--surface-3, var(--surface));
   border: 1px solid var(--border);
   white-space: nowrap;
@@ -4277,7 +4298,7 @@ span.editor-name:hover {
 /* ── Fabric sign-in setup hint (Sync dialog) ── */
 .sync-setup-hint {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 10px 12px;
   margin: 6px 0;
   background: var(--bg-secondary, transparent);
@@ -4386,7 +4407,7 @@ span.editor-name:hover {
 .settings-segment {
   padding: 6px 18px;
   border: none;
-  border-radius: calc(var(--r-sm) - 2px);
+  border-radius: 0;
   background: none;
   color: var(--text-secondary);
   font: 500 13px/1 inherit;

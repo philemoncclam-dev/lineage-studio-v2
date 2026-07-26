@@ -12,11 +12,7 @@ import {
   type StylePreset,
 } from "./nodeThemes";
 
-export type Appearance = "light" | "dark";
-
 export interface SettingsState {
-  // Light or dark UI. Applied as data-theme on <html>.
-  appearance: Appearance;
   // Composable node/edge look (colors, corners, shadow, header style, edges).
   // Presets in nodeThemes.ts set this all at once; individual knobs are tunable.
   nodeStyle: NodeStyle;
@@ -36,7 +32,6 @@ export interface SettingsState {
 }
 
 export const DEFAULT_SETTINGS: SettingsState = {
-  appearance: "light",
   nodeStyle: NODE_STYLE_DEFAULT,
   customPresets: [],
   showTypeIcons: true,
@@ -45,21 +40,16 @@ export const DEFAULT_SETTINGS: SettingsState = {
   autoHideRail: false,
 };
 
-const KEY = "lineage:settings";
-// Older builds stored just the light/dark choice under this key; honor it so
-// signed-in users don't get their theme reset when settings first load.
-const LEGACY_THEME_KEY = "lineage:theme";
-
-function systemAppearance(): Appearance {
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
+// v2: the editor stopped owning light/dark (the host shell does now) and its
+// node colors became "unset = follow the shell's palette". A v1 blob carries
+// the old hard-coded hexes (#4a90e2 &c.), which would be written straight back
+// onto :root and undo the re-skin — so the key is bumped rather than migrated
+// field-by-field. Cost is a reset of display settings, which hold no model data.
+const KEY = "lineage:settings:v2";
 
 function load(): SettingsState {
-  // First-visit default for appearance follows the OS preference.
-  const base: SettingsState = { ...DEFAULT_SETTINGS, appearance: systemAppearance() };
+  const base: SettingsState = { ...DEFAULT_SETTINGS };
   try {
-    const legacy = localStorage.getItem(LEGACY_THEME_KEY);
-    if (legacy === "light" || legacy === "dark") base.appearance = legacy;
     const raw = localStorage.getItem(KEY);
     if (!raw) return base;
     const parsed = JSON.parse(raw) as Partial<SettingsState> & { nodeTheme?: string };
@@ -81,7 +71,10 @@ function load(): SettingsState {
 // Apply the presentation-affecting settings to the document root. Shared by the
 // provider and the pre-render init below.
 function applyGlobals(s: SettingsState): void {
-  document.documentElement.setAttribute("data-theme", s.appearance);
+  // Deliberately does not touch data-theme: light/dark belongs to the host
+  // shell (styles/tokens.css light-dark() pairs), and the editor's tokens now
+  // alias it. Writing it here leaked the editor's choice onto every other
+  // screen and outlived the visit.
   applyNodeStyle(s.nodeStyle);
 }
 

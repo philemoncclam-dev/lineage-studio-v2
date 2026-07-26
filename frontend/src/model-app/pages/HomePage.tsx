@@ -4,7 +4,6 @@ import { api } from "../api";
 import type { Model, ModelSummary, NodeType } from "../types";
 import { BarsSpinner, Button, Input } from "../ui";
 import ImportModel from "../editor/ImportModel";
-import { ThemeToggle } from "../theme";
 import { relativeTime } from "../connectors/connections";
 import { tagColor } from "../editor/tags";
 import { TypeGlyph } from "../ui/TypeGlyph";
@@ -90,7 +89,6 @@ export default function HomePage() {
             <p className="subtitle">Build and edit lineage models</p>
           </div>
         </div>
-        <ThemeToggle className="home-theme-toggle" />
       </header>
 
       <div className="home2-content">

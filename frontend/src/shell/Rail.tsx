@@ -3,11 +3,17 @@
 // JSX, so a fifth destination is a one-line railConfig.ts edit. Each item is
 // icon-only + a Radix Tooltip label + a persistent VisuallyHidden accessible
 // name (Don't Hand-Roll: 02-RESEARCH.md).
-import type { ReactNode } from 'react'
+import { useSyncExternalStore, type ReactNode } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Link, useRouterState } from '@tanstack/react-router'
 import type { RailIconName, RailItem } from './railConfig'
+import {
+  hasRailAction,
+  railActionsVersion,
+  runRailAction,
+  subscribeRailActions,
+} from './railActions'
 
 // Inline stroke-based SVGs, currentColor, stroke-width 1.8 — the exact
 // pattern `.search svg` already establishes in components.css (01-UI-SPEC.md
@@ -46,10 +52,19 @@ const ICONS: Record<RailIconName, ReactNode> = {
   inbox: (
     <svg viewBox="0 0 24 24"><path d="M3.5 13.5 6 5h12l2.5 8.5V19H3.5z" /><path d="M3.5 13.5H9a3 3 0 0 0 6 0h5.5" /></svg>
   ),
+  import: (
+    <svg viewBox="0 0 24 24"><path d="M12 3v11" /><path d="m8 10.5 4 4 4-4" /><path d="M4 17v3h16v-3" /></svg>
+  ),
+  export: (
+    <svg viewBox="0 0 24 24"><path d="M12 15V4" /><path d="m8 7.5 4-4 4 4" /><path d="M4 17v3h16v-3" /></svg>
+  ),
 }
 
 export default function Rail({ items }: { items: RailItem[] }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  // Action items are only usable while a page has registered a handler, so the
+  // rail has to re-render when registrations change.
+  useSyncExternalStore(subscribeRailActions, railActionsVersion, railActionsVersion)
   // First-match-wins: graph items intentionally share a `to` this phase (no
   // distinct sub-page exists yet, see railConfig.ts) — this keeps "current
   // destination" a singular concept even when several config entries resolve
@@ -63,10 +78,22 @@ export default function Rail({ items }: { items: RailItem[] }) {
         return (
           <Tooltip.Root key={item.key}>
             <Tooltip.Trigger asChild>
-              <Link to={item.to as never} className={`rail-item${isActive ? ' active' : ''}`} data-active={isActive}>
-                {ICONS[item.icon]}
-                <VisuallyHidden>{item.label}</VisuallyHidden>
-              </Link>
+              {item.action ? (
+                <button
+                  type="button"
+                  className="rail-item"
+                  disabled={!hasRailAction(item.action)}
+                  onClick={() => item.action && runRailAction(item.action)}
+                >
+                  {ICONS[item.icon]}
+                  <VisuallyHidden>{item.label}</VisuallyHidden>
+                </button>
+              ) : (
+                <Link to={item.to as never} className={`rail-item${isActive ? ' active' : ''}`} data-active={isActive}>
+                  {ICONS[item.icon]}
+                  <VisuallyHidden>{item.label}</VisuallyHidden>
+                </Link>
+              )}
             </Tooltip.Trigger>
             <Tooltip.Portal>
               <Tooltip.Content className="rail-tooltip" side="right" sideOffset={8}>

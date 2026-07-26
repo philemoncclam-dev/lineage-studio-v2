@@ -52,7 +52,9 @@
   right: 0;
   z-index: 3;
   overflow: hidden;
-  background: #f2f3f6;
+  /* Matches the canvas surface (minus its dot grid) so the band reads as part
+     of the document rather than as chrome sitting on top of it. */
+  background: #fbfbfc;
   border-bottom: 1px solid rgb(28 35 51 / 0.22);
 }
 
@@ -104,14 +106,16 @@
   padding: 0 6px;
 }
 
-/* Collapsed: a narrow strip whose whole surface is the expand affordance. */
+/* Collapsed: a narrow strip whose whole surface is the expand affordance. It
+   keeps a fill even though the band is otherwise white — the tint is the only
+   thing distinguishing a folded layer from the gap between two open ones. */
 .mv-layer[data-collapsed] {
-  background: #e4e7ec;
+  background: #eceef2;
   cursor: pointer;
 }
 
 .mv-layer[data-collapsed]:hover {
-  background: #d6dbe4;
+  background: #dfe3ea;
 }
 
 .mv-layer[data-collapsed] .mv-layer-center {
@@ -478,6 +482,347 @@
   color: #98a0b0;
   font-size: 11px;
   min-height: 26px;
+}
+
+/* ===== Import / Export dialogs ===== */
+.imp-panel {
+  width: min(680px, calc(100vw - 32px));
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgb(28 35 51 / 0.16);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: var(--shadow-overlay);
+  overflow: hidden;
+}
+
+.imp-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgb(28 35 51 / 0.12);
+}
+
+.imp-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1c2333;
+}
+
+.imp-steps {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.imp-steps li {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #98a0b0;
+  font-size: 11px;
+}
+
+.imp-steps li[data-current] {
+  background: #1f6feb;
+  color: #fff;
+}
+
+.imp-x {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #6b7385;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.imp-x:hover {
+  background: #eef2f7;
+}
+
+.imp-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.imp-lede {
+  margin: 0 0 10px;
+  color: #4a5266;
+  font-size: 12px;
+}
+
+.imp-hint {
+  margin: 10px 0 0;
+  color: #6b7385;
+  font-size: 11px;
+}
+
+.imp-error {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid #f3b0aa;
+  border-radius: 6px;
+  background: #fdf0ef;
+  color: #8c2318;
+  font-size: 12px;
+}
+
+/* Importer tiles */
+.imp-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.imp-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 10px;
+  border: 1px solid rgb(28 35 51 / 0.16);
+  border-radius: 8px;
+  background: #fff;
+  color: #1c2333;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.imp-tile:hover:not(:disabled) {
+  border-color: #1f6feb;
+  background: #f5f9ff;
+}
+
+.imp-tile:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.imp-soon {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #6b7385;
+  font-size: 9px;
+}
+
+/* Choice cards */
+.imp-choice {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.imp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid rgb(28 35 51 / 0.16);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.imp-card strong {
+  font-size: 12px;
+  color: #1c2333;
+}
+
+.imp-card span {
+  font-size: 11px;
+  color: #6b7385;
+}
+
+.imp-card[data-selected] {
+  border-color: #1f6feb;
+  background: #f5f9ff;
+  box-shadow: inset 0 0 0 1px #1f6feb;
+}
+
+.imp-paste {
+  width: 100%;
+  min-height: 150px;
+  padding: 8px;
+  border: 1px solid rgb(28 35 51 / 0.18);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  resize: vertical;
+}
+
+.imp-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.imp-link {
+  border: 0;
+  background: transparent;
+  color: #1f6feb;
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Options */
+.imp-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.imp-opt strong {
+  display: block;
+  color: #1c2333;
+  font-weight: 500;
+}
+
+.imp-opt em {
+  display: block;
+  margin-top: 2px;
+  color: #6b7385;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.imp-opt-label {
+  min-width: 110px;
+  color: #1c2333;
+}
+
+.imp-text {
+  width: 60px;
+  padding: 3px 6px;
+  border: 1px solid rgb(28 35 51 / 0.2);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* Preview counts */
+.imp-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.imp-count {
+  padding: 10px;
+  border: 1px solid rgb(28 35 51 / 0.14);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.imp-count[data-zero] {
+  opacity: 0.5;
+}
+
+.imp-count-value {
+  display: block;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  color: #14603a;
+}
+
+.imp-count[data-zero] .imp-count-value {
+  color: #6b7385;
+}
+
+.imp-count-label {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #6b7385;
+}
+
+.imp-warnings {
+  padding: 10px;
+  border: 1px solid #f0d9a8;
+  border-radius: 6px;
+  background: #fffaf0;
+  font-size: 11px;
+  color: #6b4e12;
+}
+
+.imp-warnings ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
+/* Footer */
+.imp-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid rgb(28 35 51 / 0.12);
+}
+
+.imp-spacer {
+  flex: 1;
+}
+
+.imp-btn {
+  padding: 6px 14px;
+  border: 1px solid rgb(28 35 51 / 0.2);
+  border-radius: 6px;
+  background: #fff;
+  color: #1c2333;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.imp-btn:hover:not(:disabled) {
+  background: #eef2f7;
+}
+
+.imp-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.imp-btn--primary {
+  border-color: #1f6feb;
+  background: #1f6feb;
+  color: #fff;
+}
+
+.imp-btn--primary:hover:not(:disabled) {
+  background: #1a5fd0;
 }
 
 /* ===== Loading / error fallback ===== */

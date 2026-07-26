@@ -12,6 +12,8 @@
 // yet, so every item points at the mode's own root view rather than a
 // distinct sub-page.
 
+import type { RailActionKey } from './railActions'
+
 export type ModeKey = 'model' | 'fabric' | 'products'
 
 export type RailIconName =
@@ -26,17 +28,26 @@ export type RailIconName =
   | 'explore'
   | 'sandbox'
   | 'dashboard'
+  | 'import'
+  | 'export'
 
 export interface RailItem {
   key: string
   /** Locked accessible name — used for both the Tooltip label and the VisuallyHidden text. */
   label: string
   icon: RailIconName
-  to: string
+  /** Navigation target. Mutually exclusive with `action`. */
+  to?: string
+  /** Command to run instead of navigating — see shell/railActions.ts. */
+  action?: RailActionKey
 }
 
 export const railConfig: Record<ModeKey, RailItem[]> = {
-  model: [{ key: 'layers', label: 'Model layers', icon: 'layers', to: '/model' }],
+  model: [
+    { key: 'layers', label: 'Model layers', icon: 'layers', to: '/model' },
+    { key: 'import', label: 'Import', icon: 'import', action: 'import' },
+    { key: 'export', label: 'Export', icon: 'export', action: 'export' },
+  ],
   fabric: [
     { key: 'overview', label: 'Overview', icon: 'dashboard', to: '/fabric/overview' },
     { key: 'explore', label: '1. Explore', icon: 'explore', to: '/fabric/explore' },

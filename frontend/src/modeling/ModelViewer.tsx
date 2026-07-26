@@ -19,7 +19,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ancestorsOf, buildIndex } from '../model/index'
 import { registerSearchHandler } from '../shell/searchBridge'
+import { registerRailAction } from '../shell/railActions'
 import ModelSearch from './ModelSearch'
+import ImportDialog from './ImportDialog'
+import ExportDialog from './ExportDialog'
 import type { SearchHit } from './searchModel'
 import { addTransition, deleteEntities, removeTransitions, renameEntity } from '../model/edit'
 import { hitTestTransitions } from './edgeGeometry'
@@ -68,6 +71,8 @@ export default function ModelViewer({
   /** Entity whose name is being edited in place. */
   const [editing, setEditing] = useState<EntityId | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   /** Entity to scroll into view once the layout reflects any expansion. */
   const [reveal, setReveal] = useState<EntityId | null>(null)
 
@@ -107,6 +112,11 @@ export default function ModelViewer({
 
   // Claim the shell's search triggers (rail button and Cmd+K) while mounted.
   useEffect(() => registerSearchHandler(() => setSearchOpen(true)), [])
+
+  // Same for the rail's Import/Export buttons, which are commands rather than
+  // destinations and act on the model this component holds.
+  useEffect(() => registerRailAction('import', () => setImportOpen(true)), [])
+  useEffect(() => registerRailAction('export', () => setExportOpen(true)), [])
 
   /**
    * Selects every entity carrying the picked name and brings the first into
@@ -297,6 +307,14 @@ export default function ModelViewer({
           onClose={() => setSearchOpen(false)}
         />
       )}
+      {importOpen && (
+        <ImportDialog
+          model={model}
+          onImport={onChange}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
+      {exportOpen && <ExportDialog model={model} onClose={() => setExportOpen(false)} />}
 
       {/* Pinned layer band — one continuous row, counter-scrolled horizontally. */}
       <div className="mv-band" style={{ height: LAYER_HEADER_HEIGHT }}>

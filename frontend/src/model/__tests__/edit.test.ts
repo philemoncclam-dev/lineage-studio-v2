@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { addTransition, deleteEntities, renameEntity, withDescendants } from '../edit'
+import {
+  UNNAMED,
+  addAttribute,
+  addLayer,
+  addObject,
+  addTransition,
+  deleteEntities,
+  deletePreservingTransitions,
+  renameEntity,
+  sortChildren,
+  withDescendants,
+} from '../edit'
 import { buildIndex, countEntities } from '../index'
 import { sampleModel } from '../sample'
 import type { LineageModel } from '../types'
@@ -119,6 +130,142 @@ describe('addTransition', () => {
     expect(addTransition(model, 'nope', findByName(model, 'm_gender'))).toBe(model)
   })
 })
+
+describe('add operations', () => {
+  it('appends a layer, and can place one before or after another', () => {
+    const model = sampleModel()
+    const appended = addLayer(model)
+    expect(appended.model.layers).toHaveLength(model.layers.length + 1)
+    expect(appended.model.layers[appended.model.layers.length - 1].id).toBe(appended.id)
+
+    const before = addLayer(model, { relativeTo: model.layers[1].id, side: 'before' })
+    expect(before.model.layers[1].id).toBe(before.id)
+
+    const after = addLayer(model, { relativeTo: model.layers[0].id, side: 'after' })
+    expect(after.model.layers[1].id).toBe(after.id)
+  })
+
+  it('adds an object to the named layer only', () => {
+    const model = sampleModel()
+    const { model: next, id } = addObject(model, model.layers[1].id)
+    expect(next.layers[1].objects).toHaveLength(model.layers[1].objects.length + 1)
+    expect(next.layers[0].objects).toHaveLength(model.layers[0].objects.length)
+    expect(next.layers[1].objects.at(-1)!.id).toBe(id)
+  })
+
+  it('adds an attribute under an object', () => {
+    const model = sampleModel()
+    const object = model.layers[1].objects[0]
+    const { model: next, id } = addAttribute(model, object.id)
+    expect(next.layers[1].objects[0].children.at(-1)!.id).toBe(id)
+  })
+
+  it('nesting under a leaf attribute turns it into a group', () => {
+    const model = sampleModel()
+    const leaf = findByName(model, 'ficoscore')
+    expect(buildIndex(model).entries.get(leaf)!.hasChildren).toBe(false)
+    const { model: next } = addAttribute(model, leaf)
+    expect(buildIndex(next).entries.get(leaf)!.hasChildren).toBe(true)
+  })
+
+  it('places an attribute before or after a sibling', () => {
+    const model = sampleModel()
+    const sibling = findByName(model, 'netincome')
+    const parent = buildIndex(model).entries.get(sibling)!.parentId!
+    const { model: next, id } = addAttribute(model, parent, {
+      relativeTo: sibling,
+      side: 'before',
+    })
+    const index = buildIndex(next)
+    const order = [...index.entries.values()].filter((e) => e.parentId === parent).map((e) => e.id)
+    expect(order.indexOf(id)).toBe(order.indexOf(sibling) - 1)
+  })
+
+  it('names new entities Unnamed so they can be typed over immediately', () => {
+    const model = sampleModel()
+    const { model: next, id } = addLayer(model)
+    expect(buildIndex(next).entries.get(id)!.name).toBe(UNNAMED)
+  })
+})
+
+describe('deletePreservingTransitions', () => {
+  /** A leaf with both an incoming and an outgoing edge — the only case that bridges. */
+  function findMidChainAttribute(model: LineageModel): string {
+    const index = buildIndex(model)
+    for (const entry of index.entries.values()) {
+      if (entry.kind !== 'attribute' || entry.hasChildren) continue
+      if ((index.incoming.get(entry.id)?.length ?? 0) === 0) continue
+      if ((index.outgoing.get(entry.id)?.length ?? 0) === 0) continue
+      return entry.id
+    }
+    throw new Error('sample has no mid-chain attribute')
+  }
+
+  it('bridges upstream to downstream across the deleted entity', () => {
+    const model = sampleModel()
+    const target = findMidChainAttribute(model)
+    const before = buildIndex(model)
+    const sources = before.incoming.get(target)!
+    const targets = before.outgoing.get(target)!
+
+    const next = deletePreservingTransitions(model, [target])
+    for (const from of sources) {
+      for (const to of targets) {
+        expect(next.transitions.some((t) => t.source === from && t.target === to)).toBe(true)
+      }
+    }
+  })
+
+  it('still removes the entity itself', () => {
+    const model = sampleModel()
+    const target = findMidChainAttribute(model)
+    const next = deletePreservingTransitions(model, [target])
+    expect(buildIndex(next).entries.has(target)).toBe(false)
+  })
+
+  it('leaves no transition pointing at the deleted entity', () => {
+    const model = sampleModel()
+    const target = findMidChainAttribute(model)
+    const next = deletePreservingTransitions(model, [target])
+    expect(next.transitions.some((t) => t.source === target || t.target === target)).toBe(false)
+  })
+
+  it('leaves a dead-end deletion with no bridge to build', () => {
+    const model = sampleModel()
+    const leaf = findByName(model, 'ficoscore') // no transitions at all
+    const next = deletePreservingTransitions(model, [leaf])
+    expect(next.transitions).toHaveLength(model.transitions.length)
+  })
+})
+
+describe('sortChildren', () => {
+  it('sorts an object’s attributes A-Z and Z-A', () => {
+    const model = sampleModel()
+    const object = model.layers[1].objects.find((o) => o.name === 'Targets')!
+    const group = object.children[0].id
+
+    const asc = sortChildren(model, group, 'asc')
+    const ascNames = findChildNames(asc, group)
+    expect(ascNames).toEqual([...ascNames].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })))
+
+    const desc = sortChildren(model, group, 'desc')
+    expect(findChildNames(desc, group)).toEqual([...ascNames].reverse())
+  })
+
+  it('does not sort deeper levels', () => {
+    const model = sampleModel()
+    const applicant = findByName(model, 'Applicant')
+    const parent = buildIndex(model).entries.get(applicant)!.parentId!
+    const before = findChildNames(model, applicant)
+    const next = sortChildren(model, parent, 'asc')
+    expect(findChildNames(next, applicant)).toEqual(before)
+  })
+})
+
+function findChildNames(model: LineageModel, parentId: string): string[] {
+  const index = buildIndex(model)
+  return [...index.entries.values()].filter((e) => e.parentId === parentId).map((e) => e.name)
+}
 
 describe('renameEntity', () => {
   it('renames a nested attribute without touching same-named siblings elsewhere', () => {

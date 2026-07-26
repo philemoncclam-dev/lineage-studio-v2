@@ -99,6 +99,175 @@ export function removeTransitions(model: LineageModel, ids: Iterable<EntityId>):
   }
 }
 
+let addCounter = 0
+const freshId = (prefix: string) =>
+  `${prefix}-${Date.now().toString(36)}-${(addCounter += 1)}`
+
+/** Name given to newly created entities, matching the Model Viewer's own default. */
+export const UNNAMED = 'Unnamed'
+
+export interface AddResult {
+  model: LineageModel
+  /** The created entity, so the caller can select it and open it for renaming. */
+  id: EntityId
+}
+
+export function addLayer(
+  model: LineageModel,
+  position?: { relativeTo: EntityId; side: 'before' | 'after' },
+): AddResult {
+  const layer = { id: freshId('l'), name: UNNAMED, objects: [] }
+  const layers = [...model.layers]
+  if (position) {
+    const at = layers.findIndex((l) => l.id === position.relativeTo)
+    layers.splice(at < 0 ? layers.length : at + (position.side === 'after' ? 1 : 0), 0, layer)
+  } else {
+    layers.push(layer)
+  }
+  return { model: { ...model, layers, updatedAt: Date.now() }, id: layer.id }
+}
+
+export function addObject(
+  model: LineageModel,
+  layerId: EntityId,
+  position?: { relativeTo: EntityId; side: 'before' | 'after' },
+): AddResult {
+  const object: ModelObject = { id: freshId('o'), name: UNNAMED, children: [] }
+  return {
+    model: {
+      ...model,
+      layers: model.layers.map((l) => {
+        if (l.id !== layerId) return l
+        const objects = [...l.objects]
+        if (position) {
+          const at = objects.findIndex((o) => o.id === position.relativeTo)
+          objects.splice(
+            at < 0 ? objects.length : at + (position.side === 'after' ? 1 : 0),
+            0,
+            object,
+          )
+        } else {
+          objects.push(object)
+        }
+        return { ...l, objects }
+      }),
+      updatedAt: Date.now(),
+    },
+    id: object.id,
+  }
+}
+
+/**
+ * Adds an attribute under `parentId` (an object or an attribute — nesting under
+ * an attribute is what turns it into a Group), or beside `position.relativeTo`.
+ */
+export function addAttribute(
+  model: LineageModel,
+  parentId: EntityId,
+  position?: { relativeTo: EntityId; side: 'before' | 'after' },
+): AddResult {
+  const attribute: Attribute = { id: freshId('a'), name: UNNAMED, children: [] }
+
+  const insertBeside = (attrs: Attribute[]): Attribute[] => {
+    if (!position) return attrs
+    const at = attrs.findIndex((a) => a.id === position.relativeTo)
+    if (at >= 0) {
+      const next = [...attrs]
+      next.splice(at + (position.side === 'after' ? 1 : 0), 0, attribute)
+      return next
+    }
+    return attrs.map((a) => ({ ...a, children: insertBeside(a.children) }))
+  }
+
+  const appendUnder = (attrs: Attribute[]): Attribute[] =>
+    attrs.map((a) =>
+      a.id === parentId
+        ? { ...a, children: [...a.children, attribute] }
+        : { ...a, children: appendUnder(a.children) },
+    )
+
+  return {
+    model: {
+      ...model,
+      layers: model.layers.map((l) => ({
+        ...l,
+        objects: l.objects.map((o) => {
+          if (position) return { ...o, children: insertBeside(o.children) }
+          if (o.id === parentId) return { ...o, children: [...o.children, attribute] }
+          return { ...o, children: appendUnder(o.children) }
+        }),
+      })),
+      updatedAt: Date.now(),
+    },
+    id: attribute.id,
+  }
+}
+
+/**
+ * Deletes entities but bridges the lineage across them: every incoming edge is
+ * reconnected to every outgoing edge, so flow through the deleted entity is
+ * preserved rather than severed.
+ */
+export function deletePreservingTransitions(
+  model: LineageModel,
+  ids: Iterable<EntityId>,
+): LineageModel {
+  const doomed = withDescendants(model, ids)
+  if (doomed.size === 0) return model
+
+  const bridged = [...model.transitions]
+  const add = (source: EntityId, target: EntityId) => {
+    if (source === target) return
+    if (doomed.has(source) || doomed.has(target)) return
+    if (bridged.some((t) => t.source === source && t.target === target)) return
+    bridged.push({ id: freshId('t'), source, target })
+  }
+
+  for (const id of doomed) {
+    const upstream = model.transitions.filter((t) => t.target === id).map((t) => t.source)
+    const downstream = model.transitions.filter((t) => t.source === id).map((t) => t.target)
+    for (const from of upstream) for (const to of downstream) add(from, to)
+  }
+
+  return deleteEntities({ ...model, transitions: bridged }, ids)
+}
+
+/** Sorts an entity's direct children by name. Deeper levels are untouched. */
+export function sortChildren(
+  model: LineageModel,
+  parentId: EntityId,
+  direction: 'asc' | 'desc',
+): LineageModel {
+  // Numbers before letters, matching the documented ordering.
+  const compare = (a: { name: string }, b: { name: string }) => {
+    const result = a.name.localeCompare(b.name, undefined, { numeric: true })
+    return direction === 'asc' ? result : -result
+  }
+
+  const sortAttrs = (attrs: Attribute[]): Attribute[] =>
+    attrs.map((a) =>
+      a.id === parentId
+        ? { ...a, children: [...a.children].sort(compare) }
+        : { ...a, children: sortAttrs(a.children) },
+    )
+
+  return {
+    ...model,
+    layers: model.layers.map((l) => ({
+      ...l,
+      objects:
+        l.id === parentId
+          ? [...l.objects].sort(compare)
+          : l.objects.map((o) =>
+              o.id === parentId
+                ? { ...o, children: [...o.children].sort(compare) }
+                : { ...o, children: sortAttrs(o.children) },
+            ),
+    })),
+    updatedAt: Date.now(),
+  }
+}
+
 export function renameEntity(
   model: LineageModel,
   id: EntityId,

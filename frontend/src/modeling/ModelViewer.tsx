@@ -24,7 +24,20 @@ import ModelSearch from './ModelSearch'
 import ImportDialog from './ImportDialog'
 import ExportDialog from './ExportDialog'
 import type { SearchHit } from './searchModel'
-import { addTransition, deleteEntities, removeTransitions, renameEntity } from '../model/edit'
+import {
+  addAttribute,
+  addLayer,
+  addObject,
+  addTransition,
+  deleteEntities,
+  deletePreservingTransitions,
+  removeTransitions,
+  renameEntity,
+  sortChildren,
+  type AddResult,
+} from '../model/edit'
+import { copyEntities, paste, type Clipboard, type PasteTarget } from '../model/clipboard'
+import ContextMenu, { type MenuItem } from './ContextMenu'
 import { hitTestTransitions } from './edgeGeometry'
 import {
   CARD_HEADER_HEIGHT,
@@ -73,6 +86,10 @@ export default function ModelViewer({
   const [searchOpen, setSearchOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
+  // Local, not the system clipboard: the payload is a model subtree with
+  // transition bookkeeping, which has no sensible text/plain representation.
+  const clipboard = useRef<Clipboard | null>(null)
   /** Entity to scroll into view once the layout reflects any expansion. */
   const [reveal, setReveal] = useState<EntityId | null>(null)
 
@@ -225,6 +242,22 @@ export default function ModelViewer({
     setEditing(null)
   }
 
+  /** Applies an add, then selects the new entity and opens it for renaming. */
+  const applyAdd = (result: AddResult) => {
+    onChange(result.model)
+    setSelection(new Set([result.id]))
+    setEditing(result.id)
+  }
+
+  const doCopy = (ids: ReadonlySet<EntityId>) => {
+    const clip = copyEntities(model, ids)
+    if (clip) clipboard.current = clip
+  }
+
+  const doPaste = (target: PasteTarget) => {
+    if (clipboard.current) onChange(paste(model, clipboard.current, target))
+  }
+
   const deleteSelected = useCallback(() => {
     if (selection.size === 0 && selectedEdges.size === 0) return
     // Entities first, then edges: deleting an entity already removes the
@@ -237,6 +270,229 @@ export default function ModelViewer({
     setSelection(new Set())
     setSelectedEdges(new Set())
   }, [model, onChange, selection, selectedEdges])
+
+  const descendantsOf = (id: EntityId): EntityId[] => {
+    const out: EntityId[] = []
+    const walk = (parent: EntityId) => {
+      for (const entry of index.entries.values()) {
+        if (entry.parentId === parent) {
+          out.push(entry.id)
+          walk(entry.id)
+        }
+      }
+    }
+    walk(id)
+    return out
+  }
+
+  /**
+   * Builds the menu for whatever was right-clicked. Item sets differ by kind
+   * because the vocabulary genuinely differs — a layer holds objects, an object
+   * holds attributes, and an attribute nests further attributes (becoming a
+   * Group in the process).
+   */
+  const openMenu = (e: React.MouseEvent, targetId: EntityId | null) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    const canPaste = clipboard.current !== null
+    // Right-clicking inside an existing multi-selection acts on all of it;
+    // right-clicking outside one re-selects just that entity.
+    const multi = targetId !== null && selection.has(targetId) && selection.size > 1
+    const acting: ReadonlySet<EntityId> = multi
+      ? selection
+      : new Set(targetId ? [targetId] : [])
+    if (targetId && !multi) setSelection(new Set([targetId]))
+
+    const items: MenuItem[] = []
+
+    if (!targetId) {
+      items.push({ key: 'add-layer', label: 'Add layer', onSelect: () => applyAdd(addLayer(model)) })
+      items.push({
+        key: 'paste',
+        label: 'Paste as layer',
+        disabled: !canPaste,
+        onSelect: () => doPaste({ mode: 'canvas' }),
+      })
+      setMenu({ x: e.clientX, y: e.clientY, items })
+      return
+    }
+
+    const entry = index.entries.get(targetId)
+    if (!entry) return
+
+    if (multi) {
+      items.push(
+        { key: 'copy', label: `Copy ${selection.size} entities`, onSelect: () => doCopy(acting) },
+        {
+          key: 'cut',
+          label: `Cut ${selection.size} entities`,
+          onSelect: () => {
+            doCopy(acting)
+            onChange(deleteEntities(model, acting))
+            setSelection(new Set())
+          },
+        },
+        {
+          key: 'delete',
+          label: `Delete ${selection.size} entities`,
+          separated: true,
+          danger: true,
+          onSelect: deleteSelected,
+        },
+        {
+          key: 'delete-preserve',
+          label: 'Delete (preserve transitions)',
+          danger: true,
+          onSelect: () => {
+            onChange(deletePreservingTransitions(model, acting))
+            setSelection(new Set())
+          },
+        },
+      )
+      setMenu({ x: e.clientX, y: e.clientY, items })
+      return
+    }
+
+    if (entry.kind === 'layer') {
+      items.push(
+        { key: 'add-object', label: 'Add object', onSelect: () => applyAdd(addObject(model, targetId)) },
+        {
+          key: 'add-layer-before',
+          label: 'Add layer before',
+          separated: true,
+          onSelect: () => applyAdd(addLayer(model, { relativeTo: targetId, side: 'before' })),
+        },
+        {
+          key: 'add-layer-after',
+          label: 'Add layer after',
+          onSelect: () => applyAdd(addLayer(model, { relativeTo: targetId, side: 'after' })),
+        },
+      )
+    } else if (entry.kind === 'object') {
+      items.push(
+        {
+          key: 'add-attribute',
+          label: 'Add attribute',
+          onSelect: () => applyAdd(addAttribute(model, targetId)),
+        },
+        {
+          key: 'add-object-before',
+          label: 'Add object before',
+          separated: true,
+          onSelect: () =>
+            applyAdd(addObject(model, entry.layerId, { relativeTo: targetId, side: 'before' })),
+        },
+        {
+          key: 'add-object-after',
+          label: 'Add object after',
+          onSelect: () =>
+            applyAdd(addObject(model, entry.layerId, { relativeTo: targetId, side: 'after' })),
+        },
+      )
+    } else {
+      items.push(
+        {
+          key: 'add-nested',
+          label: 'Add nested attribute',
+          onSelect: () => applyAdd(addAttribute(model, targetId)),
+        },
+        {
+          key: 'add-before',
+          label: 'Add attribute before',
+          separated: true,
+          onSelect: () =>
+            applyAdd(
+              addAttribute(model, entry.parentId ?? '', { relativeTo: targetId, side: 'before' }),
+            ),
+        },
+        {
+          key: 'add-after',
+          label: 'Add attribute after',
+          onSelect: () =>
+            applyAdd(
+              addAttribute(model, entry.parentId ?? '', { relativeTo: targetId, side: 'after' }),
+            ),
+        },
+      )
+    }
+
+    items.push(
+      { key: 'copy', label: 'Copy', separated: true, onSelect: () => doCopy(acting) },
+      {
+        key: 'cut',
+        label: 'Cut',
+        onSelect: () => {
+          doCopy(acting)
+          onChange(deleteEntities(model, acting))
+          setSelection(new Set())
+        },
+      },
+      {
+        key: 'paste-into',
+        label: entry.kind === 'layer' ? 'Paste as object' : 'Paste inside',
+        disabled: !canPaste,
+        onSelect: () => doPaste({ mode: 'into', id: targetId }),
+      },
+      {
+        key: 'paste-before',
+        label: 'Paste before',
+        disabled: !canPaste,
+        onSelect: () => doPaste({ mode: 'before', id: targetId }),
+      },
+      {
+        key: 'paste-after',
+        label: 'Paste after',
+        disabled: !canPaste,
+        onSelect: () => doPaste({ mode: 'after', id: targetId }),
+      },
+    )
+
+    if (entry.hasChildren) {
+      items.push(
+        {
+          key: 'sort-asc',
+          label: 'Sort A–Z',
+          separated: true,
+          onSelect: () => onChange(sortChildren(model, targetId, 'asc')),
+        },
+        {
+          key: 'sort-desc',
+          label: 'Sort Z–A',
+          onSelect: () => onChange(sortChildren(model, targetId, 'desc')),
+        },
+        {
+          key: 'select-descendants',
+          label: 'Select all descendants',
+          onSelect: () => setSelection(new Set(descendantsOf(targetId))),
+        },
+      )
+    }
+
+    items.push(
+      { key: 'rename', label: 'Rename', separated: true, onSelect: () => setEditing(targetId) },
+      {
+        key: 'delete',
+        label: 'Delete',
+        danger: true,
+        onSelect: () => {
+          onChange(deleteEntities(model, [targetId]))
+          setSelection(new Set())
+        },
+      },
+      {
+        key: 'delete-preserve',
+        label: 'Delete (preserve transitions)',
+        danger: true,
+        onSelect: () => {
+          onChange(deletePreservingTransitions(model, [targetId]))
+          setSelection(new Set())
+        },
+      },
+    )
+
+    setMenu({ x: e.clientX, y: e.clientY, items })
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -259,6 +515,26 @@ export default function ModelViewer({
         onRedo()
         return
       }
+      if (mod && e.key.toLowerCase() === 'c' && selection.size > 0) {
+        e.preventDefault()
+        doCopy(selection)
+        return
+      }
+      if (mod && e.key.toLowerCase() === 'x' && selection.size > 0) {
+        e.preventDefault()
+        doCopy(selection)
+        onChange(deleteEntities(model, selection))
+        setSelection(new Set())
+        return
+      }
+      if (mod && e.key.toLowerCase() === 'v' && clipboard.current) {
+        e.preventDefault()
+        // Paste inside the selection when there is one, otherwise onto the
+        // canvas as new layers.
+        const [first] = selection
+        doPaste(first ? { mode: 'into', id: first } : { mode: 'canvas' })
+        return
+      }
       if (e.key === 'Escape') {
         setConnectFrom(null)
         setEditing(null)
@@ -273,7 +549,9 @@ export default function ModelViewer({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [deleteSelected, onUndo, onRedo])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- doCopy/doPaste are
+    // recreated every render; the values they close over are listed instead.
+  }, [deleteSelected, onUndo, onRedo, model, onChange, selection])
 
   // World-space rect currently on screen, used to cull cards and rows.
   const view = useMemo(
@@ -315,6 +593,9 @@ export default function ModelViewer({
         />
       )}
       {exportOpen && <ExportDialog model={model} onClose={() => setExportOpen(false)} />}
+      {menu && (
+        <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
+      )}
 
       {/* Pinned layer band — one continuous row, counter-scrolled horizontally. */}
       <div className="mv-band" style={{ height: LAYER_HEADER_HEIGHT }}>
@@ -335,6 +616,7 @@ export default function ModelViewer({
                 else select(layer.id, e.ctrlKey || e.metaKey)
               }}
               onDoubleClick={() => !layer.collapsed && setEditing(layer.id)}
+              onContextMenu={(e) => openMenu(e, layer.id)}
               title={layer.collapsed ? `Expand ${layer.name}` : layer.name}
             >
               {/* Anchored to the column centre, not the segment centre — the two
@@ -378,6 +660,11 @@ export default function ModelViewer({
           className="mv-world"
           style={{ width: layout.width, height: layout.height }}
           onClick={onWorldClick}
+          onContextMenu={(e) => {
+            // Only the bare canvas — cards and rows handle their own.
+            if ((e.target as HTMLElement).closest('.mv-card')) return
+            openMenu(e, null)
+          }}
         >
           <TransitionLayer
             layout={layout}
@@ -405,6 +692,7 @@ export default function ModelViewer({
               onConnectFrom={setConnectFrom}
               onEdit={setEditing}
               onCommitRename={commitRename}
+              onContextMenu={openMenu}
             />
           ))}
         </div>
@@ -493,6 +781,7 @@ interface CardProps {
   onConnectFrom: (id: EntityId) => void
   onEdit: (id: EntityId) => void
   onCommitRename: (id: EntityId, name: string) => void
+  onContextMenu: (e: React.MouseEvent, id: EntityId) => void
 }
 
 function Card({
@@ -508,6 +797,7 @@ function Card({
   onConnectFrom,
   onEdit,
   onCommitRename,
+  onContextMenu,
 }: CardProps) {
   // Row-level virtualization. A card can be thousands of rows tall, so mount
   // only the slice the viewport covers and spacer-pad the rest.
@@ -531,6 +821,7 @@ function Card({
         style={{ height: CARD_HEADER_HEIGHT }}
         onClick={(e) => onSelect(card.id, e.ctrlKey || e.metaKey)}
         onDoubleClick={() => onEdit(card.id)}
+        onContextMenu={(e) => onContextMenu(e, card.id)}
       >
         <button
           className="mv-twisty"
@@ -571,6 +862,7 @@ function Card({
               data-traced={highlighted.has(row.id) || undefined}
               onClick={(e) => onSelect(row.id, e.ctrlKey || e.metaKey)}
               onDoubleClick={() => onEdit(row.id)}
+              onContextMenu={(e) => onContextMenu(e, row.id)}
             >
               {row.hasChildren ? (
                 <button

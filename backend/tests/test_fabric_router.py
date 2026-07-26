@@ -261,6 +261,7 @@ def test_pipeline_definition_parses_activities_and_edges(client, monkeypatch):
                     {
                         "name": "Run notebook",
                         "type": "TridentNotebook",
+                        "typeProperties": {"notebookId": "nb-guid", "workspaceId": "ws-guid"},
                         "dependsOn": [{"activity": "Copy orders", "dependencyConditions": ["Succeeded"]}],
                     },
                 ]
@@ -276,8 +277,14 @@ def test_pipeline_definition_parses_activities_and_edges(client, monkeypatch):
     _use(monkeypatch, PipelineClient())
     body = client.get("/fabric/workspaces/ws1/pipelines/p1/definition").json()
     assert body == [
-        {"name": "Copy orders", "type": "Copy", "depends_on": []},
-        {"name": "Run notebook", "type": "TridentNotebook", "depends_on": ["Copy orders"]},
+        {"name": "Copy orders", "type": "Copy", "depends_on": [], "notebook_id": None, "workspace_id": None},
+        {
+            "name": "Run notebook",
+            "type": "TridentNotebook",
+            "depends_on": ["Copy orders"],
+            "notebook_id": "nb-guid",
+            "workspace_id": "ws-guid",
+        },
     ]
 
 

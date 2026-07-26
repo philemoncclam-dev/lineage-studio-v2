@@ -22,6 +22,10 @@ class PipelineActivity(BaseModel):
     name: str
     type: str
     depends_on: list[str] = []
+    # For notebook activities (type "TridentNotebook"): the referenced notebook
+    # so the sandbox can actually run it. None for non-notebook activities.
+    notebook_id: str | None = None
+    workspace_id: str | None = None
 
 
 def parse_pipeline_activities(definition: dict) -> list[PipelineActivity]:
@@ -54,5 +58,15 @@ def parse_pipeline_activities(definition: dict) -> list[PipelineActivity]:
             dep = d.get("activity") if isinstance(d, dict) else d
             if dep:
                 deps.append(dep)
-        out.append(PipelineActivity(name=name, type=a.get("type") or "Unknown", depends_on=deps))
+        tp = a.get("typeProperties") or {}
+        notebook_id = tp.get("notebookId") or (tp.get("notebook") or {}).get("id")
+        out.append(
+            PipelineActivity(
+                name=name,
+                type=a.get("type") or "Unknown",
+                depends_on=deps,
+                notebook_id=notebook_id,
+                workspace_id=tp.get("workspaceId"),
+            )
+        )
     return out

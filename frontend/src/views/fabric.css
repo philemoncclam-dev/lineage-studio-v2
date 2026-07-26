@@ -779,6 +779,20 @@
   background: color-mix(in oklab, var(--color-destructive) 14%, transparent);
 }
 
+/* one executed notebook inside a step (a pipeline step has several) */
+.sbx-run {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sbx-run + .sbx-run {
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+.sbx-run-name {
+  color: var(--color-text-secondary);
+  font-size: var(--text-micro, 11px);
+}
 .sbx-io {
   display: flex;
   gap: 32px;

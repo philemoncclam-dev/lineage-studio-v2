@@ -2,8 +2,8 @@
 // as ordered steps (1, 2, 3 …) on the left; the right panel draws them as a
 // live lineage and, on Run, executes each notebook in the isolated backend
 // harness (scrubbed env, no Fabric creds, no real writes) and reports what each
-// step reads and writes. Pipelines are shown structurally (their activities are
-// not executed by the sandbox).
+// step reads and writes. A pipeline step runs each of its notebook activities
+// in dependency order; its other activity types are shown structurally only.
 //
 // A notebook opened from Explore arrives via ?ws/?item/?name and seeds step 1.
 import { useEffect, useMemo, useState } from 'react'
@@ -49,15 +49,46 @@ interface Step {
 }
 
 type StepStatus = 'pending' | 'running' | 'ok' | 'error' | 'skipped'
+// One executed notebook — the step itself for a notebook, or one notebook
+// activity for a pipeline.
+interface RunEntry {
+  name: string
+  status: 'ok' | 'error'
+  result?: SandboxRunResult
+  error?: string
+}
 interface StepResult {
   status: StepStatus
-  result?: SandboxRunResult
+  runs: RunEntry[]
+  /** Full activity list for a pipeline (structure, incl. non-notebook ones). */
   activities?: FabricPipelineActivity[]
   error?: string
 }
 
+const stepReads = (r?: StepResult): string[] => [...new Set((r?.runs ?? []).flatMap((x) => x.result?.reads ?? []))]
+const stepWrites = (r?: StepResult): string[] => [...new Set((r?.runs ?? []).flatMap((x) => x.result?.writes ?? []))]
+
 let seq = 0
 const newKey = () => `step-${++seq}`
+
+// Order a pipeline's activities so every activity follows the ones it depends
+// on. Kahn's algorithm, keeping the definition order among ready activities;
+// anything left in a dependency cycle (or naming a missing activity) is
+// appended in definition order rather than dropped.
+function orderActivities(activities: FabricPipelineActivity[]): FabricPipelineActivity[] {
+  const known = new Set(activities.map((a) => a.name))
+  const pending = activities.slice()
+  const done = new Set<string>()
+  const out: FabricPipelineActivity[] = []
+  while (pending.length) {
+    const i = pending.findIndex((a) => a.depends_on.every((d) => !known.has(d) || done.has(d)))
+    if (i < 0) break
+    const [a] = pending.splice(i, 1)
+    done.add(a.name)
+    out.push(a)
+  }
+  return [...out, ...pending]
+}
 
 const isPipelineEntry = (e: FabricCatalogEntry) =>
   e.kind === 'item' && (e.item_type ?? '').toLowerCase().includes('pipeline')
@@ -198,14 +229,12 @@ function buildFlow(steps: Step[], results: Map<string, StepResult>): { nodes: Fl
         : res?.status === 'error'
           ? 'error'
           : step.kind === 'pipeline' && res?.activities
-            ? `${res.activities.length} activities`
+            ? `${res.activities.length} activities · ${res.runs.length} run`
             : undefined
     nodes.push({ id: stepId, kind: step.kind, label: step.name, sub, badge: String(i + 1) })
 
-    if (res?.result) {
-      for (const r of res.result.reads) edges.push({ from: ensureTable(r), to: stepId })
-      for (const wr of res.result.writes) edges.push({ from: stepId, to: ensureTable(wr) })
-    }
+    for (const r of stepReads(res)) edges.push({ from: ensureTable(r), to: stepId })
+    for (const wr of stepWrites(res)) edges.push({ from: stepId, to: ensureTable(wr) })
   })
 
   // Faint order edges between consecutive steps so the sequence reads clearly
@@ -292,26 +321,64 @@ function SandboxRoute() {
   const runAll = async () => {
     setRunning(true)
     const next = new Map<string, StepResult>()
-    steps.forEach((s) => next.set(s.key, { status: 'pending' }))
+    steps.forEach((s) => next.set(s.key, { status: 'pending', runs: [] }))
     setResults(new Map(next))
 
     for (const step of steps) {
-      next.set(step.key, { status: 'running' })
+      next.set(step.key, { status: 'running', runs: [] })
       setResults(new Map(next))
       try {
         if (step.kind === 'notebook') {
           const result = await runSandbox({ name: step.name, workspace_id: step.ws, item_id: step.itemId })
           next.set(step.key, {
             status: result.ok ? 'ok' : 'error',
-            result,
+            runs: [
+              {
+                name: step.name,
+                status: result.ok ? 'ok' : 'error',
+                result,
+                error: result.ok ? undefined : result.error ?? undefined,
+              },
+            ],
             error: result.ok ? undefined : result.error ?? undefined,
           })
         } else {
           const activities = await fetchFabricPipelineDefinition(step.ws, step.itemId)
-          next.set(step.key, { status: 'ok', activities })
+          next.set(step.key, { status: 'running', runs: [], activities })
+          setResults(new Map(next))
+
+          // Execute the pipeline's notebook activities in dependency order.
+          const runs: RunEntry[] = []
+          for (const a of orderActivities(activities)) {
+            if (!a.notebook_id) continue
+            try {
+              const result = await runSandbox({
+                name: a.name,
+                workspace_id: a.workspace_id ?? step.ws,
+                item_id: a.notebook_id,
+              })
+              runs.push({
+                name: a.name,
+                status: result.ok ? 'ok' : 'error',
+                result,
+                error: result.ok ? undefined : result.error ?? undefined,
+              })
+            } catch (e) {
+              runs.push({ name: a.name, status: 'error', error: e instanceof Error ? e.message : String(e) })
+            }
+            next.set(step.key, { status: 'running', runs: runs.slice(), activities })
+            setResults(new Map(next))
+          }
+          const failed = runs.filter((r) => r.status === 'error')
+          next.set(step.key, {
+            status: failed.length ? 'error' : 'ok',
+            runs,
+            activities,
+            error: failed.length ? `${failed.length} of ${runs.length} notebook activities failed` : undefined,
+          })
         }
       } catch (e) {
-        next.set(step.key, { status: 'error', error: e instanceof Error ? e.message : String(e) })
+        next.set(step.key, { status: 'error', runs: [], error: e instanceof Error ? e.message : String(e) })
       }
       setResults(new Map(next))
     }
@@ -321,14 +388,16 @@ function SandboxRoute() {
   const flow = useMemo(() => buildFlow(steps, results), [steps, results])
   const ran = results.size > 0
 
+  // Every executed notebook across all steps — a notebook step contributes one,
+  // a pipeline step one per notebook activity.
   const notebookRuns = steps
-    .map((s) => ({ s, r: results.get(s.key)?.result }))
-    .filter((x): x is { s: Step; r: SandboxRunResult } => !!x.r)
+    .flatMap((s) => (results.get(s.key)?.runs ?? []).map((e) => ({ s, name: e.name, r: e.result })))
+    .filter((x): x is { s: Step; name: string; r: SandboxRunResult } => !!x.r)
 
   const createModel = () => {
-    const merged = mergeGraphs(notebookRuns.map(({ s, r }) => sandboxRunToGraph(r, s.name)))
+    const merged = mergeGraphs(notebookRuns.map(({ name, r }) => sandboxRunToGraph(r, name)))
     const draft = graphToModel(adapt(merged))
-    const label = notebookRuns.length === 1 ? notebookRuns[0].s.name : 'Sandbox sequence'
+    const label = notebookRuns.length === 1 ? notebookRuns[0].name : 'Sandbox sequence'
     const saved = saveNew({ name: `${label} — model`, nodes: draft.nodes, edges: draft.edges, tags: [] })
     window.location.assign(`/model/models/${saved.id}`)
   }
@@ -433,23 +502,31 @@ function SandboxRoute() {
                           <span className="sbx-step-report-status">{r.status}</span>
                         </div>
                         {r.error && <div className="fx-note" data-error="true">{r.error}</div>}
-                        {r.result && (
-                          <div className="sbx-io">
-                            <div>
-                              <span className="sbx-io-label">Reads</span>
-                              {r.result.reads.length ? r.result.reads.map((x) => <code key={x} className="sbx-chip">{x}</code>) : <span className="fx-note">none</span>}
-                            </div>
-                            <div>
-                              <span className="sbx-io-label">Writes</span>
-                              {r.result.writes.length ? r.result.writes.map((x) => <code key={x} className="sbx-chip sbx-write">{x}</code>) : <span className="fx-note">none</span>}
-                            </div>
-                          </div>
-                        )}
                         {step.kind === 'pipeline' && r.activities && (
                           <div className="fx-note">
-                            Pipeline with {r.activities.length} activities — shown structurally; the sandbox doesn’t execute pipelines.
+                            {r.activities.length} activities — {r.runs.length} notebook
+                            {r.runs.length === 1 ? '' : 's'} executed in dependency order; other activity types are
+                            shown structurally.
                           </div>
                         )}
+                        {r.runs.map((run) => (
+                          <div className="sbx-run" key={run.name}>
+                            {step.kind === 'pipeline' && <div className="sbx-run-name">{run.name}</div>}
+                            {run.error && <div className="fx-note" data-error="true">{run.error}</div>}
+                            {run.result && (
+                              <div className="sbx-io">
+                                <div>
+                                  <span className="sbx-io-label">Reads</span>
+                                  {run.result.reads.length ? run.result.reads.map((x) => <code key={x} className="sbx-chip">{x}</code>) : <span className="fx-note">none</span>}
+                                </div>
+                                <div>
+                                  <span className="sbx-io-label">Writes</span>
+                                  {run.result.writes.length ? run.result.writes.map((x) => <code key={x} className="sbx-chip sbx-write">{x}</code>) : <span className="fx-note">none</span>}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     )
                   })}

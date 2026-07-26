@@ -501,6 +501,8 @@ export interface FabricPipelineActivity {
   name: string
   type: string
   depends_on: string[]
+  notebook_id?: string | null
+  workspace_id?: string | null
 }
 
 export async function fetchFabricPipelineDefinition(

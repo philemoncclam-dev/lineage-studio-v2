@@ -5,11 +5,17 @@
 // <path> per transition costs more in layout/style recalc than the whole rest
 // of the viewer; a single canvas draws them in one pass with no DOM cost.
 //
-// The canvas is viewport-sized, not world-sized — a world-sized canvas would
-// blow past the browser's maximum canvas dimensions on a large model. It is
-// absolutely positioned at the current scroll offset (so it stays parked over
-// the visible region while remaining a child of the scrolling world, and thus
-// beneath the cards) and draws with an inverse translate.
+// The canvas is WORLD-sized and scrolls with the cards, rather than being a
+// viewport-sized canvas re-parked at the scroll offset. The viewport-following
+// version had to be positioned from React scroll state, which lags the
+// browser's native scrolling by a frame — so edges visibly detached from their
+// rows while scrolling. Living in world coordinates removes the synchronisation
+// problem entirely: the browser scrolls the canvas exactly as it scrolls the
+// cards.
+//
+// The cost is memory, which is bounded below: past MAX_CANVAS_PIXELS the
+// backing store drops to 1x rather than devicePixelRatio, trading crispness for
+// a canvas the browser will actually allocate.
 
 import { useEffect, useRef } from 'react'
 import type { EntityId } from '../model/types'
@@ -20,15 +26,14 @@ interface Props {
   layout: Layout
   transitions: TransitionLike[]
   parentOf: (id: EntityId) => EntityId | null
-  /** Current scroll offset of the world container. */
-  offset: { x: number; y: number }
-  width: number
-  height: number
   /** Entities on the current trace — their edges draw highlighted. */
   highlighted: ReadonlySet<EntityId>
   /** Transitions the user has picked, by transition id. */
   selected: ReadonlySet<EntityId>
 }
+
+/** ~24 megapixels of backing store, well inside every browser's canvas limit. */
+const MAX_CANVAS_PIXELS = 24_000_000
 
 const EDGE = 'rgba(60, 70, 90, 0.34)'
 const EDGE_TRACED = 'rgba(22, 143, 92, 0.85)'
@@ -38,13 +43,12 @@ export default function TransitionLayer({
   layout,
   transitions,
   parentOf,
-  offset,
-  width,
-  height,
   highlighted,
   selected,
 }: Props) {
   const ref = useRef<HTMLCanvasElement | null>(null)
+  const width = layout.width
+  const height = layout.height
 
   useEffect(() => {
     const canvas = ref.current
@@ -52,14 +56,13 @@ export default function TransitionLayer({
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const dpr = window.devicePixelRatio || 1
+    const wanted = window.devicePixelRatio || 1
+    const dpr = width * height * wanted * wanted > MAX_CANVAS_PIXELS ? 1 : wanted
     canvas.width = Math.floor(width * dpr)
     canvas.height = Math.floor(height * dpr)
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, width, height)
-    // World -> viewport. Everything below is in world coordinates.
-    ctx.translate(-offset.x, -offset.y)
 
     // Painter's order: plain, then traced, then selected. Later passes must sit
     // on top, otherwise a picked line can be buried by the bundle around it.
@@ -80,21 +83,6 @@ export default function TransitionLayer({
       for (const t of list) {
         const c = curveFor(layout, parentOf, t)
         if (!c) continue
-
-        // Cheap viewport cull — skip curves whose bounding box is off-screen.
-        const minX = Math.min(c.x0, c.x1)
-        const maxX = Math.max(c.x0, c.x1)
-        const minY = Math.min(c.y0, c.y1)
-        const maxY = Math.max(c.y0, c.y1)
-        if (
-          maxX < offset.x ||
-          minX > offset.x + width ||
-          maxY < offset.y ||
-          minY > offset.y + height
-        ) {
-          continue
-        }
-
         ctx.moveTo(c.x0, c.y0)
         ctx.bezierCurveTo(c.cx0, c.y0, c.cx1, c.y1, c.x1, c.y1)
       }
@@ -104,13 +92,13 @@ export default function TransitionLayer({
     draw(plain, EDGE, 1)
     draw(traced, EDGE_TRACED, 1.8)
     draw(picked, EDGE_SELECTED, 2.4)
-  }, [layout, transitions, parentOf, offset, width, height, highlighted, selected])
+  }, [layout, transitions, parentOf, width, height, highlighted, selected])
 
   return (
     <canvas
       ref={ref}
       className="mv-edges"
-      style={{ left: offset.x, top: offset.y, width, height }}
+      style={{ left: 0, top: 0, width, height }}
       aria-hidden="true"
     />
   )

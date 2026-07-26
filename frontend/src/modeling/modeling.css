@@ -43,25 +43,26 @@
 }
 
 /* ===== Layer band =====
-   One continuous row across the top of the viewport, pinned above the scroller
-   and counter-translated horizontally so each segment stays over its column. */
+   One continuous row, sticky INSIDE the scroller: it scrolls horizontally with
+   the columns (so it can never drift out of alignment) and pins vertically. */
 .mv-band {
-  position: absolute;
+  position: sticky;
+  /* `top` only — deliberately no `left`. Sticking horizontally would pin the
+     band to the viewport's left edge and re-create the drift this replaced;
+     it must scroll sideways with its columns. */
   top: 0;
-  left: 0;
-  right: 0;
   z-index: 3;
-  overflow: hidden;
+  transition: box-shadow 0.15s;
   /* Matches the canvas surface (minus its dot grid) so the band reads as part
      of the document rather than as chrome sitting on top of it. */
   background: #fbfbfc;
   border-bottom: 1px solid rgb(28 35 51 / 0.22);
 }
 
-.mv-band-inner {
-  position: relative;
-  height: 100%;
-  will-change: transform;
+/* Lifts once content has scrolled under it, so the pinned band reads as
+   floating above the canvas rather than as a row that lost its objects. */
+.mv-host[data-scroll-y] .mv-band {
+  box-shadow: 0 2px 6px rgb(28 35 51 / 0.09);
 }
 
 /* Segments are contiguous, so the divider is a left border and every boundary

@@ -494,6 +494,96 @@ export default function ModelViewer({
     setMenu({ x: e.clientX, y: e.clientY, items })
   }
 
+  /**
+   * Right-clicking bare canvas.
+   *
+   * Empty space is not "nowhere" — it is nearly always inside some layer's
+   * column, below its objects. That is where you go to add another object, so
+   * the menu is resolved from the click's x against the band segments (which
+   * tile the whole canvas, leaving no dead zone). Only a click past the last
+   * layer is treated as truly outside.
+   */
+  const onWorldContextMenu = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.mv-card, .mv-layer')) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const worldX = e.clientX - rect.left
+
+    const layer = layout.layers.find(
+      (l) => worldX >= l.bandLeft && worldX < l.bandLeft + l.bandWidth,
+    )
+    if (!layer || layer.collapsed) {
+      openMenu(e, null)
+      return
+    }
+
+    e.preventDefault()
+    e.stopPropagation()
+    setSelection(new Set([layer.id]))
+
+    const canPaste = clipboard.current !== null
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        {
+          key: 'add-object',
+          label: `Add object to ${layer.name}`,
+          onSelect: () => applyAdd(addObject(model, layer.id)),
+        },
+        {
+          key: 'paste-object',
+          label: 'Paste as object',
+          disabled: !canPaste,
+          onSelect: () => doPaste({ mode: 'into', id: layer.id }),
+        },
+        {
+          key: 'add-layer-before',
+          label: 'Add layer before',
+          separated: true,
+          onSelect: () => applyAdd(addLayer(model, { relativeTo: layer.id, side: 'before' })),
+        },
+        {
+          key: 'add-layer-after',
+          label: 'Add layer after',
+          onSelect: () => applyAdd(addLayer(model, { relativeTo: layer.id, side: 'after' })),
+        },
+        {
+          key: 'add-layer-end',
+          label: 'Add layer at end',
+          onSelect: () => applyAdd(addLayer(model)),
+        },
+        {
+          key: 'sort-objects',
+          label: 'Sort objects A–Z',
+          separated: true,
+          disabled: layer.objectCount < 2,
+          onSelect: () => onChange(sortChildren(model, layer.id, 'asc')),
+        },
+        {
+          key: 'select-descendants',
+          label: `Select everything in ${layer.name}`,
+          disabled: layer.objectCount === 0,
+          onSelect: () => setSelection(new Set(descendantsOf(layer.id))),
+        },
+        {
+          key: 'rename-layer',
+          label: `Rename ${layer.name}`,
+          separated: true,
+          onSelect: () => setEditing(layer.id),
+        },
+        {
+          key: 'delete-layer',
+          label: `Delete ${layer.name}`,
+          danger: true,
+          onSelect: () => {
+            onChange(deleteEntities(model, [layer.id]))
+            setSelection(new Set())
+          },
+        },
+      ],
+    })
+  }
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
@@ -577,7 +667,7 @@ export default function ModelViewer({
   )
 
   return (
-    <div className="mv-host" data-connecting={connectFrom ? true : undefined}>
+    <div className="mv-host" data-connecting={connectFrom ? true : undefined} data-scroll-y={scroll.y > 0 || undefined}>
       {searchOpen && (
         <ModelSearch
           index={index}
@@ -597,10 +687,23 @@ export default function ModelViewer({
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
       )}
 
-      {/* Pinned layer band — one continuous row, counter-scrolled horizontally. */}
-      <div className="mv-band" style={{ height: LAYER_HEADER_HEIGHT }}>
-        <div className="mv-band-inner" style={{ transform: `translateX(${-scroll.x}px)` }}>
-          {layout.layers.map((layer) => (
+      <div className="mv-scroll" ref={scrollRef} onScroll={onScroll}>
+        <div
+          className="mv-world"
+          style={{ width: layout.width, height: layout.height }}
+          onClick={onWorldClick}
+          onContextMenu={onWorldContextMenu}
+        >
+          {/*
+            The layer band is sticky INSIDE the scroller rather than pinned
+            outside it. A pinned band has to be counter-translated by scrollLeft
+            from React state, which lags native scrolling by a frame — the band
+            visibly drifted off its columns while scrolling horizontally. Sticky
+            hands both axes to the browser: it moves with the content
+            horizontally (always aligned) and pins vertically.
+          */}
+          <div className="mv-band" style={{ height: LAYER_HEADER_HEIGHT, width: layout.width }}>
+            {layout.layers.map((layer) => (
             <div
               key={layer.id}
               className="mv-layer"
@@ -651,28 +754,13 @@ export default function ModelViewer({
                 </button>
               )}
             </div>
-          ))}
-        </div>
-      </div>
+            ))}
+          </div>
 
-      <div className="mv-scroll" ref={scrollRef} onScroll={onScroll}>
-        <div
-          className="mv-world"
-          style={{ width: layout.width, height: layout.height }}
-          onClick={onWorldClick}
-          onContextMenu={(e) => {
-            // Only the bare canvas — cards and rows handle their own.
-            if ((e.target as HTMLElement).closest('.mv-card')) return
-            openMenu(e, null)
-          }}
-        >
           <TransitionLayer
             layout={layout}
             transitions={model.transitions}
             parentOf={parentOf}
-            offset={scroll}
-            width={size.width}
-            height={size.height}
             highlighted={highlighted}
             selected={selectedEdges}
           />

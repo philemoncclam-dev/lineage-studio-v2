@@ -25,6 +25,9 @@ const ICONS: Record<RailIconName, ReactNode> = {
   explore: (
     <svg viewBox="0 0 24 24"><path d="M4 6h4l2-2h10v14a2 2 0 0 1-2 2H4z" /><path d="M4 6v12" /></svg>
   ),
+  dashboard: (
+    <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="11" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="17.5" width="7" height="3" rx="1.5" /></svg>
+  ),
   sandbox: (
     <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" /><path d="M10 9.5l5 3-5 3z" /></svg>
   ),

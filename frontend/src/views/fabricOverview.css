@@ -1,0 +1,380 @@
+/* Fabric overview dashboard (/fabric/overview). Token-driven, dark-first like
+   the rest of the shell — the layout takes its rhythm from the reference
+   dashboard (metric row → chart + breakdown), but every colour is a semantic
+   token so it reads correctly in both themes. */
+
+.fo-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--spacing-6, 24px);
+}
+.fo-page--center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+}
+.fo-inner {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* --- header --- */
+.fo-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.fo-title {
+  margin: 0;
+  font-size: var(--text-heading, 18px);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.fo-sub {
+  margin: 4px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-micro, 11px);
+  color: var(--color-text-tertiary);
+}
+.fo-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+}
+.fo-dot--live {
+  background: var(--color-success);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .fo-dot--live {
+    animation: fo-pulse 2.4s ease-in-out infinite;
+  }
+}
+@keyframes fo-pulse {
+  50% { opacity: 0.35; }
+}
+
+.fo-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fo-live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-micro, 11px);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.fo-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control, 6px);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--text-base, 13px);
+  cursor: pointer;
+}
+/* A single-workspace scope puts its name in the button — clamp the label (not
+   the button, whose flex children would ignore the ellipsis) so a long
+   workspace name can't push the header actions off the row. */
+.fo-btn-label {
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fo-sync:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+}
+.fo-sync:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.fo-sync svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.fo-sync svg.spin {
+  animation: fo-spin 1s linear infinite;
+}
+@keyframes fo-spin {
+  to { transform: rotate(360deg); }
+}
+
+.fo-error {
+  padding: 10px 12px;
+  border: 1px solid var(--color-destructive);
+  border-radius: var(--radius-control, 6px);
+  color: var(--color-destructive);
+  font-size: var(--text-base, 13px);
+}
+
+/* --- workspace filter chips --- */
+.fo-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--text-micro, 11px);
+  cursor: pointer;
+}
+.fo-chip:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+.fo-chip--on {
+  border-color: var(--color-accent);
+  color: var(--color-accent-hi);
+  background: color-mix(in oklch, var(--color-accent) 12%, transparent);
+}
+.fo-chip-count {
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- metric tiles --- */
+.fo-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.fo-tile {
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-top: 2px solid var(--tone, var(--color-border-strong));
+  border-radius: var(--radius-card, 10px);
+  background: var(--color-surface-1);
+  box-shadow: var(--shadow-card);
+}
+.fo-tile[data-tone='accent'] { --tone: var(--color-accent); }
+.fo-tile[data-tone='notebook'] { --tone: var(--color-domain-notebook); }
+.fo-tile[data-tone='pipeline'] { --tone: var(--color-edge-writes); }
+.fo-tile[data-tone='neutral'] { --tone: var(--color-border-strong); }
+.fo-tile-label {
+  margin: 0;
+  font-size: var(--text-micro, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+}
+.fo-tile-value {
+  margin: 6px 0 0;
+  font-size: 32px;
+  line-height: 1.1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--tone);
+}
+.fo-tile-caption {
+  margin: 6px 0 0;
+  font-size: var(--text-micro, 11px);
+  color: var(--color-text-tertiary);
+}
+
+/* --- cards --- */
+.fo-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .fo-grid { grid-template-columns: 1fr; }
+}
+.fo-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card, 10px);
+  background: var(--color-surface-1);
+  box-shadow: var(--shadow-card);
+  padding: 16px;
+}
+.fo-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fo-card-title {
+  margin: 0 0 12px;
+  font-size: var(--text-base, 13px);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.fo-card-head .fo-card-title { margin-bottom: 12px; }
+.fo-card-note {
+  font-size: var(--text-micro, 11px);
+  color: var(--color-text-tertiary);
+}
+
+/* --- donut --- */
+.fo-donut-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.fo-donut {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.fo-donut-hole {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: var(--color-surface-1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.fo-donut-value {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+}
+.fo-donut-label {
+  font-size: var(--text-micro, 11px);
+  color: var(--color-text-tertiary);
+}
+.fo-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fo-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-micro, 11px);
+  color: var(--color-text-secondary);
+}
+.fo-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+.fo-legend-label { flex: 1 1 auto; }
+.fo-legend-value {
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- breakdown table --- */
+.fo-table-scroll {
+  overflow-x: auto;
+}
+.fo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-base, 13px);
+}
+.fo-table th {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-micro, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+.fo-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+.fo-table th.num,
+.fo-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.fo-table tbody tr {
+  cursor: pointer;
+}
+.fo-table tbody tr:hover td {
+  background: var(--color-surface-2);
+}
+.fo-table tbody tr:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.fo-ws {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+.fo-strong { color: var(--color-text-primary); }
+.fo-table-empty {
+  text-align: center;
+  color: var(--color-text-tertiary);
+  padding: 20px;
+  cursor: default;
+}
+
+.fo-sharebar {
+  display: flex;
+  width: 120px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--color-surface-3);
+}
+.fo-sharebar span { display: block; }
+
+/* --- empty / not-connected --- */
+.fo-empty {
+  max-width: 420px;
+  text-align: center;
+}
+.fo-empty h2 {
+  margin: 0 0 8px;
+  font-size: var(--text-heading, 18px);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.fo-empty p {
+  margin: 0;
+  font-size: var(--text-base, 13px);
+  color: var(--color-text-tertiary);
+}

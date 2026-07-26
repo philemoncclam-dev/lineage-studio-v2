@@ -10,7 +10,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Command } from 'cmdk'
 import { useNavigate } from '@tanstack/react-router'
-import { fetchFabricCatalog, type FabricCatalogEntry, type FabricCatalogKind } from '../api'
+import { type FabricCatalogEntry, type FabricCatalogKind } from '../api'
+import { loadCatalog } from './catalogCache'
 
 export interface CommandPaletteProps {
   open: boolean
@@ -27,18 +28,8 @@ const GROUP_LABEL: Record<FabricCatalogKind, string> = {
 }
 const MAX_PER_GROUP = 8
 
-// Module-level cache so re-opening the palette doesn't re-crawl the tenant. A
-// failed load isn't cached, so the next open retries.
-let catalogCache: Promise<FabricCatalogEntry[]> | null = null
-function loadCatalog(): Promise<FabricCatalogEntry[]> {
-  if (!catalogCache) {
-    catalogCache = fetchFabricCatalog().catch((e) => {
-      catalogCache = null
-      throw e
-    })
-  }
-  return catalogCache
-}
+// The catalog itself is cached in ./catalogCache — shared with the Fabric
+// overview dashboard so re-opening the palette never re-crawls the tenant.
 
 // Rank: case-insensitive substring match, earlier match wins, then shorter name.
 function rank(entries: FabricCatalogEntry[], query: string): FabricCatalogEntry[] {

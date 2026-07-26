@@ -25,6 +25,7 @@ export type RailIconName =
   | 'inbox'
   | 'explore'
   | 'sandbox'
+  | 'dashboard'
 
 export interface RailItem {
   key: string
@@ -44,6 +45,7 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
     { key: 'layers', label: 'Model layers', icon: 'layers', to: '/model' },
   ],
   fabric: [
+    { key: 'overview', label: 'Overview', icon: 'dashboard', to: '/fabric/overview' },
     { key: 'explore', label: '1. Explore', icon: 'explore', to: '/fabric/explore' },
     { key: 'sandbox', label: '2. Sandbox', icon: 'sandbox', to: '/fabric/sandbox' },
   ],
@@ -66,9 +68,9 @@ export function modeFromPathname(pathname: string): ModeKey {
 export const MODE_LANDING: Record<ModeKey, string> = {
   graph: '/graph',
   model: '/model',
-  // /fabric has no index route (route.tsx is a pathless layout) — Explore is
+  // /fabric has no index route (route.tsx is a pathless layout) — Overview is
   // the mode's landing destination.
-  fabric: '/fabric/explore',
+  fabric: '/fabric/overview',
   products: '/products',
 }
 

@@ -15,6 +15,7 @@ import { Route as GraphRouteRouteImport } from './routes/graph/route'
 import { Route as ProductsRouteRouteImport } from './routes/products/route'
 import { Route as FabricDefinitionsRouteImport } from './routes/fabric/definitions'
 import { Route as FabricExploreRouteImport } from './routes/fabric/explore'
+import { Route as FabricOverviewRouteImport } from './routes/fabric/overview'
 import { Route as FabricSandboxRouteImport } from './routes/fabric/sandbox'
 import { Route as GraphIndexRouteImport } from './routes/graph/index'
 import { Route as ModelIndexRouteImport } from './routes/model.index'
@@ -56,6 +57,11 @@ const FabricDefinitionsRoute = FabricDefinitionsRouteImport.update({
 const FabricExploreRoute = FabricExploreRouteImport.update({
   id: '/explore',
   path: '/explore',
+  getParentRoute: () => FabricRouteRoute,
+} as any)
+const FabricOverviewRoute = FabricOverviewRouteImport.update({
+  id: '/overview',
+  path: '/overview',
   getParentRoute: () => FabricRouteRoute,
 } as any)
 const FabricSandboxRoute = FabricSandboxRouteImport.update({
@@ -128,6 +134,7 @@ export interface FileRoutesByFullPath {
   '/products': typeof ProductsRouteRouteWithChildren
   '/fabric/definitions': typeof FabricDefinitionsRoute
   '/fabric/explore': typeof FabricExploreRoute
+  '/fabric/overview': typeof FabricOverviewRoute
   '/fabric/sandbox': typeof FabricSandboxRoute
   '/model/$': typeof ModelSplatRoute
   '/products/$productId': typeof ProductsProductIdRoute
@@ -146,6 +153,7 @@ export interface FileRoutesByTo {
   '/fabric': typeof FabricRouteRouteWithChildren
   '/fabric/definitions': typeof FabricDefinitionsRoute
   '/fabric/explore': typeof FabricExploreRoute
+  '/fabric/overview': typeof FabricOverviewRoute
   '/fabric/sandbox': typeof FabricSandboxRoute
   '/model/$': typeof ModelSplatRoute
   '/products/$productId': typeof ProductsProductIdRoute
@@ -167,6 +175,7 @@ export interface FileRoutesById {
   '/products': typeof ProductsRouteRouteWithChildren
   '/fabric/definitions': typeof FabricDefinitionsRoute
   '/fabric/explore': typeof FabricExploreRoute
+  '/fabric/overview': typeof FabricOverviewRoute
   '/fabric/sandbox': typeof FabricSandboxRoute
   '/model/$': typeof ModelSplatRoute
   '/products/$productId': typeof ProductsProductIdRoute
@@ -189,6 +198,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/fabric/definitions'
     | '/fabric/explore'
+    | '/fabric/overview'
     | '/fabric/sandbox'
     | '/model/$'
     | '/products/$productId'
@@ -207,6 +217,7 @@ export interface FileRouteTypes {
     | '/fabric'
     | '/fabric/definitions'
     | '/fabric/explore'
+    | '/fabric/overview'
     | '/fabric/sandbox'
     | '/model/$'
     | '/products/$productId'
@@ -227,6 +238,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/fabric/definitions'
     | '/fabric/explore'
+    | '/fabric/overview'
     | '/fabric/sandbox'
     | '/model/$'
     | '/products/$productId'
@@ -292,6 +304,13 @@ declare module '@tanstack/react-router' {
       path: '/explore'
       fullPath: '/fabric/explore'
       preLoaderRoute: typeof FabricExploreRouteImport
+      parentRoute: typeof FabricRouteRoute
+    }
+    '/fabric/overview': {
+      id: '/fabric/overview'
+      path: '/overview'
+      fullPath: '/fabric/overview'
+      preLoaderRoute: typeof FabricOverviewRouteImport
       parentRoute: typeof FabricRouteRoute
     }
     '/fabric/sandbox': {
@@ -384,12 +403,14 @@ declare module '@tanstack/react-router' {
 interface FabricRouteRouteChildren {
   FabricDefinitionsRoute: typeof FabricDefinitionsRoute
   FabricExploreRoute: typeof FabricExploreRoute
+  FabricOverviewRoute: typeof FabricOverviewRoute
   FabricSandboxRoute: typeof FabricSandboxRoute
 }
 
 const FabricRouteRouteChildren: FabricRouteRouteChildren = {
   FabricDefinitionsRoute: FabricDefinitionsRoute,
   FabricExploreRoute: FabricExploreRoute,
+  FabricOverviewRoute: FabricOverviewRoute,
   FabricSandboxRoute: FabricSandboxRoute,
 }
 

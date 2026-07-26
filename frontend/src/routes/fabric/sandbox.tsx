@@ -88,26 +88,50 @@ function orderActivities(activities: FabricPipelineActivity[]): FabricPipelineAc
 const isPipelineEntry = (e: FabricCatalogEntry) =>
   e.kind === 'item' && (e.item_type ?? '').toLowerCase().includes('pipeline')
 
-// --- generic layered flow layout (reads → notebook → writes, plus order) ---
+// --- layered flow layout, drawn in the Modeling canvas idiom ---
+// A node is an *object card*: a header naming it and a stack of attribute rows
+// (its reads and writes). Edges anchor to the row they belong to, not to the
+// card, so a table's line lands on the exact row that reads or writes it —
+// same reading as `modeling/ModelViewer`.
 type FlowKind = 'notebook' | 'pipeline' | 'table'
+type RowTone = 'read' | 'write'
+interface FlowRow {
+  key: string
+  label: string
+  tone: RowTone
+}
 interface FlowNode {
   id: string
   kind: FlowKind
   label: string
   sub?: string
   badge?: string
+  rows: FlowRow[]
 }
+/** `row` is a row key on that node; omitted means "anchor to the header". */
 interface FlowEdge {
   from: string
+  fromRow?: string
   to: string
+  toRow?: string
+  tone?: RowTone
   dashed?: boolean
 }
 
-const NW = 184
-const NH = 58
-const GX = 60
-const GY = 20
-const PAD = 12
+const NW = 208
+const HEAD_H = 26
+const ROW_H = 20
+const GX = 76
+const GY = 26
+const PAD = 18
+const BAND_H = 26
+
+const nodeHeight = (n: FlowNode) => HEAD_H + n.rows.length * ROW_H
+/** Vertical centre of a row (or of the header when `rowKey` is undefined). */
+function anchorY(n: FlowNode, rowKey?: string) {
+  const i = rowKey ? n.rows.findIndex((r) => r.key === rowKey) : -1
+  return i < 0 ? HEAD_H / 2 : HEAD_H + i * ROW_H + ROW_H / 2
+}
 
 function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]) {
   const incoming = new Map<string, string[]>()
@@ -130,72 +154,119 @@ function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]) {
   }
   nodes.forEach((n) => col(n.id))
 
-  const rows = new Map<number, number>()
+  // Stack each column top-down; cards have different heights now.
+  const nextY = new Map<number, number>()
   const pos = new Map<string, { x: number; y: number }>()
   nodes.forEach((n) => {
     const c = colOf.get(n.id)!
-    const r = rows.get(c) ?? 0
-    rows.set(c, r + 1)
-    pos.set(n.id, { x: c * (NW + GX), y: r * (NH + GY) })
+    const y = nextY.get(c) ?? 0
+    nextY.set(c, y + nodeHeight(n) + GY)
+    pos.set(n.id, { x: c * (NW + GX), y })
   })
+
   const maxCol = Math.max(0, ...colOf.values())
-  const maxRow = Math.max(1, ...rows.values())
-  return {
-    pos,
-    width: (maxCol + 1) * (NW + GX) - GX,
-    height: maxRow * (NH + GY) - GY,
-  }
+  const height = Math.max(1, ...[...nextY.values()].map((y) => y - GY))
+
+  // One band segment per column, named for what the column holds — the
+  // Modeling layer band. Segments meet mid-gutter so a column reads as running
+  // divider-to-divider (see the handoff note on contiguous segments).
+  const bands = Array.from({ length: maxCol + 1 }, (_, c) => {
+    const inCol = nodes.filter((n) => colOf.get(n.id) === c)
+    const tables = inCol.filter((n) => n.kind === 'table').length
+    const label = !inCol.length
+      ? ''
+      : tables === inCol.length
+        ? c === 0
+          ? 'Source tables'
+          : 'Tables'
+        : 'Notebooks & pipelines'
+    const left = c * (NW + GX) - (c === 0 ? 0 : GX / 2)
+    const right = c * (NW + GX) + NW + (c === maxCol ? 0 : GX / 2)
+    return { key: c, label, left, width: right - left, centerX: c * (NW + GX) + NW / 2 }
+  })
+
+  return { pos, bands, width: (maxCol + 1) * (NW + GX) - GX, height }
 }
 
 function FlowCanvas({ nodes, edges }: { nodes: FlowNode[]; edges: FlowEdge[] }) {
-  const { pos, width, height } = useMemo(() => layoutFlow(nodes, edges), [nodes, edges])
+  const { pos, bands, width, height } = useMemo(() => layoutFlow(nodes, edges), [nodes, edges])
+  const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
   const w = width + PAD * 2
   const h = height + PAD * 2
   return (
-    <div className="fx-flow">
-      <div className="fx-flow-canvas" style={{ width: w, height: h }}>
-        <svg className="fx-flow-edges" width={w} height={h}>
-          <defs>
-            <marker id="fx-flow-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
-              <path d="M0 0l8 4-8 4z" fill="currentColor" />
-            </marker>
-          </defs>
-          {edges.map((e, i) => {
-            const s = pos.get(e.from)
-            const t = pos.get(e.to)
-            if (!s || !t) return null
-            const sx = s.x + NW + PAD
-            const sy = s.y + NH / 2 + PAD
-            const tx = t.x + PAD
-            const ty = t.y + NH / 2 + PAD
-            const mx = (sx + tx) / 2
+    <div className="sbx-flow">
+      <div className="sbx-flow-world" style={{ width: w }}>
+        <div className="sbx-flow-band" style={{ height: BAND_H }}>
+          {bands.map((b) => (
+            <div key={b.key} className="sbx-flow-layer" style={{ left: b.left + PAD, width: b.width, height: BAND_H }}>
+              <span className="sbx-flow-layer-center" style={{ left: b.centerX - b.left }}>
+                <span className="sbx-flow-layer-name">{b.label}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="sbx-flow-canvas" style={{ width: w, height: h }}>
+          <svg className="sbx-flow-edges" width={w} height={h}>
+            <defs>
+              <marker id="sbx-arrow" markerWidth="8" markerHeight="8" refX="6.5" refY="3.5" orient="auto">
+                <path d="M0 0l7 3.5-7 3.5z" fill="currentColor" />
+              </marker>
+            </defs>
+            {edges.map((e, i) => {
+              const sn = byId.get(e.from)
+              const tn = byId.get(e.to)
+              const s = pos.get(e.from)
+              const t = pos.get(e.to)
+              if (!sn || !tn || !s || !t) return null
+              const sx = s.x + NW + PAD
+              const sy = s.y + anchorY(sn, e.fromRow) + PAD
+              const tx = t.x + PAD
+              const ty = t.y + anchorY(tn, e.toRow) + PAD
+              const mx = (sx + tx) / 2
+              return (
+                <path
+                  key={i}
+                  className="sbx-flow-edge"
+                  data-tone={e.tone}
+                  data-dashed={e.dashed || undefined}
+                  d={`M${sx} ${sy}C${mx} ${sy} ${mx} ${ty} ${tx} ${ty}`}
+                  fill="none"
+                  strokeDasharray={e.dashed ? '4 4' : undefined}
+                  markerEnd="url(#sbx-arrow)"
+                />
+              )
+            })}
+          </svg>
+          {nodes.map((n) => {
+            const p = pos.get(n.id)!
             return (
-              <path
-                key={i}
-                d={`M${sx} ${sy}C${mx} ${sy} ${mx} ${ty} ${tx} ${ty}`}
-                fill="none"
-                strokeDasharray={e.dashed ? '4 4' : undefined}
-                markerEnd="url(#fx-flow-arrow)"
-              />
+              <div
+                key={n.id}
+                className="sbx-flow-card"
+                data-kind={n.kind}
+                style={{ left: p.x + PAD, top: p.y + PAD, width: NW }}
+              >
+                <div className="sbx-flow-card-head" title={n.sub ? `${n.label} · ${n.sub}` : n.label}>
+                  {n.badge && <span className="sbx-flow-num">{n.badge}</span>}
+                  <span className="sbx-flow-card-name">{n.label}</span>
+                  {n.sub && <span className="sbx-flow-card-sub">{n.sub}</span>}
+                  {!n.sub && n.rows.length > 0 && <span className="sbx-flow-count">{n.rows.length}</span>}
+                </div>
+                {n.rows.map((r) => (
+                  <div key={r.key} className="sbx-flow-row" data-tone={r.tone} style={{ height: ROW_H }}>
+                    <span className="sbx-flow-row-name" title={r.label}>
+                      {r.label}
+                    </span>
+                    <span className="sbx-flow-tag" data-tone={r.tone}>
+                      {r.tone === 'read' ? 'R' : 'W'}
+                    </span>
+                  </div>
+                ))}
+              </div>
             )
           })}
-        </svg>
-        {nodes.map((n) => {
-          const p = pos.get(n.id)!
-          return (
-            <div
-              key={n.id}
-              className="fx-flow-node"
-              data-kind={n.kind}
-              style={{ left: p.x + PAD, top: p.y + PAD, width: NW, height: NH }}
-              title={n.sub ? `${n.label} · ${n.sub}` : n.label}
-            >
-              {n.badge && <span className="fx-flow-badge">{n.badge}</span>}
-              <span className="fx-flow-node-name">{n.label}</span>
-              {n.sub && <span className="fx-flow-node-sub">{n.sub}</span>}
-            </div>
-          )
-        })}
+        </div>
       </div>
     </div>
   )
@@ -210,7 +281,7 @@ function buildFlow(steps: Step[], results: Map<string, StepResult>): { nodes: Fl
     const id = `t:${name.toLowerCase()}`
     if (!tableSeen.has(id)) {
       tableSeen.add(id)
-      nodes.push({ id, kind: 'table', label: name })
+      nodes.push({ id, kind: 'table', label: name, rows: [] })
     }
     return id
   }
@@ -224,12 +295,18 @@ function buildFlow(steps: Step[], results: Map<string, StepResult>): { nodes: Fl
         : res?.status === 'error'
           ? 'error'
           : step.kind === 'pipeline' && res?.activities
-            ? `${res.activities.length} activities · ${res.runs.length} run`
+            ? `${res.activities.length} act · ${res.runs.length} run`
             : undefined
-    nodes.push({ id: stepId, kind: step.kind, label: step.name, sub, badge: String(i + 1) })
+    const reads = stepReads(res)
+    const writes = stepWrites(res)
+    const rows: FlowRow[] = [
+      ...reads.map((r) => ({ key: `r:${r}`, label: r, tone: 'read' as const })),
+      ...writes.map((r) => ({ key: `w:${r}`, label: r, tone: 'write' as const })),
+    ]
+    nodes.push({ id: stepId, kind: step.kind, label: step.name, sub, badge: String(i + 1), rows })
 
-    for (const r of stepReads(res)) edges.push({ from: ensureTable(r), to: stepId })
-    for (const wr of stepWrites(res)) edges.push({ from: stepId, to: ensureTable(wr) })
+    for (const r of reads) edges.push({ from: ensureTable(r), to: stepId, toRow: `r:${r}`, tone: 'read' })
+    for (const wr of writes) edges.push({ from: stepId, fromRow: `w:${wr}`, to: ensureTable(wr), tone: 'write' })
   })
 
   // Faint order edges between consecutive steps so the sequence reads clearly

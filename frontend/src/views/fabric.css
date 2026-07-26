@@ -667,75 +667,166 @@
   letter-spacing: 0.05em;
 }
 
-/* lineage flow canvas */
-.fx-flow {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card, 8px);
-  background: var(--color-surface-canvas, rgba(0, 0, 0, 0.2));
-  background-image: radial-gradient(var(--color-grid-dot, rgba(255, 255, 255, 0.06)) 1px, transparent 1px);
-  background-size: 22px 22px;
+/* ---------------------------------------------------------------------------
+   Sandbox lineage canvas — drawn in the Modeling canvas idiom (see
+   modeling/modeling.css): a sticky layer band over columns of square white
+   object cards, each a header plus attribute rows. Palette is the same
+   hard-coded light one Modeling uses, so the two canvases read as one surface.
+--------------------------------------------------------------------------- */
+.sbx-flow {
+  border: 1px solid rgb(28 35 51 / 0.18);
+  background: #fbfbfc;
   overflow: auto;
-  min-height: 220px;
+  min-height: 240px;
 }
-.fx-flow-canvas {
+.sbx-flow-world {
   position: relative;
-  margin: auto;
+  min-width: 100%;
 }
-.fx-flow-edges {
-  position: absolute;
-  inset: 0;
-  color: var(--color-text-tertiary);
-  pointer-events: none;
+
+/* the layer band — sticky on `top` only; never add `left` (it re-creates the
+   horizontal drift documented in the handoff) */
+.sbx-flow-band {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #fbfbfc;
+  border-bottom: 1px solid rgb(28 35 51 / 0.22);
 }
-.fx-flow-node {
+.sbx-flow-layer {
   position: absolute;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 3px;
-  padding: 8px 12px 8px 14px;
-  border: 1px solid var(--color-border);
-  border-left: 3px solid var(--color-text-tertiary);
-  border-radius: var(--radius-control, 6px);
-  background: var(--color-surface-1, var(--color-surface-2));
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  top: 0;
+  border-left: 1px solid rgb(28 35 51 / 0.14);
+  color: #3d4557;
+  font-size: 12px;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
   overflow: hidden;
 }
-.fx-flow-node[data-kind='notebook'] {
-  border-left-color: var(--color-domain-notebook, var(--color-accent));
+.sbx-flow-layer:first-child {
+  border-left: 0;
 }
-.fx-flow-node[data-kind='pipeline'] {
-  border-left-color: var(--color-edge-writes, #f59e0b);
-}
-.fx-flow-node[data-kind='table'] {
-  border-left-color: var(--color-edge-reads, #38bdf8);
-}
-.fx-flow-badge {
+.sbx-flow-layer-center {
   position: absolute;
-  top: -8px;
-  left: -8px;
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
+  top: 0;
+  height: 100%;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--color-accent);
-  color: var(--color-surface-canvas, #0b0d10);
-  font-size: 10px;
-  font-weight: 700;
+  max-width: 100%;
+  transform: translateX(-50%);
 }
-.fx-flow-node-name {
-  font-size: var(--text-sm, 13px);
-  font-weight: 500;
-  color: var(--color-text-primary);
+.sbx-flow-layer-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 6px;
+}
+
+.sbx-flow-canvas {
+  position: relative;
+  background-image: radial-gradient(rgb(28 35 51 / 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.sbx-flow-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sbx-flow-edge {
+  stroke: #98a0b0;
+  color: #98a0b0;
+}
+.sbx-flow-edge[data-tone='read'] {
+  stroke: #4a76c4;
+  color: #4a76c4;
+}
+.sbx-flow-edge[data-tone='write'] {
+  stroke: #168f5c;
+  color: #168f5c;
+}
+.sbx-flow-edge[data-dashed] {
+  stroke: #c2c8d2;
+  color: #c2c8d2;
+}
+
+.sbx-flow-card {
+  position: absolute;
+  background: #fff;
+  border: 1px solid rgb(28 35 51 / 0.28);
+  box-shadow: 0 1px 2px rgb(28 35 51 / 0.05);
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1;
+}
+.sbx-flow-card-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 6px;
+  background: #fff;
+  border-bottom: 1px solid rgb(28 35 51 / 0.14);
+}
+.sbx-flow-card[data-kind='table'] .sbx-flow-card-head {
+  background: #f2f5fa;
+}
+.sbx-flow-card-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: #1c2333;
 }
-.fx-flow-node-sub {
-  font-size: var(--text-micro, 11px);
-  color: var(--color-text-tertiary);
+.sbx-flow-card-sub,
+.sbx-flow-count {
+  flex: none;
+  color: #6b7385;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.sbx-flow-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 2px;
+  background: #e8f0fe;
+  color: #12305e;
+  font-size: 10px;
+  font-weight: 600;
+}
+.sbx-flow-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 6px;
+  white-space: nowrap;
+}
+.sbx-flow-row:hover {
+  background: #eef2f7;
+}
+.sbx-flow-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #232a3a;
+}
+.sbx-flow-tag {
+  flex: none;
+  padding: 1px 3px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 500;
+}
+.sbx-flow-tag[data-tone='read'] {
+  background: #e2ebfa;
+  color: #1c447f;
+}
+.sbx-flow-tag[data-tone='write'] {
+  background: #d3f0e0;
+  color: #114a2b;
 }
 
 /* --- notebook sandbox (legacy single-run actions, still used) ----------- */

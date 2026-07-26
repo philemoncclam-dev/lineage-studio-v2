@@ -11,54 +11,154 @@
   min-height: 0;
   width: 100%;
   overflow: hidden;
-  background: #fbfbfc;
-  /* The dot grid gives pan a sense of motion without competing with the cards. */
-  background-image: radial-gradient(circle at 1px 1px, rgb(28 35 51 / 0.07) 1px, transparent 0);
-  background-size: 22px 22px;
-  cursor: grab;
-  touch-action: none;
   user-select: none;
 }
 
-.mv-host:active {
-  cursor: grabbing;
+/* The scrolling viewport. Real scrollbars, no free panning: the model has a
+   fixed extent and you can never fling it off-screen. */
+.mv-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: #fbfbfc;
+  background-image: radial-gradient(circle at 1px 1px, rgb(28 35 51 / 0.07) 1px, transparent 0);
+  background-size: 22px 22px;
+}
+
+/* Sized to the full layout extent so the scrollbars reflect the real model. */
+.mv-world {
+  position: relative;
 }
 
 /* Edges sit under the cards so a curve never crosses over a name. */
 .mv-edges {
   position: absolute;
-  inset: 0;
   pointer-events: none;
   z-index: 0;
 }
 
-.mv-world {
+.mv-host[data-connecting] .mv-row,
+.mv-host[data-connecting] .mv-card-header {
+  cursor: crosshair;
+}
+
+/* ===== Layer band =====
+   One continuous row across the top of the viewport, pinned above the scroller
+   and counter-translated horizontally so each segment stays over its column. */
+.mv-band {
   position: absolute;
   top: 0;
   left: 0;
-  transform-origin: 0 0;
-  z-index: 1;
+  right: 0;
+  z-index: 3;
+  overflow: hidden;
+  background: #f2f3f6;
+  border-bottom: 1px solid rgb(28 35 51 / 0.22);
 }
 
-/* ===== Layer column headers ===== */
-/* `top` is set inline from CANVAS_PADDING — the offset must track the layout
-   constant, not a second copy of it that can silently drift. */
-.mv-layer-header {
+.mv-band-inner {
+  position: relative;
+  height: 100%;
+  will-change: transform;
+}
+
+/* Segments are contiguous, so the divider is a left border and every boundary
+   falls halfway between two columns. :first-child has no divider — there is
+   nothing to its left to divide it from. */
+.mv-layer {
   position: absolute;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-bottom: 1px solid rgb(28 35 51 / 0.16);
+  top: 0;
+  border-left: 1px solid rgb(28 35 51 / 0.14);
   color: #3d4557;
   font-size: 13px;
   letter-spacing: -0.005em;
   white-space: nowrap;
   overflow: hidden;
+  cursor: default;
 }
 
-.mv-layer-header[data-collapsed] .mv-layer-name {
-  writing-mode: vertical-rl;
-  font-size: 11px;
+.mv-layer:first-child {
+  border-left: 0;
+}
+
+/* Centred on the column, not on the segment — `left` is set inline. */
+.mv-layer-center {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  transform: translateX(-50%);
+}
+
+.mv-layer[data-selected] {
+  background: #e8f0fe;
+  color: #12305e;
+}
+
+.mv-layer-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 6px;
+}
+
+/* Collapsed: a narrow strip whose whole surface is the expand affordance. */
+.mv-layer[data-collapsed] {
+  background: #e4e7ec;
+  cursor: pointer;
+}
+
+.mv-layer[data-collapsed]:hover {
+  background: #d6dbe4;
+}
+
+.mv-layer[data-collapsed] .mv-layer-center {
+  color: #4a76c4;
+}
+
+/* Absolutely positioned at the COLUMN's right edge (`left` is set inline), not
+   in flow: an in-flow button would shift the layer name off-centre by its own
+   width. Revealed on hover. */
+.mv-layer-fold {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #6b7385;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.mv-layer:hover .mv-layer-fold {
+  opacity: 1;
+}
+
+.mv-layer-fold:hover {
+  background: rgb(28 35 51 / 0.09);
+  color: #1c2333;
+}
+
+/* ===== Inline name editing ===== */
+.mv-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 2px;
+  border: 1px solid #1f6feb;
+  border-radius: 2px;
+  background: #fff;
+  color: #1c2333;
+  font: inherit;
+  font-size: inherit;
+  outline: none;
 }
 
 /* ===== Object cards ===== */
@@ -97,6 +197,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: center;
   color: #1c2333;
 }
 
@@ -216,6 +317,32 @@
 .mv-badge[data-kind='cde'] {
   background: #96e6b3;
   color: #114a2b;
+}
+
+/* ===== Connect port =====
+   Solidatus' small square on the entity edge. Hidden until the row is hovered
+   so a dense card isn't a wall of handles. */
+.mv-port {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 1px solid #4a76c4;
+  border-radius: 1px;
+  background: #fff;
+  cursor: crosshair;
+  opacity: 0;
+}
+
+.mv-row:hover .mv-port,
+.mv-card-header:hover .mv-port,
+.mv-port[data-active] {
+  opacity: 1;
+}
+
+.mv-port[data-active] {
+  background: #1f6feb;
+  box-shadow: 0 0 0 2px rgb(31 111 235 / 0.3);
 }
 
 /* ===== Loading / error fallback ===== */

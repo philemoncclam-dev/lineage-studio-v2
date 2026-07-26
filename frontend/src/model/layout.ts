@@ -11,9 +11,17 @@
 
 import type { Attribute, EntityId, LineageModel } from './types'
 
-export const LAYER_WIDTH = 300
+/** Object card width. Cards are a fixed size and do NOT fill their layer. */
+export const CARD_WIDTH = 300
+/**
+ * Layer column width. Deliberately wider than CARD_WIDTH: the difference
+ * becomes a gutter inside the column, centred on the card, so a layer boundary
+ * has white space either side of its objects rather than butting straight
+ * against them. Every layer is this same width, collapsed ones excepted.
+ */
+export const LAYER_WIDTH = 344
 /** Horizontal room between layer columns — this is where transitions are drawn. */
-export const LAYER_GAP = 140
+export const LAYER_GAP = 96
 export const LAYER_COLLAPSED_WIDTH = 28
 export const LAYER_HEADER_HEIGHT = 30
 export const CARD_GAP = 14
@@ -22,6 +30,12 @@ export const ROW_HEIGHT = 21
 /** Left inset added per nesting level. */
 export const INDENT = 12
 export const CANVAS_PADDING = 40
+/**
+ * Extra left inset. In Modeling the canvas runs the full window width and the
+ * icon rail floats on top of it, so the first column has to start clear of the
+ * rail or it would sit underneath it.
+ */
+export const CANVAS_PADDING_LEFT = 76
 
 export interface LayoutRow {
   id: EntityId
@@ -51,8 +65,22 @@ export interface LayoutCard {
 export interface LayoutLayer {
   id: EntityId
   name: string
+  /** Column left edge — where this layer's cards live. */
   x: number
+  /** Column width. */
   width: number
+  /**
+   * Band segment bounds. Segments are CONTIGUOUS — they meet in the middle of
+   * the inter-column gap, and the first/last run to the canvas edges. If a
+   * segment were only as wide as its column, the gap between segments would
+   * belong to no layer, and the eye would read a "column" as running from one
+   * divider to the next: half a gap wider than the real column, and offset from
+   * it. That is what makes a name centred in its segment look off-centre.
+   */
+  bandLeft: number
+  bandWidth: number
+  /** True centre of the column, in world x. Names anchor here, not to the band. */
+  centerX: number
   collapsed: boolean
   objectCount: number
 }
@@ -98,28 +126,42 @@ function totalDescendants(attrs: Attribute[]): number {
   return n
 }
 
+/**
+ * @param collapsed Entities whose children are folded away. A collapsed layer
+ *   shrinks to a narrow strip in place rather than disappearing — that strip is
+ *   its own affordance for expanding it again, so a layer can never be hidden
+ *   somewhere the user can't find it.
+ */
 export function layoutModel(model: LineageModel, collapsed: ReadonlySet<EntityId>): Layout {
   const layers: LayoutLayer[] = []
   const cards: LayoutCard[] = []
   const anchors = new Map<EntityId, Anchor>()
 
-  let x = CANVAS_PADDING
+  let x = CANVAS_PADDING_LEFT
   let maxBottom = CANVAS_PADDING + LAYER_HEADER_HEIGHT
 
   for (const layer of model.layers) {
     const layerCollapsed = collapsed.has(layer.id)
     const width = layerCollapsed ? LAYER_COLLAPSED_WIDTH : LAYER_WIDTH
 
+    // Band bounds are patched in after the loop, once the neighbours (and the
+    // total canvas width) are known.
     layers.push({
       id: layer.id,
       name: layer.name,
       x,
       width,
+      bandLeft: 0,
+      bandWidth: 0,
+      centerX: x + width / 2,
       collapsed: layerCollapsed,
       objectCount: layer.objects.length,
     })
 
     let y = CANVAS_PADDING + LAYER_HEADER_HEIGHT + CARD_GAP
+
+    // Cards are centred in the column; the leftover is the gutter.
+    const cardX = x + Math.round((width - CARD_WIDTH) / 2)
 
     if (!layerCollapsed) {
       for (const obj of layer.objects) {
@@ -137,9 +179,9 @@ export function layoutModel(model: LineageModel, collapsed: ReadonlySet<EntityId
           id: obj.id,
           layerId: layer.id,
           name: obj.name,
-          x,
+          x: cardX,
           y,
-          width,
+          width: CARD_WIDTH,
           height,
           rows,
           collapsed: objCollapsed,
@@ -147,15 +189,19 @@ export function layoutModel(model: LineageModel, collapsed: ReadonlySet<EntityId
           total: totalDescendants(obj.children),
         })
 
-        // The object header is itself a valid transition endpoint, and it is
-        // also where edges land when the object is collapsed.
+        // Anchors sit on the CARD edges, not the column edges, so transitions
+        // meet the box the user actually sees rather than floating in the gutter.
         anchors.set(obj.id, {
-          left: x,
-          right: x + width,
+          left: cardX,
+          right: cardX + CARD_WIDTH,
           cy: y + CARD_HEADER_HEIGHT / 2,
         })
         for (const row of rows) {
-          anchors.set(row.id, { left: x, right: x + width, cy: row.y + ROW_HEIGHT / 2 })
+          anchors.set(row.id, {
+            left: cardX,
+            right: cardX + CARD_WIDTH,
+            cy: row.y + ROW_HEIGHT / 2,
+          })
         }
 
         y += height + CARD_GAP
@@ -163,21 +209,43 @@ export function layoutModel(model: LineageModel, collapsed: ReadonlySet<EntityId
     }
 
     // A layer is a legal endpoint too — anchor it on its header band.
-    anchors.set(layer.id, {
-      left: x,
-      right: x + width,
-      cy: CANVAS_PADDING + LAYER_HEADER_HEIGHT / 2,
-    })
+    //
+    // A COLLAPSED layer gets no anchor at all. That is what makes collapsing it
+    // also hide every transition into or out of it: with no anchor on the layer
+    // and none on its (unrendered) cards and rows, resolveAnchor walks the whole
+    // chain and finds nothing, so the curve is skipped. Without this, every
+    // hidden layer's traffic would pile up on its narrow strip.
+    if (!layerCollapsed) {
+      anchors.set(layer.id, {
+        left: x,
+        right: x + width,
+        cy: CANVAS_PADDING + LAYER_HEADER_HEIGHT / 2,
+      })
+    }
 
     maxBottom = Math.max(maxBottom, y)
     x += width + LAYER_GAP
+  }
+
+  const totalWidth = x - LAYER_GAP + CANVAS_PADDING
+
+  // Contiguous band segments: each boundary sits halfway between two columns,
+  // and the outer edges run to the canvas edges so no band pixel is orphaned.
+  for (let i = 0; i < layers.length; i += 1) {
+    const layer = layers[i]
+    const previous = layers[i - 1]
+    const next = layers[i + 1]
+    const left = previous ? (previous.x + previous.width + layer.x) / 2 : 0
+    const right = next ? (layer.x + layer.width + next.x) / 2 : totalWidth
+    layer.bandLeft = left
+    layer.bandWidth = right - left
   }
 
   return {
     layers,
     cards,
     anchors,
-    width: x - LAYER_GAP + CANVAS_PADDING,
+    width: totalWidth,
     height: maxBottom + CANVAS_PADDING,
   }
 }

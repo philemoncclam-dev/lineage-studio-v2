@@ -180,6 +180,10 @@
 :root {
   --border-width: 1px;
   --row-height: 28px;
+  /* Model Viewer layer band: LAYER_HEADER_HEIGHT (30px) + its 1px bottom rule.
+     Lives here because shell.css positions the floating rail beneath it and
+     modeling.css sizes the band itself — both need the same number. */
+  --mv-band-height: 31px;
 
   color-scheme: light dark;
   font-synthesis: none;

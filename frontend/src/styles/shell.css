@@ -5,7 +5,26 @@
    literal exception per components.css's own documented convention.
    Overlay z-index values follow 02-UI-SPEC.md's stacking table verbatim. */
 
-.shell { height: 100vh; display: flex; overflow: hidden; }
+.shell { height: 100vh; display: flex; overflow: hidden; position: relative; }
+
+/* ===== Modeling: full-bleed canvas, floating rail =====
+   The Model Viewer's layer band has to span the full window width, so its
+   centre is the window's centre and a layer name reads as centred over its
+   column. That means the canvas cannot be inset by an in-flow rail.
+   So in this mode the rail leaves the flow entirely and floats over the canvas:
+   detached from the top (it sits below the band), from the left, and from the
+   bottom (height is content-sized, not 100vh). The canvas then starts at x=0
+   and layout.ts's CANVAS_PADDING_LEFT keeps the first column clear of it. */
+.shell[data-mode="model"] .shell-rail-col {
+  position: absolute;
+  top: calc(var(--mv-band-height) + var(--spacing-2));
+  left: var(--spacing-2);
+  height: auto;
+  padding: var(--spacing-2) 0;
+  border: var(--border-width) solid var(--rail-border);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-raised);
+}
 
 /* ===== Rail column: logo/mode-menu, rail, rail-bottom cluster ===== */
 .shell-rail-col {

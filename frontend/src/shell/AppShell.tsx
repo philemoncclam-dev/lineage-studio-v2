@@ -52,7 +52,9 @@ export default function AppShell({ children, overlays = true }: { children: Reac
 
   return (
     <Tooltip.Provider delayDuration={300}>
-      <div className="shell">
+      {/* data-mode lets Modeling opt into a full-bleed canvas with a floating
+          rail (see shell.css) without every other mode paying for it. */}
+      <div className="shell" data-mode={mode}>
         <div className="shell-rail-col">
           <ModeMenu />
           <Rail items={railConfig[mode]} />

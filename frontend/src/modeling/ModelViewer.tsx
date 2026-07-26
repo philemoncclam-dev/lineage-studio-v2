@@ -1,18 +1,26 @@
 // The Model Viewer canvas: layer columns, object cards, attribute rows.
 //
 // Rendering strategy — a hybrid, chosen for density:
-//  - Cards and rows are DOM. Text stays crisp at any zoom, hit-testing and
-//    inline editing come for free, and the browser does the text layout.
+//  - Cards and rows are DOM. Text stays crisp, hit-testing and inline editing
+//    come for free, and the browser does the text layout.
 //  - Only cards intersecting the viewport are mounted, and within a tall card
-//    only the visible slice of rows is mounted. That keeps the live node count
-//    proportional to the screen, not to the model, which is what makes a
-//    six-figure-entity model viable at all.
+//    only the visible slice of rows is mounted, so live node count scales with
+//    the screen rather than with the model.
 //  - Transitions are one canvas layer underneath (see TransitionLayer).
+//
+// The canvas SCROLLS; it does not free-pan. The world sits in a normal
+// overflow:auto container with real scrollbars, so position is predictable and
+// you can never lose the model off-screen.
+//
+// The layer band is a single row pinned to the top of the viewport, OUTSIDE the
+// scroller, counter-translated by scrollLeft. That keeps layer names visible
+// while scrolling down a tall model while staying aligned with their columns.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { buildIndex } from '../model/index'
+import { addTransition, deleteEntities, removeTransitions, renameEntity } from '../model/edit'
+import { hitTestTransitions } from './edgeGeometry'
 import {
-  CANVAS_PADDING,
   CARD_HEADER_HEIGHT,
   INDENT,
   LAYER_HEADER_HEIGHT,
@@ -21,24 +29,40 @@ import {
   type LayoutCard,
 } from '../model/layout'
 import type { EntityId, LineageModel } from '../model/types'
-import TransitionLayer, { type Viewport } from './TransitionLayer'
+import TransitionLayer from './TransitionLayer'
 import './modeling.css'
 
-const MIN_SCALE = 0.15
-const MAX_SCALE = 2.5
 /** Rows rendered above and below the visible slice, to hide scroll tearing. */
 const ROW_OVERSCAN = 6
 
 interface Props {
   model: LineageModel
+  onChange: (next: LineageModel) => void
+  onUndo: () => void
+  onRedo: () => void
+  canUndo: boolean
+  canRedo: boolean
 }
 
-export default function ModelViewer({ model }: Props) {
-  const hostRef = useRef<HTMLDivElement | null>(null)
+export default function ModelViewer({
+  model,
+  onChange,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+}: Props) {
+  const scrollRef = useRef<HTMLDivElement | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
-  const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, scale: 1 })
+  const [scroll, setScroll] = useState({ x: 0, y: 0 })
   const [collapsed, setCollapsed] = useState<ReadonlySet<EntityId>>(new Set())
-  const [selected, setSelected] = useState<EntityId | null>(null)
+  const [selection, setSelection] = useState<ReadonlySet<EntityId>>(new Set())
+  /** Picked transitions, by transition id — kept separate from entity selection. */
+  const [selectedEdges, setSelectedEdges] = useState<ReadonlySet<EntityId>>(new Set())
+  /** Non-null while picking a transition target. */
+  const [connectFrom, setConnectFrom] = useState<EntityId | null>(null)
+  /** Entity whose name is being edited in place. */
+  const [editing, setEditing] = useState<EntityId | null>(null)
 
   const index = useMemo(() => buildIndex(model), [model])
   const layout = useMemo(() => layoutModel(model, collapsed), [model, collapsed])
@@ -47,18 +71,19 @@ export default function ModelViewer({ model }: Props) {
     [index],
   )
 
-  // The trace: the selected entity plus everything one hop away. Highlighting
-  // both endpoints is what makes a selected row's lineage legible in a bundle.
+  // The trace: everything one hop from any selected entity. Highlighting both
+  // endpoints is what makes a selected row's lineage legible inside a bundle.
   const highlighted = useMemo(() => {
-    if (!selected) return new Set<EntityId>()
-    const out = new Set<EntityId>([selected])
-    for (const to of index.outgoing.get(selected) ?? []) out.add(to)
-    for (const from of index.incoming.get(selected) ?? []) out.add(from)
+    const out = new Set<EntityId>(selection)
+    for (const id of selection) {
+      for (const to of index.outgoing.get(id) ?? []) out.add(to)
+      for (const from of index.incoming.get(id) ?? []) out.add(from)
+    }
     return out
-  }, [selected, index])
+  }, [selection, index])
 
   useEffect(() => {
-    const host = hostRef.current
+    const host = scrollRef.current
     if (!host) return
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect
@@ -68,47 +93,9 @@ export default function ModelViewer({ model }: Props) {
     return () => observer.disconnect()
   }, [])
 
-  // Wheel: ctrl/cmd zooms about the pointer, otherwise it pans. Registered
-  // natively rather than via onWheel because React's synthetic wheel listener
-  // is passive, and preventDefault() there is a no-op that lets the page scroll.
-  useEffect(() => {
-    const host = hostRef.current
-    if (!host) return
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault()
-      setViewport((v) => {
-        if (!e.ctrlKey && !e.metaKey) {
-          return { ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }
-        }
-        const rect = host.getBoundingClientRect()
-        const px = e.clientX - rect.left
-        const py = e.clientY - rect.top
-        const next = clamp(v.scale * Math.exp(-e.deltaY * 0.0015), MIN_SCALE, MAX_SCALE)
-        // Keep the world point under the cursor pinned while scaling.
-        const k = next / v.scale
-        return { scale: next, x: px - (px - v.x) * k, y: py - (py - v.y) * k }
-      })
-    }
-    host.addEventListener('wheel', onWheel, { passive: false })
-    return () => host.removeEventListener('wheel', onWheel)
-  }, [])
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest('.mv-row, .mv-card-header')) return
-    const startX = e.clientX
-    const startY = e.clientY
-    const origin = viewport
-    const target = e.currentTarget as HTMLElement
-    target.setPointerCapture(e.pointerId)
-    const move = (ev: PointerEvent) => {
-      setViewport({ ...origin, x: origin.x + (ev.clientX - startX), y: origin.y + (ev.clientY - startY) })
-    }
-    const up = () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
+  const onScroll = () => {
+    const host = scrollRef.current
+    if (host) setScroll({ x: host.scrollLeft, y: host.scrollTop })
   }
 
   const toggle = (id: EntityId) => {
@@ -120,16 +107,126 @@ export default function ModelViewer({ model }: Props) {
     })
   }
 
-  // World-space rect currently on screen, used to cull cards and rows.
-  const view = useMemo(() => {
-    const { x, y, scale } = viewport
-    return {
-      top: -y / scale,
-      bottom: (-y + size.height) / scale,
-      left: -x / scale,
-      right: (-x + size.width) / scale,
+  /** Click semantics: plain replaces, ctrl/cmd toggles, so multi-select is additive. */
+  const select = (id: EntityId, additive: boolean) => {
+    if (connectFrom) {
+      onChange(addTransition(model, connectFrom, id))
+      setConnectFrom(null)
+      return
     }
-  }, [viewport, size])
+    if (!additive) setSelectedEdges(new Set())
+    setSelection((prev) => {
+      if (!additive) return new Set([id])
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  /**
+   * Clicking the empty canvas picks the nearest transition, or clears.
+   *
+   * The edge canvas is pointer-events:none (it must be, or it would swallow
+   * every click meant for a card), so picking is done geometrically here rather
+   * than by hit-testing the canvas itself.
+   */
+  const onWorldClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement
+    if (target.closest('.mv-card')) return
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    const worldX = e.clientX - rect.left
+    const worldY = e.clientY - rect.top
+    const hit = hitTestTransitions(layout, parentOf, model.transitions, worldX, worldY)
+    const additive = e.ctrlKey || e.metaKey
+
+    if (!hit) {
+      if (!additive) {
+        setSelectedEdges(new Set())
+        setSelection(new Set())
+      }
+      return
+    }
+    if (!additive) setSelection(new Set())
+    setSelectedEdges((prev) => {
+      if (!additive) return new Set([hit])
+      const next = new Set(prev)
+      if (next.has(hit)) next.delete(hit)
+      else next.add(hit)
+      return next
+    })
+  }
+
+  const commitRename = (id: EntityId, name: string) => {
+    const trimmed = name.trim()
+    const current = index.entries.get(id)?.name
+    // Empty names would make an entity unclickable and unfindable; treat a
+    // cleared field as a cancel rather than silently naming something ''.
+    if (trimmed && trimmed !== current) onChange(renameEntity(model, id, trimmed))
+    setEditing(null)
+  }
+
+  const deleteSelected = useCallback(() => {
+    if (selection.size === 0 && selectedEdges.size === 0) return
+    // Entities first, then edges: deleting an entity already removes the
+    // transitions touching it, so any still-selected edge is one the user picked
+    // independently of the entities going away.
+    let next = model
+    if (selection.size > 0) next = deleteEntities(next, selection)
+    if (selectedEdges.size > 0) next = removeTransitions(next, selectedEdges)
+    onChange(next)
+    setSelection(new Set())
+    setSelectedEdges(new Set())
+  }, [model, onChange, selection, selectedEdges])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      // Never hijack typing in an input — this listener is on window, and the
+      // rename field is an <input> inside the canvas.
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) {
+        return
+      }
+      const mod = e.ctrlKey || e.metaKey
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) onRedo()
+        else onUndo()
+        return
+      }
+      // Ctrl+Y is the Windows redo idiom, alongside Ctrl+Shift+Z.
+      if (mod && e.key.toLowerCase() === 'y') {
+        e.preventDefault()
+        onRedo()
+        return
+      }
+      if (e.key === 'Escape') {
+        setConnectFrom(null)
+        setEditing(null)
+        setSelection(new Set())
+        setSelectedEdges(new Set())
+        return
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault()
+        deleteSelected()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [deleteSelected, onUndo, onRedo])
+
+  // World-space rect currently on screen, used to cull cards and rows.
+  const view = useMemo(
+    () => ({
+      top: scroll.y,
+      bottom: scroll.y + size.height,
+      left: scroll.x,
+      right: scroll.x + size.width,
+    }),
+    [scroll, size],
+  )
 
   const visibleCards = useMemo(
     () =>
@@ -144,76 +241,202 @@ export default function ModelViewer({ model }: Props) {
   )
 
   return (
-    <div className="mv-host" ref={hostRef} onPointerDown={onPointerDown}>
-      <TransitionLayer
-        layout={layout}
-        transitions={model.transitions}
-        parentOf={parentOf}
-        viewport={viewport}
-        width={size.width}
-        height={size.height}
-        highlighted={highlighted}
-      />
+    <div className="mv-host" data-connecting={connectFrom ? true : undefined}>
+      {/* Pinned layer band — one continuous row, counter-scrolled horizontally. */}
+      <div className="mv-band" style={{ height: LAYER_HEADER_HEIGHT }}>
+        <div className="mv-band-inner" style={{ transform: `translateX(${-scroll.x}px)` }}>
+          {layout.layers.map((layer) => (
+            <div
+              key={layer.id}
+              className="mv-layer"
+              style={{
+                left: layer.bandLeft,
+                width: layer.bandWidth,
+                height: LAYER_HEADER_HEIGHT,
+              }}
+              data-collapsed={layer.collapsed || undefined}
+              data-selected={selection.has(layer.id) || undefined}
+              onClick={(e) => {
+                if (layer.collapsed) toggle(layer.id)
+                else select(layer.id, e.ctrlKey || e.metaKey)
+              }}
+              onDoubleClick={() => !layer.collapsed && setEditing(layer.id)}
+              title={layer.collapsed ? `Expand ${layer.name}` : layer.name}
+            >
+              {/* Anchored to the column centre, not the segment centre — the two
+                  differ wherever a segment is widened to meet its neighbours. */}
+              <span
+                className="mv-layer-center"
+                style={{ left: layer.centerX - layer.bandLeft }}
+              >
+                {layer.collapsed ? (
+                  // Collapsed: just the expand affordance. Rotated text in a
+                  // 28px strip is unreadable anyway — the name lives in the
+                  // tooltip instead.
+                  <ExpandIcon />
+                ) : editing === layer.id ? (
+                  <NameInput initial={layer.name} onCommit={(v) => commitRename(layer.id, v)} />
+                ) : (
+                  <span className="mv-layer-name">{layer.name}</span>
+                )}
+              </span>
+              {!layer.collapsed && (
+                <button
+                  className="mv-layer-fold"
+                  style={{ left: layer.centerX - layer.bandLeft + layer.width / 2 - 21 }}
+                  title={`Collapse ${layer.name}`}
+                  aria-label={`Collapse layer ${layer.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggle(layer.id)
+                  }}
+                >
+                  <FoldIcon />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
 
-      <div
-        className="mv-world"
-        style={{
-          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
-        }}
-      >
-        {layout.layers.map((layer) => (
-          <div
-            key={layer.id}
-            className="mv-layer-header"
-            style={{
-              left: layer.x,
-              top: CANVAS_PADDING,
-              width: layer.width,
-              height: LAYER_HEADER_HEIGHT,
-            }}
-            data-collapsed={layer.collapsed || undefined}
-            onDoubleClick={() => toggle(layer.id)}
-            title={`${layer.name} — ${layer.objectCount} object(s)`}
-          >
-            <span className="mv-layer-name">{layer.name}</span>
-          </div>
-        ))}
-
-        {visibleCards.map((card) => (
-          <Card
-            key={card.id}
-            card={card}
-            view={view}
-            selected={selected}
+      <div className="mv-scroll" ref={scrollRef} onScroll={onScroll}>
+        <div
+          className="mv-world"
+          style={{ width: layout.width, height: layout.height }}
+          onClick={onWorldClick}
+        >
+          <TransitionLayer
+            layout={layout}
+            transitions={model.transitions}
+            parentOf={parentOf}
+            offset={scroll}
+            width={size.width}
+            height={size.height}
             highlighted={highlighted}
-            properties={model.properties}
-            onToggle={toggle}
-            onSelect={setSelected}
+            selected={selectedEdges}
           />
-        ))}
+
+          {visibleCards.map((card) => (
+            <Card
+              key={card.id}
+              card={card}
+              view={view}
+              selection={selection}
+              highlighted={highlighted}
+              connectFrom={connectFrom}
+              editing={editing}
+              properties={model.properties}
+              onToggle={toggle}
+              onSelect={select}
+              onConnectFrom={setConnectFrom}
+              onEdit={setEditing}
+              onCommitRename={commitRename}
+            />
+          ))}
+        </div>
       </div>
 
       <div className="mv-status">
-        {model.layers.length} layers · {layout.cards.length} objects ·{' '}
-        {model.transitions.length} transitions · {Math.round(viewport.scale * 100)}%
+        {connectFrom ? (
+          <>Pick a target — Esc to cancel</>
+        ) : (
+          <>
+            {layout.layers.length} layers · {layout.cards.length} objects ·{' '}
+            {model.transitions.length} transitions
+            {selection.size > 0 && <> · {selection.size} selected</>}
+            {selectedEdges.size > 0 && <> · {selectedEdges.size} line(s) selected</>}
+            {(canUndo || canRedo) && <> · ⌃Z undo</>}
+          </>
+        )}
       </div>
     </div>
+  )
+}
+
+/** The mirror of FoldIcon: ⊢⊣ pushing outward, for "unfold this strip". */
+function ExpandIcon() {
+  return (
+    <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+      <path d="M1 1v10M11 1v10" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M3.4 6h5.2" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M5 4.4 3.4 6 5 7.6M7 4.4 8.6 6 7 7.6" stroke="currentColor" strokeWidth="1.2" fill="none" />
+    </svg>
+  )
+}
+
+/** The ⊣⊢ glyph Solidatus uses for "fold this layer down to a strip". */
+function FoldIcon() {
+  return (
+    <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+      <path d="M1 1v10M11 1v10" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M3.5 6h2.2M8.5 6H6.3" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M5.2 4.4 6.6 6 5.2 7.6M6.8 4.4 5.4 6l1.4 1.6" stroke="currentColor" strokeWidth="1.2" fill="none" />
+    </svg>
+  )
+}
+
+/** Inline name editor. Selects the whole name on mount so typing replaces it. */
+function NameInput({
+  initial,
+  onCommit,
+}: {
+  initial: string
+  onCommit: (value: string) => void
+}) {
+  const ref = useRef<HTMLInputElement | null>(null)
+  useEffect(() => {
+    ref.current?.focus()
+    ref.current?.select()
+  }, [])
+  return (
+    <input
+      ref={ref}
+      className="mv-name-input"
+      defaultValue={initial}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onBlur={(e) => onCommit(e.currentTarget.value)}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') onCommit(e.currentTarget.value)
+        // Escape must not commit — restore by committing the original value.
+        if (e.key === 'Escape') onCommit(initial)
+      }}
+    />
   )
 }
 
 interface CardProps {
   card: LayoutCard
   view: { top: number; bottom: number; left: number; right: number }
-  selected: EntityId | null
+  selection: ReadonlySet<EntityId>
   highlighted: ReadonlySet<EntityId>
+  connectFrom: EntityId | null
+  editing: EntityId | null
   properties: LineageModel['properties']
   onToggle: (id: EntityId) => void
-  onSelect: (id: EntityId) => void
+  onSelect: (id: EntityId, additive: boolean) => void
+  onConnectFrom: (id: EntityId) => void
+  onEdit: (id: EntityId) => void
+  onCommitRename: (id: EntityId, name: string) => void
 }
 
-function Card({ card, view, selected, highlighted, properties, onToggle, onSelect }: CardProps) {
+function Card({
+  card,
+  view,
+  selection,
+  highlighted,
+  connectFrom,
+  editing,
+  properties,
+  onToggle,
+  onSelect,
+  onConnectFrom,
+  onEdit,
+  onCommitRename,
+}: CardProps) {
   // Row-level virtualization. A card can be thousands of rows tall, so mount
-  // only the slice the viewport actually covers and spacer-pad the rest.
+  // only the slice the viewport covers and spacer-pad the rest.
   const rowsTop = card.y + CARD_HEADER_HEIGHT
   const firstVisible = Math.max(0, Math.floor((view.top - rowsTop) / ROW_HEIGHT) - ROW_OVERSCAN)
   const lastVisible = Math.min(
@@ -226,14 +449,14 @@ function Card({ card, view, selected, highlighted, properties, onToggle, onSelec
     <div
       className="mv-card"
       style={{ left: card.x, top: card.y, width: card.width, height: card.height }}
-      data-selected={selected === card.id || undefined}
+      data-selected={selection.has(card.id) || undefined}
       data-traced={highlighted.has(card.id) || undefined}
     >
       <div
         className="mv-card-header"
         style={{ height: CARD_HEADER_HEIGHT }}
-        onClick={() => onSelect(card.id)}
-        onDoubleClick={() => onToggle(card.id)}
+        onClick={(e) => onSelect(card.id, e.ctrlKey || e.metaKey)}
+        onDoubleClick={() => onEdit(card.id)}
       >
         <button
           className="mv-twisty"
@@ -244,13 +467,23 @@ function Card({ card, view, selected, highlighted, properties, onToggle, onSelec
           }}
           aria-label={card.collapsed ? `Expand ${card.name}` : `Collapse ${card.name}`}
         />
-        <span className="mv-card-name" title={card.name}>
-          {card.name}
-        </span>
+        {editing === card.id ? (
+          <NameInput initial={card.name} onCommit={(v) => onCommitRename(card.id, v)} />
+        ) : (
+          <span className="mv-card-name" title={card.name}>
+            {card.name}
+          </span>
+        )}
         <span className="mv-count">
           {card.direct}
           <span className="mv-count-total">({card.total})</span>
         </span>
+        <Port
+          id={card.id}
+          active={connectFrom === card.id}
+          onConnectFrom={onConnectFrom}
+          label={card.name}
+        />
       </div>
 
       {slice.length > 0 && (
@@ -260,10 +493,10 @@ function Card({ card, view, selected, highlighted, properties, onToggle, onSelec
               key={row.id}
               className="mv-row"
               style={{ height: ROW_HEIGHT, paddingLeft: 6 + row.depth * INDENT }}
-              data-selected={selected === row.id || undefined}
+              data-selected={selection.has(row.id) || undefined}
               data-traced={highlighted.has(row.id) || undefined}
-              onClick={() => onSelect(row.id)}
-              onDoubleClick={() => row.hasChildren && onToggle(row.id)}
+              onClick={(e) => onSelect(row.id, e.ctrlKey || e.metaKey)}
+              onDoubleClick={() => onEdit(row.id)}
             >
               {row.hasChildren ? (
                 <button
@@ -278,10 +511,20 @@ function Card({ card, view, selected, highlighted, properties, onToggle, onSelec
               ) : (
                 <span className="mv-twisty-spacer" />
               )}
-              <span className="mv-row-name" title={row.name}>
-                {row.name}
-              </span>
+              {editing === row.id ? (
+                <NameInput initial={row.name} onCommit={(v) => onCommitRename(row.id, v)} />
+              ) : (
+                <span className="mv-row-name" title={row.name}>
+                  {row.name}
+                </span>
+              )}
               <Badges bag={properties[row.id]} />
+              <Port
+                id={row.id}
+                active={connectFrom === row.id}
+                onConnectFrom={onConnectFrom}
+                label={row.name}
+              />
             </div>
           ))}
         </div>
@@ -290,11 +533,36 @@ function Card({ card, view, selected, highlighted, properties, onToggle, onSelec
   )
 }
 
+/** The connect handle on an entity's right edge — click to start a transition. */
+function Port({
+  id,
+  active,
+  label,
+  onConnectFrom,
+}: {
+  id: EntityId
+  active: boolean
+  label: string
+  onConnectFrom: (id: EntityId) => void
+}) {
+  return (
+    <button
+      className="mv-port"
+      data-active={active || undefined}
+      title={`Draw a transition from ${label}`}
+      aria-label={`Draw a transition from ${label}`}
+      onClick={(e) => {
+        e.stopPropagation()
+        onConnectFrom(id)
+      }}
+    />
+  )
+}
+
 /**
  * Property-driven badges. These are display rules, not intrinsic fields — the
- * classification lives in the property table, and the viewer decorates rows
- * from it. Hard-coding a `classification` field on Attribute would have made
- * every future rule a schema change.
+ * classification lives in the property table and the viewer decorates rows from
+ * it, so a new rule never becomes a schema change.
  */
 function Badges({ bag }: { bag: Record<string, string> | undefined }) {
   if (!bag) return null
@@ -303,8 +571,4 @@ function Badges({ bag }: { bag: Record<string, string> | undefined }) {
   const cls = bag.Classification
   if (cls) out.push(<span key="cls" className="mv-badge" data-kind={cls.toLowerCase()}>{cls}</span>)
   return out.length ? <span className="mv-badges">{out}</span> : null
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }

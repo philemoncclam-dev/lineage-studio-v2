@@ -84,6 +84,32 @@
   border-left: 0;
 }
 
+/* The band is closed on the right. Without this the last column ran into open
+   canvas and read as owning all the empty space beside it. */
+.mv-layer:last-of-type {
+  border-right: 1px solid rgb(28 35 51 / 0.14);
+}
+
+/* ===== Add-layer slot =====
+   Sits immediately past the band's closing line, in the band's own row: a new
+   layer is appended where the eye already expects the next column to go. */
+.mv-layer-add {
+  position: absolute;
+  top: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #98a0b0;
+  cursor: pointer;
+}
+
+.mv-layer-add:hover {
+  background: rgb(28 35 51 / 0.05);
+  color: #1f6feb;
+}
+
 /* Centred on the column, not on the segment — `left` is set inline. */
 .mv-layer-center {
   position: absolute;
@@ -351,43 +377,10 @@
 }
 
 /* ===== In-model search =====
-   Fixed with an explicit z-index above the floating rail (z-index 5). The
-   canvas is position:relative with z-index:auto, so it creates no stacking
-   context and these values compete directly with the rail's. */
-.ms-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding-top: 12vh;
-  background: rgb(20 26 38 / 0.28);
-}
-
-.ms-panel {
-  width: min(560px, calc(100vw - 32px));
-  max-height: 70vh;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid rgb(28 35 51 / 0.16);
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: var(--shadow-overlay);
-  overflow: hidden;
-}
-
-.ms-input {
-  flex: none;
-  padding: 12px 14px;
-  border: 0;
-  border-bottom: 1px solid rgb(28 35 51 / 0.12);
-  font: inherit;
-  font-size: 14px;
-  color: #1c2333;
-  outline: none;
-}
-
+   The overlay, panel and input are NOT defined here: this dialog reuses the
+   shell's command-palette container (.palette-overlay / .palette-content /
+   .palette / .sp-input in styles/shell.css) so every search surface in the app
+   is the same object. Only the result rows below are model-specific. */
 .ms-results {
   flex: 1;
   min-height: 0;
@@ -907,4 +900,403 @@
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
+}
+
+/* ===== Auto-Mapper =====
+   Docked to the right, not modal: two of its steps refer to the canvas (picking
+   a scope entity, reading the objects a suggestion group names), so it must
+   never cover the model. The canvas keeps its full width behind it — the panel
+   overlays rather than squeezing, so nothing reflows when it opens. */
+.am-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  width: 372px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid rgb(28 35 51 / 0.16);
+  background: #fff;
+  box-shadow: -6px 0 18px rgb(28 35 51 / 0.08);
+  font-size: 12px;
+  color: #1c2333;
+  user-select: none;
+}
+
+.am-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgb(28 35 51 / 0.12);
+}
+
+.am-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.am-x {
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #6b7385;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.am-x:hover {
+  background: rgb(28 35 51 / 0.08);
+  color: #1c2333;
+}
+
+.am-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.am-section {
+  padding: 12px;
+  border-bottom: 1px solid rgb(28 35 51 / 0.08);
+}
+
+.am-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* The step number carries the wizard's sequence without the panel having to
+   actually BE a wizard — every step stays visible and re-editable. */
+.am-step-n {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #1f6feb;
+  color: #fff;
+  font-size: 10px;
+}
+
+.am-note {
+  margin: 6px 0 0;
+  color: #6b7385;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+/* --- scope rows --- */
+.am-scope {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 5px 6px;
+  border: 1px solid rgb(28 35 51 / 0.12);
+  border-radius: 5px;
+}
+
+.am-scope[data-picking] {
+  border-color: #1f6feb;
+  background: #f2f7ff;
+}
+
+.am-scope-label {
+  flex: none;
+  width: 44px;
+  color: #6b7385;
+  font-size: 11px;
+}
+
+.am-scope-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.am-picking {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-left: 2px solid #1f6feb;
+  background: #f2f7ff;
+  color: #24457e;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.am-swap {
+  margin-top: 8px;
+}
+
+/* --- controls --- */
+.am-mini,
+.am-disclosure {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid rgb(28 35 51 / 0.14);
+  border-radius: 4px;
+  background: #fff;
+  color: #3d4557;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.am-mini:hover:not(:disabled),
+.am-disclosure:hover {
+  border-color: rgb(28 35 51 / 0.3);
+}
+
+.am-mini[data-on] {
+  border-color: #1f6feb;
+  background: #1f6feb;
+  color: #fff;
+}
+
+.am-mini:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.am-disclosure {
+  width: 100%;
+  margin-top: 10px;
+  text-align: left;
+}
+
+.am-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 5px;
+  background: #f6f7f9;
+}
+
+.am-field {
+  margin-top: 10px;
+}
+
+.am-field-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: #6b7385;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.am-value {
+  margin-left: auto;
+  color: #1c2333;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.am-input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid rgb(28 35 51 / 0.16);
+  border-radius: 4px;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  color: #1c2333;
+}
+
+.am-field input[type='range'] {
+  width: 100%;
+  accent-color: #1f6feb;
+}
+
+.am-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.am-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.am-check input {
+  accent-color: #1f6feb;
+}
+
+/* --- generate + review --- */
+.am-generate {
+  width: 100%;
+  padding: 7px;
+  border: 0;
+  border-radius: 5px;
+  background: #1f6feb;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.am-generate:disabled {
+  background: #eceef2;
+  color: #98a0b0;
+  cursor: default;
+}
+
+.am-group {
+  margin-top: 8px;
+  border: 1px solid rgb(28 35 51 / 0.12);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.am-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  background: #f6f7f9;
+}
+
+.am-twisty {
+  flex: none;
+  width: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6b7385;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.am-group-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.am-arrow {
+  color: #98a0b0;
+}
+
+/* The point of grouping: how many transitions this one row would create. */
+.am-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #1f6feb;
+  color: #fff;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.am-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.am-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px;
+  border-top: 1px solid rgb(28 35 51 / 0.08);
+  cursor: pointer;
+}
+
+.am-row:hover {
+  background: #f6f8fb;
+}
+
+.am-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.am-conf {
+  flex: none;
+  color: #6b7385;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.am-conf[data-strong] {
+  color: #14603a;
+  font-weight: 600;
+}
+
+.am-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid rgb(28 35 51 / 0.12);
+}
+
+.am-foot-count {
+  flex: 1;
+  min-width: 0;
+  color: #6b7385;
+  font-size: 11px;
+}
+
+.am-done {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: #1f6feb;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.am-done:disabled {
+  background: #eceef2;
+  color: #98a0b0;
+  cursor: default;
+}
+
+/* While picking a scope entity every clickable thing is a target, so say so
+   with the cursor — same treatment connect mode already gets. */
+.mv-host[data-picking] .mv-row,
+.mv-host[data-picking] .mv-card-header,
+.mv-host[data-picking] .mv-layer {
+  cursor: crosshair;
+}
+
+/* Keep the status strip clear of the docked panel. */
+.mv-host[data-mapper] .mv-status {
+  right: 382px;
 }

@@ -59,16 +59,22 @@ export default function ModelSearch({ index, onPick, onClose }: Props) {
   }
 
   return (
-    <div className="ms-backdrop" onMouseDown={onClose}>
+    // Same container as the Fabric command palette (.palette-overlay /
+    // .palette-content / .palette / .sp-input in styles/shell.css) so every
+    // search surface in the app is one shape. Only the RESULT rows are this
+    // view's own — a model hit is name + path + match count, not a catalog row.
+    <>
+      <div className="palette-overlay" onMouseDown={onClose} />
+      <div className="palette-content">
       <div
-        className="ms-panel"
+        className="palette"
         onMouseDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="Search the model"
       >
         <input
           ref={inputRef}
-          className="ms-input"
+          className="sp-input"
           value={query}
           placeholder="Search layers, objects and attributes…"
           onChange={(e) => setQuery(e.target.value)}
@@ -113,6 +119,7 @@ export default function ModelSearch({ index, onPick, onClose }: Props) {
           {hits.length > 0 && <>↑↓ move · ↵ select all matches · esc close</>}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   )
 }

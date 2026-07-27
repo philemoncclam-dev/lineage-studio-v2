@@ -58,6 +58,16 @@ const ICONS: Record<RailIconName, ReactNode> = {
   export: (
     <svg viewBox="0 0 24 24"><path d="M12 15V4" /><path d="m8 7.5 4-4 4 4" /><path d="M4 17v3h16v-3" /></svg>
   ),
+  // A gauge, not another bento grid: Overview answers "how much is there?", and
+  // a dial reads as a measurement where `layout`'s tiles read as an arrangement.
+  overview: (
+    <svg viewBox="0 0 24 24"><path d="M3.5 17.5a9 9 0 1 1 17 0" /><path d="M12 13.5 16.5 9" /><circle cx="12" cy="14" r="1.4" /></svg>
+  ),
+  // Two stacked columns with arrows crossing the gutter — the Auto-Mapper's
+  // whole job in one glyph.
+  mapping: (
+    <svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="6" height="16" rx="1.5" /><rect x="15.5" y="4" width="6" height="16" rx="1.5" /><path d="M8.5 8.5h7M8.5 15.5h7" /><path d="m13.5 6.5 2 2-2 2M13.5 13.5l2 2-2 2" /></svg>
+  ),
 }
 
 export default function Rail({ items }: { items: RailItem[] }) {

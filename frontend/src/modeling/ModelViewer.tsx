@@ -23,6 +23,7 @@ import { registerRailAction } from '../shell/railActions'
 import ModelSearch from './ModelSearch'
 import ImportDialog from './ImportDialog'
 import ExportDialog from './ExportDialog'
+import AutoMapper, { type PickSlot } from './AutoMapper'
 import type { SearchHit } from './searchModel'
 import {
   addAttribute,
@@ -43,6 +44,7 @@ import {
   CARD_HEADER_HEIGHT,
   CARD_WIDTH,
   INDENT,
+  LAYER_ADD_WIDTH,
   LAYER_HEADER_HEIGHT,
   ROW_HEIGHT,
   layoutModel,
@@ -86,6 +88,15 @@ export default function ModelViewer({
   const [searchOpen, setSearchOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  const [mapperOpen, setMapperOpen] = useState(false)
+  // The Auto-Mapper's scope lives HERE, not in the panel, because it is filled
+  // by clicking the canvas: the viewer owns the click, so it owns the answer.
+  const [mapScope, setMapScope] = useState<{ source: EntityId | null; target: EntityId | null }>({
+    source: null,
+    target: null,
+  })
+  /** Non-null while the next entity click means "use this as the scope root". */
+  const [picking, setPicking] = useState<PickSlot | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   // Local, not the system clipboard: the payload is a model subtree with
   // transition bookkeeping, which has no sensible text/plain representation.
@@ -134,6 +145,7 @@ export default function ModelViewer({
   // destinations and act on the model this component holds.
   useEffect(() => registerRailAction('import', () => setImportOpen(true)), [])
   useEffect(() => registerRailAction('export', () => setExportOpen(true)), [])
+  useEffect(() => registerRailAction('mapping', () => setMapperOpen(true)), [])
 
   /**
    * Selects every entity carrying the picked name and brings the first into
@@ -184,6 +196,14 @@ export default function ModelViewer({
 
   /** Click semantics: plain replaces, ctrl/cmd toggles, so multi-select is additive. */
   const select = (id: EntityId, additive: boolean) => {
+    // Scope-picking outranks everything: the user asked for the next click to
+    // mean "this one", so it cannot also change the selection.
+    if (picking) {
+      setMapScope((prev) => ({ ...prev, [picking]: id }))
+      setPicking(null)
+      setSelection(new Set([id]))
+      return
+    }
     if (connectFrom) {
       onChange(addTransition(model, connectFrom, id))
       setConnectFrom(null)
@@ -626,6 +646,7 @@ export default function ModelViewer({
         return
       }
       if (e.key === 'Escape') {
+        setPicking(null)
         setConnectFrom(null)
         setEditing(null)
         setSelection(new Set())
@@ -667,7 +688,13 @@ export default function ModelViewer({
   )
 
   return (
-    <div className="mv-host" data-connecting={connectFrom ? true : undefined} data-scroll-y={scroll.y > 0 || undefined}>
+    <div
+      className="mv-host"
+      data-connecting={connectFrom ? true : undefined}
+      data-picking={picking ?? undefined}
+      data-mapper={mapperOpen || undefined}
+      data-scroll-y={scroll.y > 0 || undefined}
+    >
       {searchOpen && (
         <ModelSearch
           index={index}
@@ -683,6 +710,20 @@ export default function ModelViewer({
         />
       )}
       {exportOpen && <ExportDialog model={model} onClose={() => setExportOpen(false)} />}
+      {mapperOpen && (
+        <AutoMapper
+          model={model}
+          scope={mapScope}
+          onScope={setMapScope}
+          picking={picking}
+          onPick={setPicking}
+          onApply={onChange}
+          onClose={() => {
+            setPicking(null)
+            setMapperOpen(false)
+          }}
+        />
+      )}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
       )}
@@ -755,6 +796,24 @@ export default function ModelViewer({
               )}
             </div>
             ))}
+
+            {/* The band stops at `bandEnd`; this slot sits just past it, so
+                "add a layer" is a place on the canvas rather than something you
+                have to know a right-click menu for. */}
+            <button
+              className="mv-layer-add"
+              style={{ left: layout.bandEnd, width: LAYER_ADD_WIDTH, height: LAYER_HEADER_HEIGHT }}
+              title="Add a layer"
+              aria-label="Add a layer"
+              onClick={(e) => {
+                e.stopPropagation()
+                applyAdd(addLayer(model))
+              }}
+            >
+              <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                <path d="M6 1.5v9M1.5 6h9" stroke="currentColor" strokeWidth="1.3" />
+              </svg>
+            </button>
           </div>
 
           <TransitionLayer

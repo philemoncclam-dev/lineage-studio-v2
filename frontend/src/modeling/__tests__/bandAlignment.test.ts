@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { addLayer, addObject } from '../../model/edit'
-import { CARD_WIDTH, layoutModel } from '../../model/layout'
+import { CARD_WIDTH, LAYER_ADD_WIDTH, LAYER_GAP, layoutModel } from '../../model/layout'
 import { sampleModel } from '../../model/sample'
 import type { LineageModel } from '../../model/types'
 
@@ -37,8 +37,12 @@ function assertAligned(model: LineageModel) {
     expect(previous.bandLeft + previous.bandWidth).toBeCloseTo(current.bandLeft, 5)
   }
   expect(layout.layers[0].bandLeft).toBe(0)
+  // The band is CLOSED on the right: it ends half a gutter past the last
+  // column, not at the canvas edge, and leaves room for the add-layer slot.
   const last = layout.layers.at(-1)!
-  expect(last.bandLeft + last.bandWidth).toBeCloseTo(layout.width, 5)
+  expect(last.bandLeft + last.bandWidth).toBeCloseTo(layout.bandEnd, 5)
+  expect(layout.bandEnd).toBeCloseTo(last.x + last.width + LAYER_GAP / 2, 5)
+  expect(layout.width).toBeGreaterThanOrEqual(layout.bandEnd + LAYER_ADD_WIDTH)
 }
 
 describe('band alignment survives edits', () => {

@@ -646,10 +646,11 @@
 .sbx-step-report {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 12px 14px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-card, 8px);
+  background: var(--color-surface-1);
 }
 .sbx-step-report[data-status='error'] {
   border-color: var(--color-destructive);
@@ -658,13 +659,42 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
-.sbx-step-report-status {
-  margin-left: auto;
+.sbx-step-report-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.sbx-step-report-note {
+  margin: 0;
   color: var(--color-text-tertiary);
   font-size: var(--text-micro, 11px);
+}
+
+/* Status as a pill, so ok/error is legible at a glance instead of grey
+   uppercase text that reads the same either way. */
+.sbx-status-pill {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro, 10px);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
+}
+.sbx-status-pill[data-status='ok'] {
+  border-color: color-mix(in oklab, var(--color-success, #16a34a) 45%, transparent);
+  color: var(--color-success, #16a34a);
+}
+.sbx-status-pill[data-status='error'] {
+  border-color: color-mix(in oklab, var(--color-destructive) 45%, transparent);
+  color: var(--color-destructive);
 }
 
 /* ---------------------------------------------------------------------------
@@ -829,45 +859,97 @@
   color: #114a2b;
 }
 
-/* --- notebook sandbox (legacy single-run actions, still used) ----------- */
-.sbx-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 16px 0;
-}
-.sbx-run {
-  padding: 8px 16px;
-  border: none;
-  border-radius: var(--radius-control, 6px);
-  background: var(--color-accent);
-  color: var(--color-surface-canvas, #0b0d10);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.sbx-run:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
+/* The single-run `.sbx-actions` / `.sbx-run` BUTTON rules that used to live
+   here are gone. Nothing rendered them any more, but `.sbx-run` is also the
+   class on each executed notebook in the report below — so the dead button
+   styling was painting an accent-coloured bar behind every run block. */
 
+/* ===== Run report (under the lineage canvas) =====
+   Deliberately quiet. The canvas above is the answer; this is the evidence
+   behind it, so it reads as a document — a summary line, then one card per
+   step — rather than as a stack of tinted banners and pills competing with the
+   graph for attention. */
 .sbx-report {
-  margin-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 760px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
 }
-.sbx-safety {
-  padding: 8px 12px;
-  border-radius: var(--radius-control, 6px);
-  font-size: var(--text-micro, 12px);
-  color: var(--color-success, #4ade80);
-  background: color-mix(in oklab, var(--color-success, #4ade80) 12%, transparent);
+.sbx-report-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
-.sbx-safety[data-breach='true'] {
+.sbx-report-title {
+  margin: 0;
+  font-size: var(--text-base, 13px);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+/* The one coloured thing in the report: whether the isolation held. */
+.sbx-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid color-mix(in oklab, var(--color-success, #16a34a) 45%, transparent);
+  color: var(--color-success, #16a34a);
+  font-size: var(--text-micro, 11px);
+}
+.sbx-verdict::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.sbx-verdict[data-breach] {
+  border-color: color-mix(in oklab, var(--color-destructive) 50%, transparent);
   color: var(--color-destructive);
-  background: color-mix(in oklab, var(--color-destructive) 14%, transparent);
+}
+.sbx-breach {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--color-destructive);
+  background: color-mix(in oklab, var(--color-destructive) 8%, transparent);
+  color: var(--color-text-primary);
+  font-size: var(--text-micro, 12px);
+}
+
+/* Run shape as labelled figures — the metadata the old green banner crammed
+   into one sentence. */
+.sbx-report-meta {
+  display: flex;
+  gap: 18px;
+  margin: 0 0 0 auto;
+}
+.sbx-report-meta > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.sbx-report-meta dt {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro, 10px);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sbx-report-meta dd {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro, 12px);
+  font-variant-numeric: tabular-nums;
+}
+
+.sbx-report-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
 }
 
 /* one executed notebook inside a step (a pipeline step has several) */
@@ -884,33 +966,60 @@
   color: var(--color-text-secondary);
   font-size: var(--text-micro, 11px);
 }
+
+/* Reads and writes side by side, each a scannable column keyed by a coloured
+   left rule — the same read/write hues the canvas edges use. */
 .sbx-io {
-  display: flex;
-  gap: 32px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
-.sbx-io > div {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+.sbx-io-col {
+  --io: var(--color-edge-reads, #38bdf8);
+  min-width: 0;
+  padding-left: 8px;
+  border-left: 2px solid color-mix(in oklab, var(--io) 60%, transparent);
+}
+.sbx-io-col[data-tone='write'] {
+  --io: var(--color-edge-writes, #f59e0b);
 }
 .sbx-io-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro, 10px);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
-.sbx-chip {
-  padding: 2px 8px;
+.sbx-io-n {
+  padding: 0 5px;
   border-radius: var(--radius-pill, 999px);
-  background: color-mix(in oklab, var(--color-edge-reads, #38bdf8) 16%, transparent);
+  background: color-mix(in oklab, var(--io) 18%, transparent);
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.sbx-io-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sbx-io-list li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--color-text-primary);
   font-family: var(--font-mono);
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro, 11px);
 }
-.sbx-chip.sbx-write {
-  background: color-mix(in oklab, var(--color-edge-writes, #f59e0b) 18%, transparent);
+.sbx-io-none {
+  margin: 4px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro, 11px);
 }
 
 .sbx-log {

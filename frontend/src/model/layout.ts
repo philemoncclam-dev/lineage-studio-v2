@@ -36,6 +36,13 @@ export const CANVAS_PADDING = 40
  * rail or it would sit underneath it.
  */
 export const CANVAS_PADDING_LEFT = 76
+/**
+ * Width of the "add a layer" slot the band ends with. The band no longer runs
+ * to the canvas edge (an open-ended band read as a layer that owned all the
+ * empty space to its right), so the world has to be wide enough to hold this
+ * slot plus the usual right padding beyond the last segment.
+ */
+export const LAYER_ADD_WIDTH = 34
 
 export interface LayoutRow {
   id: EntityId
@@ -98,6 +105,12 @@ export interface Layout {
   anchors: Map<EntityId, Anchor>
   width: number
   height: number
+  /**
+   * World x where the layer band stops. The band is CLOSED on the right — past
+   * this point is canvas, owned by no layer — and this is where the "add a
+   * layer" slot is drawn.
+   */
+  bandEnd: number
 }
 
 /** Flattens an attribute subtree into the rows that are actually visible. */
@@ -227,19 +240,28 @@ export function layoutModel(model: LineageModel, collapsed: ReadonlySet<EntityId
     x += width + LAYER_GAP
   }
 
-  const totalWidth = x - LAYER_GAP + CANVAS_PADDING
-
-  // Contiguous band segments: each boundary sits halfway between two columns,
-  // and the outer edges run to the canvas edges so no band pixel is orphaned.
+  // Contiguous band segments: each boundary sits halfway between two columns.
+  // The LEFT edge runs to the canvas edge, but the RIGHT one does not — the
+  // last segment stops half a gutter past its column, the same distance every
+  // other boundary sits at. Letting it run on made the rightmost layer look
+  // like it owned every empty pixel to its right, with no line to end it.
   for (let i = 0; i < layers.length; i += 1) {
     const layer = layers[i]
     const previous = layers[i - 1]
     const next = layers[i + 1]
     const left = previous ? (previous.x + previous.width + layer.x) / 2 : 0
-    const right = next ? (layer.x + layer.width + next.x) / 2 : totalWidth
+    const right = next
+      ? (layer.x + layer.width + next.x) / 2
+      : layer.x + layer.width + LAYER_GAP / 2
     layer.bandLeft = left
     layer.bandWidth = right - left
   }
+
+  const last = layers.at(-1)
+  const bandEnd = last ? last.bandLeft + last.bandWidth : CANVAS_PADDING_LEFT
+  // Wide enough for the closed band plus the add-layer slot beyond it, and never
+  // narrower than the columns themselves need.
+  const totalWidth = Math.max(x - LAYER_GAP + CANVAS_PADDING, bandEnd + LAYER_ADD_WIDTH + CANVAS_PADDING)
 
   return {
     layers,
@@ -247,6 +269,7 @@ export function layoutModel(model: LineageModel, collapsed: ReadonlySet<EntityId
     anchors,
     width: totalWidth,
     height: maxBottom + CANVAS_PADDING,
+    bandEnd,
   }
 }
 

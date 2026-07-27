@@ -317,6 +317,33 @@ function buildFlow(steps: Step[], results: Map<string, StepResult>): { nodes: Fl
   return { nodes, edges }
 }
 
+/**
+ * One side of a run's I/O. A vertical list of table names under a counted
+ * heading, rather than a wrapping row of fat pills: table names are long and
+ * similar, and a column lets the eye scan them.
+ */
+function IoColumn({ tone, tables }: { tone: RowTone; tables: string[] }) {
+  return (
+    <div className="sbx-io-col" data-tone={tone}>
+      <div className="sbx-io-label">
+        {tone === 'read' ? 'Reads' : 'Writes'}
+        <span className="sbx-io-n">{tables.length}</span>
+      </div>
+      {tables.length === 0 ? (
+        <p className="sbx-io-none">none</p>
+      ) : (
+        <ul className="sbx-io-list">
+          {tables.map((t) => (
+            <li key={t} title={t}>
+              {t}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function StepIcon({ kind }: { kind: StepKind }) {
   return (
     <svg className="fx-icon" data-kind={kind === 'pipeline' ? 'item' : 'notebook'} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
@@ -456,6 +483,10 @@ function SandboxRoute() {
     .filter((x): x is { s: Step; name: string; r: SandboxRunResult } => !!x.r)
 
   const anyBreach = notebookRuns.some(({ r }) => r.saw_credentials)
+  // Distinct tables across the whole run — the same table read by three steps
+  // is one table, which is what the summary line should say.
+  const totalReads = new Set(notebookRuns.flatMap(({ r }) => r.reads)).size
+  const totalWrites = new Set(notebookRuns.flatMap(({ r }) => r.writes)).size
 
   return (
     <div className="fx-page">
@@ -533,57 +564,85 @@ function SandboxRoute() {
               <FlowCanvas nodes={flow.nodes} edges={flow.edges} />
 
               {ran && (
-                <div className="sbx-report">
-                  {notebookRuns.length > 0 && (
-                    <div className="sbx-safety" data-breach={anyBreach}>
-                      {anyBreach
-                        ? '⚠ Isolation breach: credentials were visible to the sandbox.'
-                        : `✓ Ran isolated — no Fabric credentials reachable · engine: ${notebookRuns[0].r.engine}`}
-                    </div>
+                <section className="sbx-report" aria-label="Run report">
+                  {/* A summary line, not a full-bleed tinted banner. The
+                      isolation verdict is the one thing that must be
+                      unmissable, so it is the only coloured element here; the
+                      run's shape (engine, notebooks, I/O totals) sits beside it
+                      as plain metadata. */}
+                  <header className="sbx-report-head">
+                    <h3 className="sbx-report-title">Run report</h3>
+                    {notebookRuns.length > 0 && (
+                      <>
+                        <span className="sbx-verdict" data-breach={anyBreach || undefined}>
+                          {anyBreach ? 'Isolation breach' : 'Isolated'}
+                        </span>
+                        <dl className="sbx-report-meta">
+                          <div>
+                            <dt>Engine</dt>
+                            <dd>{notebookRuns[0].r.engine}</dd>
+                          </div>
+                          <div>
+                            <dt>Notebooks</dt>
+                            <dd>{notebookRuns.length}</dd>
+                          </div>
+                          <div>
+                            <dt>Reads</dt>
+                            <dd>{totalReads}</dd>
+                          </div>
+                          <div>
+                            <dt>Writes</dt>
+                            <dd>{totalWrites}</dd>
+                          </div>
+                        </dl>
+                      </>
+                    )}
+                  </header>
+
+                  {anyBreach && (
+                    <p className="sbx-breach" role="alert">
+                      Fabric credentials were reachable from inside the sandbox. Treat these results
+                      as untrusted and check the harness before running again.
+                    </p>
                   )}
 
-                  {steps.map((step, i) => {
-                    const r = results.get(step.key)
-                    if (!r) return null
-                    return (
-                      <div className="sbx-step-report" key={step.key} data-status={r.status}>
-                        <div className="sbx-step-report-head">
-                          <span className="sbx-step-num">{i + 1}</span>
-                          <StepIcon kind={step.kind} />
-                          <strong>{step.name}</strong>
-                          <span className="sbx-step-report-status">{r.status}</span>
-                        </div>
-                        {r.error && <div className="fx-note" data-error="true">{r.error}</div>}
-                        {step.kind === 'pipeline' && r.activities && (
-                          <div className="fx-note">
-                            {r.activities.length} activities — {r.runs.length} notebook
-                            {r.runs.length === 1 ? '' : 's'} executed in dependency order; other activity types are
-                            shown structurally.
+                  <div className="sbx-report-list">
+                    {steps.map((step, i) => {
+                      const r = results.get(step.key)
+                      if (!r) return null
+                      return (
+                        <article className="sbx-step-report" key={step.key} data-status={r.status}>
+                          <div className="sbx-step-report-head">
+                            <span className="sbx-step-num">{i + 1}</span>
+                            <StepIcon kind={step.kind} />
+                            <span className="sbx-step-report-name" title={step.name}>{step.name}</span>
+                            <span className="sbx-status-pill" data-status={r.status}>{r.status}</span>
                           </div>
-                        )}
-                        {r.runs.map((run) => (
-                          <div className="sbx-run" key={run.name}>
-                            {step.kind === 'pipeline' && <div className="sbx-run-name">{run.name}</div>}
-                            {run.error && <div className="fx-note" data-error="true">{run.error}</div>}
-                            {run.result && (
-                              <div className="sbx-io">
-                                <div>
-                                  <span className="sbx-io-label">Reads</span>
-                                  {run.result.reads.length ? run.result.reads.map((x) => <code key={x} className="sbx-chip">{x}</code>) : <span className="fx-note">none</span>}
+                          {r.error && <div className="fx-note" data-error="true">{r.error}</div>}
+                          {step.kind === 'pipeline' && r.activities && (
+                            <p className="sbx-step-report-note">
+                              {r.activities.length} activities — {r.runs.length} notebook
+                              {r.runs.length === 1 ? '' : 's'} executed in dependency order; other
+                              activity types are shown structurally.
+                            </p>
+                          )}
+                          {r.runs.map((run) => (
+                            <div className="sbx-run" key={run.name}>
+                              {step.kind === 'pipeline' && <div className="sbx-run-name">{run.name}</div>}
+                              {run.error && <div className="fx-note" data-error="true">{run.error}</div>}
+                              {run.result && (
+                                <div className="sbx-io">
+                                  <IoColumn tone="read" tables={run.result.reads} />
+                                  <IoColumn tone="write" tables={run.result.writes} />
                                 </div>
-                                <div>
-                                  <span className="sbx-io-label">Writes</span>
-                                  {run.result.writes.length ? run.result.writes.map((x) => <code key={x} className="sbx-chip sbx-write">{x}</code>) : <span className="fx-note">none</span>}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  })}
-
-                </div>
+                              )}
+                            </div>
+                          ))}
+                        </article>
+                      )
+                    })}
+                  </div>
+                </section>
               )}
             </div>
           )}

@@ -125,6 +125,120 @@ function ShareBar({ row }: { row: WorkspaceRow }) {
   )
 }
 
+/**
+ * Workspace filter — a searchable multi-select, not a chip row.
+ *
+ * Chips assumed a tenant small enough to render whole. A tenant with fifty
+ * workspaces turned the filter into three lines of wrapping buttons above the
+ * numbers it filters, with no way to find one by name. A dropdown stays one
+ * control tall however many workspaces exist, and carries its own search.
+ */
+function WorkspacePicker({
+  rows,
+  selected,
+  onToggle,
+  onSet,
+}: {
+  rows: WorkspaceRow[]
+  selected: Set<string>
+  onToggle: (id: string) => void
+  onSet: (next: Set<string>) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const hostRef = useRef<HTMLDivElement | null>(null)
+
+  // Close on an outside click or Escape. Both live on the document because the
+  // menu must also close when the click lands on the dashboard behind it.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!hostRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const q = query.trim().toLowerCase()
+  const shown = q ? rows.filter((w) => w.name.toLowerCase().includes(q)) : rows
+
+  const label =
+    selected.size === 0
+      ? 'All workspaces'
+      : selected.size === 1
+        ? (rows.find((w) => selected.has(w.id))?.name ?? '1 workspace')
+        : `${selected.size} workspaces`
+
+  return (
+    <div className="fo-ws-picker" ref={hostRef}>
+      <button
+        className="fo-ws-trigger"
+        data-on={selected.size > 0 || undefined}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden>
+          <path d="M4 5h16M7 12h10M10 19h4" />
+        </svg>
+        <span className="fo-ws-label">{label}</span>
+        <span className="fo-ws-caret" data-open={open || undefined} aria-hidden>
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <div className="fo-ws-menu" role="listbox" aria-multiselectable>
+          <input
+            className="fo-ws-search"
+            autoFocus
+            placeholder="Search workspaces…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <div className="fo-ws-list">
+            {shown.length === 0 && <div className="fo-ws-empty">No workspaces match “{query}”.</div>}
+            {shown.map((w) => {
+              const on = selected.has(w.id)
+              return (
+                <button
+                  key={w.id}
+                  className="fo-ws-row"
+                  role="option"
+                  aria-selected={on}
+                  onClick={() => onToggle(w.id)}
+                >
+                  <span className="fo-ws-check" data-on={on || undefined} aria-hidden>
+                    {on ? '✓' : ''}
+                  </span>
+                  <span className="fo-ws-name">{w.name}</span>
+                  <span className="fo-ws-count">{nf.format(w.total)}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="fo-ws-foot">
+            {/* An empty selection IS "all", so clearing is the reset. */}
+            <button onClick={() => onSet(new Set())} disabled={selected.size === 0}>
+              All workspaces
+            </button>
+            <button onClick={() => onSet(new Set(shown.map((w) => w.id)))} disabled={shown.length === 0}>
+              {q ? `Select ${shown.length} shown` : 'Select every workspace'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // --- the page -------------------------------------------------------------
 
 function OverviewRoute() {
@@ -320,27 +434,32 @@ function OverviewRoute() {
           </div>
         )}
 
-        {/* Workspace filter. Chips rather than a select: the tenant is small
-            enough to show whole, and multi-select is the common case. */}
+        {/* Workspace filter — searchable multi-select, so the control stays one
+            row tall however many workspaces the tenant has. */}
         {allRows.length > 0 && (
           <div className="fo-filter" role="group" aria-label="Filter by workspace">
-            <button
-              className={`fo-chip${selected.size === 0 ? ' fo-chip--on' : ''}`}
-              onClick={() => setSelected(new Set())}
-            >
-              All workspaces
-            </button>
-            {allRows.map((w) => (
-              <button
-                key={w.id}
-                className={`fo-chip${selected.has(w.id) ? ' fo-chip--on' : ''}`}
-                onClick={() => toggleWorkspace(w.id)}
-                aria-pressed={selected.has(w.id)}
-              >
-                {w.name}
-                <span className="fo-chip-count">{nf.format(w.total)}</span>
-              </button>
-            ))}
+            <WorkspacePicker
+              rows={allRows}
+              selected={selected}
+              onToggle={toggleWorkspace}
+              onSet={setSelected}
+            />
+            {/* The active selection stays visible (and individually removable)
+                outside the closed menu — otherwise a filtered dashboard looks
+                like an unfiltered one. */}
+            {allRows
+              .filter((w) => selected.has(w.id))
+              .map((w) => (
+                <button
+                  key={w.id}
+                  className="fo-chip fo-chip--on"
+                  onClick={() => toggleWorkspace(w.id)}
+                  title={`Remove ${w.name} from the filter`}
+                >
+                  {w.name}
+                  <span className="fo-chip-count">×</span>
+                </button>
+              ))}
           </div>
         )}
 

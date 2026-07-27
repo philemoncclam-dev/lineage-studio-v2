@@ -30,6 +30,8 @@ export type RailIconName =
   | 'dashboard'
   | 'import'
   | 'export'
+  | 'overview'
+  | 'mapping'
 
 export interface RailItem {
   key: string
@@ -45,13 +47,14 @@ export interface RailItem {
 export const railConfig: Record<ModeKey, RailItem[]> = {
   model: [
     { key: 'layers', label: 'Model layers', icon: 'layers', to: '/model' },
+    { key: 'mapping', label: 'Auto-Mapper', icon: 'mapping', action: 'mapping' },
     { key: 'import', label: 'Import', icon: 'import', action: 'import' },
     { key: 'export', label: 'Export', icon: 'export', action: 'export' },
   ],
   fabric: [
-    { key: 'overview', label: 'Overview', icon: 'dashboard', to: '/fabric/overview' },
-    { key: 'explore', label: '1. Explore', icon: 'explore', to: '/fabric/explore' },
-    { key: 'sandbox', label: '2. Sandbox', icon: 'sandbox', to: '/fabric/sandbox' },
+    { key: 'overview', label: 'Overview', icon: 'overview', to: '/fabric/overview' },
+    { key: 'explore', label: 'Explore', icon: 'explore', to: '/fabric/explore' },
+    { key: 'sandbox', label: 'Sandbox', icon: 'sandbox', to: '/fabric/sandbox' },
   ],
   products: [
     { key: 'catalog', label: 'Products', icon: 'products', to: '/products' },

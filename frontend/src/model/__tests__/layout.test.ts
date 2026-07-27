@@ -40,8 +40,12 @@ describe('layoutModel', () => {
       const current = layout.layers[i]
       expect(previous.bandLeft + previous.bandWidth).toBeCloseTo(current.bandLeft, 5)
     }
+    // The band CLOSES half a gutter past the last column rather than running to
+    // the canvas edge, and the world is wide enough to hold the add-layer slot
+    // beyond that line.
     const last = layout.layers[layout.layers.length - 1]
-    expect(last.bandLeft + last.bandWidth).toBeCloseTo(layout.width, 5)
+    expect(last.bandLeft + last.bandWidth).toBeCloseTo(layout.bandEnd, 5)
+    expect(layout.bandEnd).toBeLessThan(layout.width)
   })
 
   it('centres the layer name on the column, which is also the card centre', () => {

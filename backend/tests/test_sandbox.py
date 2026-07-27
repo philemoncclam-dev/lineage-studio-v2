@@ -8,6 +8,8 @@ child, and the child reports that back as `saw_credentials`.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -118,3 +120,60 @@ def test_run_endpoint_accepts_direct_cells(client):
 def test_run_endpoint_requires_cells_or_ids(client):
     resp = client.post("/fabric/sandbox/run", json={"name": "nb"})
     assert resp.status_code == 400
+
+
+# --- executor output robustness -------------------------------------------
+# The child writes one JSON object to stdout but does not OWN stdout: the Spark
+# JVM writes there too, and on Windows a shutdown line can land after the
+# result. Parsing the whole stream then fails on trailing characters and a
+# perfectly good run is reported as a crash.
+
+def test_jvm_noise_after_the_result_does_not_fail_the_run():
+    from app.sandbox.runner import _result_json
+
+    payload = '{"ok": true, "engine": "spark", "reads": []}'
+    polluted = payload + "\nThe process ... has been terminated.\n"
+    assert json.loads(_result_json(polluted))["engine"] == "spark"
+
+
+def test_jvm_noise_before_the_result_does_not_fail_the_run():
+    from app.sandbox.runner import _result_json
+
+    polluted = 'WARN: something from the JVM\n{"ok": true, "engine": "spark"}'
+    assert json.loads(_result_json(polluted))["ok"] is True
+
+
+def test_a_path_write_is_captured_not_discarded():
+    """`df.write.save("abfss://…")` is how Fabric writes to a FOREIGN lakehouse.
+
+    It used to be a no-op sink, so the most common cross-workspace write
+    produced no lineage at all.
+    """
+    from app.sandbox._refs import make_ref
+
+    result = run_sandbox(
+        RunRequest(
+            notebook_name="nb",
+            cells=[
+                "df = spark.table('raw_orders')",
+                "df.write.mode('overwrite').save("
+                "'abfss://ws-guid@onelake.dfs.fabric.microsoft.com/lh-guid/Tables/out_table')",
+            ],
+            workspace="Analytics",
+            lakehouse="Bronze",
+            name_map={"ws-guid": "Finance", "lh-guid": "Gold"},
+        ),
+        engine="stub",
+    )
+    assert make_ref("out_table", "Gold", "Finance") in result.writes
+
+
+def test_abfss_workspaces_are_collected_for_name_resolution():
+    from app.sandbox._refs import referenced_workspace_ids
+
+    cells = [
+        "df.write.save('abfss://87b1b30f-9939-4dbc-8a50-a7a0e82df415@onelake.dfs."
+        "fabric.microsoft.com/f3f56b4a-b9ee-4a31-b6bf-c1dda2e15075/Tables/t')",
+        "x = 1",
+    ]
+    assert referenced_workspace_ids(cells) == ["87b1b30f-9939-4dbc-8a50-a7a0e82df415"]

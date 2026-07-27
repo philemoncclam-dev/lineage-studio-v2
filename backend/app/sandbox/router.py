@@ -19,6 +19,7 @@ from ..fabric.schema import (
     scan_read_tables,
     workspace_index,
 )
+from ._refs import referenced_workspace_ids
 from .protocol import ColumnSchema, RunRequest, RunResult
 from .runner import run_sandbox
 
@@ -70,7 +71,11 @@ def sandbox_run(req: SandboxRunRequest) -> RunResult:
         # workspace name when the caller didn't supply it.
         try:
             ws_index = workspace_index(client)
-            name_map = guid_name_map(client, [req.workspace_id])
+            # Include any workspace the notebook reaches into by `abfss://`,
+            # so its lakehouse GUIDs get names too — not just the notebook's own.
+            name_map = guid_name_map(
+                client, [req.workspace_id, *referenced_workspace_ids(cells)]
+            )
             workspace = workspace or name_map.get(req.workspace_id.lower(), "")
         except FabricError:
             ws_index = {}

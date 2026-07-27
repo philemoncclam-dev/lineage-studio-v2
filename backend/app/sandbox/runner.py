@@ -17,6 +17,7 @@ JSON contract (protocol.py) is identical.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -117,10 +118,29 @@ def run_sandbox(req: RunRequest, timeout: int = _TIMEOUT, engine: Engine = "auto
         detail = (proc.stderr or proc.stdout or "executor exited non-zero").strip()
         return RunResult(ok=False, engine="stub", error=detail[:1000])
     try:
-        return RunResult.model_validate_json(proc.stdout)
+        return RunResult.model_validate_json(_result_json(proc.stdout))
     except Exception as exc:  # noqa: BLE001
         return RunResult(
             ok=False,
             engine="stub",
             error=f"could not parse executor output: {exc}; raw={proc.stdout[:400]!r}",
         )
+
+
+def _result_json(stdout: str) -> str:
+    """The executor's JSON object, ignoring anything the JVM added around it.
+
+    The child writes one JSON object to stdout, but it does not own stdout: the
+    Spark JVM writes there too, and on Windows a line like "... has been
+    terminated." can land AFTER the result as the session shuts down. Parsing
+    the whole stream then fails on trailing characters and a perfectly good run
+    is reported as a crash — the intermittent sandbox failures were this.
+
+    So decode the first complete JSON object and ignore the rest, rather than
+    requiring the child to have had stdout to itself.
+    """
+    start = stdout.find("{")
+    if start < 0:
+        return stdout
+    obj, _end = json.JSONDecoder().raw_decode(stdout, start)
+    return json.dumps(obj)

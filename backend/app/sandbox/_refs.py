@@ -143,6 +143,28 @@ def _resolve(segment: str, name_map: dict[str, str]) -> str:
     return name_map.get(segment.lower(), segment) if segment else ""
 
 
+#: The workspace GUID leading an `abfss://<ws>@<account>/...` path.
+_ABFSS_WS = re.compile(
+    r"abfss://([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})@"
+)
+
+
+def referenced_workspace_ids(cells) -> list[str]:
+    """Workspace GUIDs named by `abfss://` paths anywhere in the source.
+
+    A notebook reaching into another workspace addresses it by GUID, and the
+    lakehouse GUID in that path can only be named by listing THAT workspace's
+    items. Without this the foreign lakehouse stays a GUID in the graph — a
+    correct identity, but an unreadable label.
+    """
+    seen: list[str] = []
+    for cell in cells or []:
+        for guid in _ABFSS_WS.findall(cell or ""):
+            if guid.lower() not in [s.lower() for s in seen]:
+                seen.append(guid)
+    return seen
+
+
 def looks_like_ref(value: str) -> bool:
     """Whether `value` is already canonical rather than raw notebook source.
 

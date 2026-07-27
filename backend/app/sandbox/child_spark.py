@@ -252,9 +252,25 @@ def main() -> None:
     def _insertInto(self, name, *a, **k):  # noqa: ANN001
         _capture(name, self._df)
 
+    def _save(self, path=None, *a, **k):  # noqa: ANN001
+        """A path write — `df.write.save("abfss://…/Tables/name")`.
+
+        This is the form Fabric generates for a lakehouse in ANOTHER workspace,
+        so it carries the cross-workspace lineage that matters most. It used to
+        be a silent no-op sink, which meant that write produced no lineage at
+        all. Still nothing is written: the plan is captured exactly as for
+        `saveAsTable`, and the path is resolved to a workspace-qualified ref.
+
+        A pathless `.save()` (target set via `.option("path", …)`) has nothing
+        to name, so it stays a no-op rather than inventing a table.
+        """
+        target = path or (k.get("path") if isinstance(k.get("path"), str) else None)
+        if target:
+            _capture(target, self._df)
+
     DataFrameWriter.saveAsTable = _saveAsTable
     DataFrameWriter.insertInto = _insertInto
-    DataFrameWriter.save = lambda self, *a, **k: None  # path writes: no-op sink
+    DataFrameWriter.save = _save
 
     # Intercept SQL writes; let read queries build their (lazy) plan normally.
     _orig_sql = spark.sql

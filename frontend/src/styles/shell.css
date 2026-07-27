@@ -7,15 +7,19 @@
 
 .shell { height: 100vh; display: flex; overflow: hidden; position: relative; }
 
-/* ===== Modeling: full-bleed canvas, floating rail =====
+/* ===== Full-bleed canvas, floating rail =====
    The Model Viewer's layer band has to span the full window width, so its
    centre is the window's centre and a layer name reads as centred over its
    column. That means the canvas cannot be inset by an in-flow rail.
-   So in this mode the rail leaves the flow entirely and floats over the canvas:
-   detached from the top (it sits below the band), from the left, and from the
-   bottom (height is content-sized, not 100vh). The canvas then starts at x=0
-   and layout.ts's CANVAS_PADDING_LEFT keeps the first column clear of it. */
-.shell[data-mode="model"] .shell-rail-col {
+   So on such a route the rail leaves the flow entirely and floats over the
+   canvas: detached from the top (it sits below the band), from the left, and
+   from the bottom (height is content-sized, not 100vh). The canvas then starts
+   at x=0 and layout.ts's CANVAS_PADDING_LEFT keeps the first column clear of it.
+
+   Gated on data-fullbleed, NOT data-mode="model": the Model Browser is in the
+   same mode but is an ordinary in-flow page, and a floating rail would sit on
+   top of its sidebar. See railConfig.isFullBleedPath. */
+.shell[data-fullbleed] .shell-rail-col {
   position: absolute;
   top: calc(var(--mv-band-height) + var(--spacing-2));
   left: var(--spacing-2);

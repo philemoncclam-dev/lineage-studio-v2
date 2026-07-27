@@ -1,11 +1,14 @@
-// Modeling mode. Loads the active model from local storage, seeding the sample
-// on first run so the viewer is never empty on a fresh browser, and owns both
+// Modeling mode, one model. Loads the model named in the path, and owns both
 // undo history and write-back so ModelViewer stays a render-and-emit component.
-import { createFileRoute } from '@tanstack/react-router'
+//
+// This route used to be `/model` and opened whichever model happened to be
+// first in the index. The Model Browser is now the landing screen and picks the
+// model, so the id is in the path — which also makes a model URL shareable and
+// bookmarkable.
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ModelViewer from '../modeling/ModelViewer'
 import { useUndoable } from '../modeling/useUndoable'
-import { sampleModel } from '../model/sample'
 import { localStore } from '../model/store'
 import { BarsSpinner } from '../shell/BarsSpinner'
 import type { LineageModel } from '../model/types'
@@ -13,13 +16,15 @@ import type { LineageModel } from '../model/types'
 /** Writes are coalesced — a burst of edits shouldn't mean a burst of JSON.stringify. */
 const SAVE_DEBOUNCE_MS = 400
 
-export const Route = createFileRoute('/model')({
+export const Route = createFileRoute('/model/$modelId')({
   component: ModelRoute,
 })
 
 function ModelRoute() {
+  const { modelId } = Route.useParams()
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [missing, setMissing] = useState(false)
   const history = useUndoable<LineageModel | null>(null)
   const { present: model, set, reset, undo, redo, canUndo, canRedo } = history
 
@@ -28,17 +33,21 @@ function ModelRoute() {
 
   useEffect(() => {
     let cancelled = false
+    setLoaded(false)
+    setMissing(false)
     void (async () => {
       try {
-        const summaries = await localStore.list()
-        const existing = summaries[0] ? await localStore.get(summaries[0].id) : null
-        const next = existing ?? sampleModel()
-        if (!existing) await localStore.save(next)
-        if (!cancelled) {
-          // reset, not set — loading is not an undoable step.
-          reset(next)
-          setLoaded(true)
+        const existing = await localStore.get(modelId)
+        if (cancelled) return
+        if (!existing) {
+          // A stale bookmark or a model deleted from another tab. Say so rather
+          // than silently substituting some other model.
+          setMissing(true)
+          return
         }
+        // reset, not set — loading is not an undoable step.
+        reset(existing)
+        setLoaded(true)
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))
       }
@@ -46,7 +55,7 @@ function ModelRoute() {
     return () => {
       cancelled = true
     }
-  }, [reset])
+  }, [modelId, reset])
 
   const persist = useCallback((next: LineageModel) => {
     pending.current = next
@@ -83,6 +92,13 @@ function ModelRoute() {
 
   if (error) {
     return <div className="mv-fallback">Couldn’t open the model: {error}</div>
+  }
+  if (missing) {
+    return (
+      <div className="mv-fallback">
+        That model no longer exists. <Link to="/models">Back to the model browser</Link>
+      </div>
+    )
   }
   if (!model) {
     return (

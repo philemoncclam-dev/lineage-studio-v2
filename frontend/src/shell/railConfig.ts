@@ -32,6 +32,7 @@ export type RailIconName =
   | 'export'
   | 'overview'
   | 'mapping'
+  | 'browser'
 
 export interface RailItem {
   key: string
@@ -46,7 +47,10 @@ export interface RailItem {
 
 export const railConfig: Record<ModeKey, RailItem[]> = {
   model: [
-    { key: 'layers', label: 'Model layers', icon: 'layers', to: '/model' },
+    // The old 'layers' -> /model entry is gone: /model now needs a model id, so
+    // there is no generic destination for it. All models is where you go to
+    // pick one, which is what that button was really for.
+    { key: 'browser', label: 'All models', icon: 'browser', to: '/models' },
     { key: 'mapping', label: 'Auto-Mapper', icon: 'mapping', action: 'mapping' },
     { key: 'import', label: 'Import', icon: 'import', action: 'import' },
     { key: 'export', label: 'Export', icon: 'export', action: 'export' },
@@ -65,14 +69,28 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
 }
 
 export function modeFromPathname(pathname: string): ModeKey {
+  // Covers both /models (the browser) and /model/<id> (the viewer).
   if (pathname.startsWith('/model')) return 'model'
   if (pathname.startsWith('/products')) return 'products'
   return 'fabric'
 }
 
+/**
+ * Whether the route wants the full-bleed canvas with a floating rail.
+ *
+ * Only the Model Viewer does — its layer band has to span the whole window (see
+ * shell.css). The Model Browser is in the same mode but is an ordinary page, and
+ * would have the floating rail sitting on top of its sidebar. So this is a
+ * per-route question, not a per-mode one.
+ */
+export function isFullBleedPath(pathname: string): boolean {
+  return pathname.startsWith('/model/')
+}
+
 /** Where the app-logo mode menu (D-02) navigates each mode to. */
 export const MODE_LANDING: Record<ModeKey, string> = {
-  model: '/model',
+  // The browser, not a model — the mode menu has no way to know which model.
+  model: '/models',
   // /fabric has no index route (route.tsx is a pathless layout) — Overview is
   // the mode's landing destination.
   fabric: '/fabric/overview',

@@ -63,6 +63,11 @@ const ICONS: Record<RailIconName, ReactNode> = {
   overview: (
     <svg viewBox="0 0 24 24"><path d="M3.5 17.5a9 9 0 1 1 17 0" /><path d="M12 13.5 16.5 9" /><circle cx="12" cy="14" r="1.4" /></svg>
   ),
+  // A list of models, not a folder or a grid: the Model Browser's default and
+  // primary shape is the list, and `layout`/`dashboard` already own the tiles.
+  browser: (
+    <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M3.5 9.5h17M8 9.5V19.5" /></svg>
+  ),
   // Two stacked columns with arrows crossing the gutter — the Auto-Mapper's
   // whole job in one glyph.
   mapping: (

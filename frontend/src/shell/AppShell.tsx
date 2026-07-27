@@ -8,7 +8,7 @@ import { useRouterState } from '@tanstack/react-router'
 import ModeMenu from './ModeMenu'
 import Rail from './Rail'
 import RailBottomCluster from './RailBottomCluster'
-import { modeFromPathname, railConfig } from './railConfig'
+import { isFullBleedPath, modeFromPathname, railConfig } from './railConfig'
 import { requestSearch } from './searchBridge'
 import '../styles/components.css'
 import '../styles/shell.css'
@@ -57,9 +57,11 @@ export default function AppShell({ children, overlays = true }: { children: Reac
 
   return (
     <Tooltip.Provider delayDuration={300}>
-      {/* data-mode lets Modeling opt into a full-bleed canvas with a floating
-          rail (see shell.css) without every other mode paying for it. */}
-      <div className="shell" data-mode={mode}>
+      {/* data-mode drives the rail's contents; data-fullbleed is what actually
+          opts a route into the floating-rail canvas (see shell.css). They are
+          separate because Modeling contains both the Model Viewer, which needs
+          it, and the Model Browser, which is an ordinary page. */}
+      <div className="shell" data-mode={mode} data-fullbleed={isFullBleedPath(pathname) || undefined}>
         <div className="shell-rail-col">
           <ModeMenu />
           <Rail items={railConfig[mode]} />

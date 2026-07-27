@@ -35,6 +35,30 @@ export interface ModelStore {
   listVersions(id: string): Promise<Omit<ModelVersion, 'model'>[]>
   saveVersion(id: string, label: string): Promise<void>
   getVersion(modelId: string, versionId: string): Promise<LineageModel | null>
+
+  // --- Model Browser operations ---
+  //
+  // These edit browser metadata, never the graph. They are separate from
+  // `save` so the browser can touch a model without loading, rewriting, and
+  // re-summarizing its whole entity tree.
+
+  /** Creates and persists an empty model, returning it. */
+  create(name: string): Promise<LineageModel>
+  /** Deep-copies a model under a new id and name. Versions are NOT copied. */
+  duplicate(id: string, name?: string): Promise<LineageModel>
+  /** Applies a partial metadata patch. Does not bump `updatedAt`. */
+  patchMeta(id: string, patch: MetaPatch): Promise<void>
+  /** Records that a model was opened. Does not bump `updatedAt`. */
+  touch(id: string): Promise<void>
+  removeMany(ids: string[]): Promise<void>
+}
+
+/** The browser-editable metadata subset. */
+export interface MetaPatch {
+  name?: string
+  description?: string
+  tags?: string[]
+  starred?: boolean
 }
 
 function readJson<T>(key: string): T | null {
@@ -62,31 +86,99 @@ function writeJson(key: string, value: unknown): void {
   }
 }
 
-export function summarize(model: LineageModel): ModelSummary {
-  return {
-    id: model.id,
-    name: model.name,
-    createdAt: model.createdAt,
-    updatedAt: model.updatedAt,
-    layerCount: model.layers.length,
-    entityCount: countEntities(model),
-    transitionCount: model.transitions.length,
+/**
+ * Dedupes case-insensitively while keeping the first spelling seen, so "Logical"
+ * and "logical" collapse to one tag but the label the user typed survives.
+ */
+export function normalizeTags(tags: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of tags) {
+    const tag = raw.trim()
+    if (!tag) continue
+    const key = tag.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(tag)
   }
+  return out.sort((a, b) => a.localeCompare(b))
+}
+
+/**
+ * Fills in browser metadata absent from models persisted before it existed.
+ * Every read path goes through this, so nothing above the store has to guess.
+ *
+ * `lastViewedAt` defaults to `updatedAt` rather than 0: a pre-browser model has
+ * no view history, and dropping it to the bottom of the default sort would hide
+ * the user's real work behind whatever they created most recently.
+ */
+export function normalize(model: LineageModel): LineageModel {
+  return {
+    ...model,
+    description: model.description ?? '',
+    tags: normalizeTags(model.tags ?? []),
+    starred: model.starred ?? false,
+    lastViewedAt: model.lastViewedAt ?? model.updatedAt,
+  }
+}
+
+export function summarize(model: LineageModel): ModelSummary {
+  const full = normalize(model)
+  return {
+    id: full.id,
+    name: full.name,
+    createdAt: full.createdAt,
+    updatedAt: full.updatedAt,
+    layerCount: full.layers.length,
+    entityCount: countEntities(full),
+    transitionCount: full.transitions.length,
+    description: full.description ?? '',
+    tags: full.tags ?? [],
+    starred: full.starred ?? false,
+    lastViewedAt: full.lastViewedAt ?? full.updatedAt,
+  }
+}
+
+/** Index rows written before the browser existed lack the metadata fields. */
+function fillSummary(s: ModelSummary): ModelSummary {
+  return {
+    ...s,
+    description: s.description ?? '',
+    tags: normalizeTags(s.tags ?? []),
+    starred: s.starred ?? false,
+    lastViewedAt: s.lastViewedAt ?? s.updatedAt,
+  }
+}
+
+function readIndex(): ModelSummary[] {
+  return (readJson<ModelSummary[]>(INDEX_KEY) ?? []).map(fillSummary)
+}
+
+/** Rewrites one index row in place, leaving the rest untouched. */
+function patchIndex(id: string, patch: Partial<ModelSummary>): void {
+  const index = readIndex()
+  const row = index.find((s) => s.id === id)
+  if (!row) return
+  writeJson(
+    INDEX_KEY,
+    index.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+  )
 }
 
 export const localStore: ModelStore = {
   async list() {
-    return (readJson<ModelSummary[]>(INDEX_KEY) ?? []).sort((a, b) => b.updatedAt - a.updatedAt)
+    return readIndex().sort((a, b) => b.updatedAt - a.updatedAt)
   },
 
   async get(id) {
-    return readJson<LineageModel>(modelKey(id))
+    const model = readJson<LineageModel>(modelKey(id))
+    return model ? normalize(model) : null
   },
 
   async save(model) {
-    const next: LineageModel = { ...model, updatedAt: Date.now() }
+    const next = normalize({ ...model, updatedAt: Date.now() })
     writeJson(modelKey(next.id), next)
-    const index = readJson<ModelSummary[]>(INDEX_KEY) ?? []
+    const index = readIndex()
     const without = index.filter((s) => s.id !== next.id)
     writeJson(INDEX_KEY, [...without, summarize(next)])
   },
@@ -94,11 +186,67 @@ export const localStore: ModelStore = {
   async remove(id) {
     localStorage.removeItem(modelKey(id))
     localStorage.removeItem(versionsKey(id))
-    const index = readJson<ModelSummary[]>(INDEX_KEY) ?? []
     writeJson(
       INDEX_KEY,
-      index.filter((s) => s.id !== id),
+      readIndex().filter((s) => s.id !== id),
     )
+  },
+
+  async removeMany(ids) {
+    const drop = new Set(ids)
+    for (const id of drop) {
+      localStorage.removeItem(modelKey(id))
+      localStorage.removeItem(versionsKey(id))
+    }
+    writeJson(
+      INDEX_KEY,
+      readIndex().filter((s) => !drop.has(s.id)),
+    )
+  },
+
+  async create(name) {
+    const model = emptyModel(name)
+    await localStore.save(model)
+    return model
+  },
+
+  async duplicate(id, name) {
+    const source = await localStore.get(id)
+    if (!source) throw new Error(`No model ${id} to duplicate`)
+    const now = Date.now()
+    // structuredClone, not a spread: layers/transitions/properties are deeply
+    // nested, and a shallow copy would leave the two models sharing entity
+    // objects — editing the copy would silently edit the original.
+    const copy: LineageModel = {
+      ...structuredClone(source),
+      id: crypto.randomUUID(),
+      name: name ?? `${source.name} (copy)`,
+      createdAt: now,
+      updatedAt: now,
+      lastViewedAt: now,
+    }
+    await localStore.save(copy)
+    return copy
+  },
+
+  async patchMeta(id, patch) {
+    const model = readJson<LineageModel>(modelKey(id))
+    if (!model) return
+    const clean: MetaPatch = { ...patch }
+    if (clean.tags) clean.tags = normalizeTags(clean.tags)
+    // Deliberately NOT bumping updatedAt: starring a model or fixing a typo in
+    // its tags is not a change to the model, and letting it reorder the
+    // "recently modified" sort would make that sort useless.
+    writeJson(modelKey(id), normalize({ ...model, ...clean }))
+    patchIndex(id, clean as Partial<ModelSummary>)
+  },
+
+  async touch(id) {
+    const model = readJson<LineageModel>(modelKey(id))
+    if (!model) return
+    const lastViewedAt = Date.now()
+    writeJson(modelKey(id), normalize({ ...model, lastViewedAt }))
+    patchIndex(id, { lastViewedAt })
   },
 
   async listVersions(id) {
@@ -134,5 +282,9 @@ export function emptyModel(name: string): LineageModel {
     layers: [],
     transitions: [],
     properties: {},
+    description: '',
+    tags: [],
+    starred: false,
+    lastViewedAt: now,
   }
 }

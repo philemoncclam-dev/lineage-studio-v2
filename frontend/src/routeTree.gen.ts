@@ -11,11 +11,12 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as FabricRouteRouteImport } from './routes/fabric/route'
-import { Route as ModelRouteImport } from './routes/model'
+import { Route as ModelsRouteImport } from './routes/models'
 import { Route as ProductsRouteRouteImport } from './routes/products/route'
 import { Route as FabricExploreRouteImport } from './routes/fabric/explore'
 import { Route as FabricOverviewRouteImport } from './routes/fabric/overview'
 import { Route as FabricSandboxRouteImport } from './routes/fabric/sandbox'
+import { Route as ModelModelIdRouteImport } from './routes/model.$modelId'
 import { Route as ProductsIndexRouteImport } from './routes/products/index'
 import { Route as ProductsProductIdRouteImport } from './routes/products/$productId'
 import { Route as ProductsDomainsRouteImport } from './routes/products/domains'
@@ -32,9 +33,9 @@ const FabricRouteRoute = FabricRouteRouteImport.update({
   path: '/fabric',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ModelRoute = ModelRouteImport.update({
-  id: '/model',
-  path: '/model',
+const ModelsRoute = ModelsRouteImport.update({
+  id: '/models',
+  path: '/models',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProductsRouteRoute = ProductsRouteRouteImport.update({
@@ -56,6 +57,11 @@ const FabricSandboxRoute = FabricSandboxRouteImport.update({
   id: '/sandbox',
   path: '/sandbox',
   getParentRoute: () => FabricRouteRoute,
+} as any)
+const ModelModelIdRoute = ModelModelIdRouteImport.update({
+  id: '/$modelId',
+  path: '/$modelId',
+  getParentRoute: () => ModelRoute,
 } as any)
 const ProductsIndexRoute = ProductsIndexRouteImport.update({
   id: '/',
@@ -87,10 +93,11 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/fabric': typeof FabricRouteRouteWithChildren
   '/products': typeof ProductsRouteRouteWithChildren
-  '/model': typeof ModelRoute
+  '/models': typeof ModelsRoute
   '/fabric/explore': typeof FabricExploreRoute
   '/fabric/overview': typeof FabricOverviewRoute
   '/fabric/sandbox': typeof FabricSandboxRoute
+  '/model/$modelId': typeof ModelModelIdRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/products/domains': typeof ProductsDomainsRoute
   '/products/new': typeof ProductsNewRoute
@@ -100,10 +107,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/fabric': typeof FabricRouteRouteWithChildren
-  '/model': typeof ModelRoute
+  '/models': typeof ModelsRoute
   '/fabric/explore': typeof FabricExploreRoute
   '/fabric/overview': typeof FabricOverviewRoute
   '/fabric/sandbox': typeof FabricSandboxRoute
+  '/model/$modelId': typeof ModelModelIdRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/products/domains': typeof ProductsDomainsRoute
   '/products/new': typeof ProductsNewRoute
@@ -115,10 +123,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/fabric': typeof FabricRouteRouteWithChildren
   '/products': typeof ProductsRouteRouteWithChildren
-  '/model': typeof ModelRoute
+  '/models': typeof ModelsRoute
   '/fabric/explore': typeof FabricExploreRoute
   '/fabric/overview': typeof FabricOverviewRoute
   '/fabric/sandbox': typeof FabricSandboxRoute
+  '/model/$modelId': typeof ModelModelIdRoute
   '/products/$productId': typeof ProductsProductIdRoute
   '/products/domains': typeof ProductsDomainsRoute
   '/products/new': typeof ProductsNewRoute
@@ -131,10 +140,11 @@ export interface FileRouteTypes {
     | '/'
     | '/fabric'
     | '/products'
-    | '/model'
+    | '/models'
     | '/fabric/explore'
     | '/fabric/overview'
     | '/fabric/sandbox'
+    | '/model/$modelId'
     | '/products/$productId'
     | '/products/domains'
     | '/products/new'
@@ -144,10 +154,11 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/fabric'
-    | '/model'
+    | '/models'
     | '/fabric/explore'
     | '/fabric/overview'
     | '/fabric/sandbox'
+    | '/model/$modelId'
     | '/products/$productId'
     | '/products/domains'
     | '/products/new'
@@ -158,10 +169,11 @@ export interface FileRouteTypes {
     | '/'
     | '/fabric'
     | '/products'
-    | '/model'
+    | '/models'
     | '/fabric/explore'
     | '/fabric/overview'
     | '/fabric/sandbox'
+    | '/model/$modelId'
     | '/products/$productId'
     | '/products/domains'
     | '/products/new'
@@ -173,7 +185,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   FabricRouteRoute: typeof FabricRouteRouteWithChildren
   ProductsRouteRoute: typeof ProductsRouteRouteWithChildren
-  ModelRoute: typeof ModelRoute
+  ModelsRoute: typeof ModelsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -192,11 +204,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FabricRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/model': {
-      id: '/model'
-      path: '/model'
-      fullPath: '/model'
-      preLoaderRoute: typeof ModelRouteImport
+    '/models': {
+      id: '/models'
+      path: '/models'
+      fullPath: '/models'
+      preLoaderRoute: typeof ModelsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/products': {
@@ -226,6 +238,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/fabric/sandbox'
       preLoaderRoute: typeof FabricSandboxRouteImport
       parentRoute: typeof FabricRouteRoute
+    }
+    '/model/$modelId': {
+      id: '/model/$modelId'
+      path: '/$modelId'
+      fullPath: '/model/$modelId'
+      preLoaderRoute: typeof ModelModelIdRouteImport
+      parentRoute: typeof ModelRoute
     }
     '/products/': {
       id: '/products/'
@@ -305,7 +324,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   FabricRouteRoute: FabricRouteRouteWithChildren,
   ProductsRouteRoute: ProductsRouteRouteWithChildren,
-  ModelRoute: ModelRoute,
+  ModelsRoute: ModelsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

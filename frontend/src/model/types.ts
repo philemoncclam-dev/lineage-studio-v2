@@ -64,6 +64,23 @@ export interface LineageModel {
   transitions: Transition[]
   /** Keyed by entity id. Entries may outlive their entity — see the note above. */
   properties: Record<EntityId, PropertyBag>
+
+  // --- Model Browser metadata ---
+  //
+  // All four are OPTIONAL on the document on purpose. Models persisted before
+  // the browser existed don't carry them, and a required field would mean every
+  // read of an old model is a type lie. `store.normalize()` fills the defaults
+  // on the way out, so everything above the store may assume they are present —
+  // but only ModelSummary states that in its types.
+
+  /** Free text shown under the name in the browser. */
+  description?: string
+  /** Free-form labels. Lower-cased on write; compared case-insensitively. */
+  tags?: string[]
+  /** Personally starred — the browser's "Starred" filter reads this. */
+  starred?: boolean
+  /** Epoch ms of the last time the model was opened. Drives the default sort. */
+  lastViewedAt?: number
 }
 
 /** Summary row for the model list, so the browser needn't parse every model. */
@@ -75,4 +92,9 @@ export interface ModelSummary {
   layerCount: number
   entityCount: number
   transitionCount: number
+  /** Normalized by the store — always present here, unlike on the document. */
+  description: string
+  tags: string[]
+  starred: boolean
+  lastViewedAt: number
 }

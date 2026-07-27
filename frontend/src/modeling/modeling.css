@@ -1863,16 +1863,21 @@
   gap: 5px;
   align-items: center;
 }
-.vw-check {
+/* The Dim/Hide pair reads as one control, so its halves sit flush. */
+.vw-mode {
   display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  font-size: 13px;
-  cursor: pointer;
+  gap: 0;
 }
-.vw-check input {
-  margin-top: 2px;
-  accent-color: #1f6feb;
+.vw-mode .vw-toggle {
+  border-radius: 0;
+  flex: 1;
+}
+.vw-mode .vw-toggle:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.vw-mode .vw-toggle:last-child {
+  border-radius: 0 6px 6px 0;
+  margin-left: -1px;
 }
 .vw-foot {
   flex: none;

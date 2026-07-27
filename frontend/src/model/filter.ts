@@ -162,6 +162,24 @@ export function applyFilter(model: LineageModel, f: ViewFilter): ReadonlySet<Ent
   return out
 }
 
+/**
+ * An edge is a match only when BOTH its endpoints are.
+ *
+ * A transition is a statement about a pair; one end being filtered out makes
+ * the whole statement out of view. In dim mode these fade with their rows; in
+ * hide mode they must be dropped, because the row they anchored to is no longer
+ * painted and the line would hang in empty space pointing at nothing.
+ */
+export function visibleTransitions<T extends { source: EntityId; target: EntityId }>(
+  transitions: T[],
+  matched: ReadonlySet<EntityId>,
+  filtering: boolean,
+  hide: boolean,
+): T[] {
+  if (!filtering || !hide) return transitions
+  return transitions.filter((t) => matched.has(t.source) && matched.has(t.target))
+}
+
 /** Every property key in use, for the property filter's datalist. */
 export function allPropertyKeys(model: LineageModel): string[] {
   const seen = new Set<string>()

@@ -183,19 +183,35 @@ export function ViewsPanel({
           </button>
         </div>
 
-        <label className="vw-check">
-          <input
-            type="checkbox"
-            checked={filter.hide}
-            onChange={(e) => onChange({ ...filter, hide: e.target.checked })}
-          />
-          <span>
-            Hide non-matching
-            <span className="tg-hint">
-              Off, they stay in place dimmed — which keeps the shape of the model readable.
-            </span>
+        {/* Two named modes rather than one "hide" checkbox: dimming is a real
+            mode with its own reason to exist (it keeps the shape of the model
+            on screen), and a checkbox only names the other one. */}
+        <div className="vw-field">
+          <span className="tg-label">Non-matching</span>
+          <div className="vw-chips vw-mode">
+            <button
+              className="vw-toggle"
+              data-on={!filter.hide || undefined}
+              aria-pressed={!filter.hide}
+              onClick={() => onChange({ ...filter, hide: false })}
+            >
+              Dim
+            </button>
+            <button
+              className="vw-toggle"
+              data-on={filter.hide || undefined}
+              aria-pressed={filter.hide}
+              onClick={() => onChange({ ...filter, hide: true })}
+            >
+              Hide
+            </button>
+          </div>
+          <span className="tg-hint">
+            {filter.hide
+              ? 'Non-matching cards, rows and the lines into them are removed.'
+              : 'They stay in place, faded — which keeps the shape of the model readable.'}
           </span>
-        </label>
+        </div>
       </div>
 
       <footer className="vw-foot">

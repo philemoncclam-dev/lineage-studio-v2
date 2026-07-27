@@ -30,6 +30,18 @@ interface Props {
   highlighted: ReadonlySet<EntityId>
   /** Transitions the user has picked, by transition id. */
   selected: ReadonlySet<EntityId>
+  /** True while a Views filter is narrowing; without it `matched` means nothing. */
+  filtering: boolean
+  /**
+   * Entities the Views filter matches.
+   *
+   * An edge is only "matching" when BOTH its endpoints are — a line into a
+   * dimmed row is as much a statement about that row as about the lit one, so
+   * it fades with it. In hide mode the caller drops those edges before they get
+   * here; the endpoint they anchored to is no longer painted, and a line to a
+   * row that isn't on screen is the floating-connection bug.
+   */
+  matched: ReadonlySet<EntityId>
 }
 
 /** ~24 megapixels of backing store, well inside every browser's canvas limit. */
@@ -38,6 +50,8 @@ const MAX_CANVAS_PIXELS = 24_000_000
 const EDGE = 'rgba(60, 70, 90, 0.34)'
 const EDGE_TRACED = 'rgba(22, 143, 92, 0.85)'
 const EDGE_SELECTED = 'rgba(31, 111, 235, 0.95)'
+/** Dim mode: still there, still tracing the shape, but well behind the matches. */
+const EDGE_DIMMED = 'rgba(60, 70, 90, 0.10)'
 
 export default function TransitionLayer({
   layout,
@@ -45,6 +59,8 @@ export default function TransitionLayer({
   parentOf,
   highlighted,
   selected,
+  filtering,
+  matched,
 }: Props) {
   const ref = useRef<HTMLCanvasElement | null>(null)
   const width = layout.width
@@ -66,11 +82,15 @@ export default function TransitionLayer({
 
     // Painter's order: plain, then traced, then selected. Later passes must sit
     // on top, otherwise a picked line can be buried by the bundle around it.
+    const faded: TransitionLike[] = []
     const plain: TransitionLike[] = []
     const traced: TransitionLike[] = []
     const picked: TransitionLike[] = []
     for (const t of transitions) {
+      // Selection beats the filter: a line you deliberately clicked stays
+      // legible even when the filter would have faded it.
       if (selected.has(t.id)) picked.push(t)
+      else if (filtering && !(matched.has(t.source) && matched.has(t.target))) faded.push(t)
       else if (highlighted.has(t.source) || highlighted.has(t.target)) traced.push(t)
       else plain.push(t)
     }
@@ -120,10 +140,11 @@ export default function TransitionLayer({
       for (const c of curves) arrowHead(c, head)
     }
 
+    draw(faded, EDGE_DIMMED, 1, 5)
     draw(plain, EDGE, 1, 6)
     draw(traced, EDGE_TRACED, 1.8, 7.5)
     draw(picked, EDGE_SELECTED, 2.4, 8.5)
-  }, [layout, transitions, parentOf, width, height, highlighted, selected])
+  }, [layout, transitions, parentOf, width, height, highlighted, selected, filtering, matched])
 
   return (
     <canvas

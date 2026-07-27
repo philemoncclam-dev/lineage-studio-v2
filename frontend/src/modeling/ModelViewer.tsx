@@ -46,6 +46,7 @@ import {
   activeFilterCount,
   applyFilter,
   EMPTY_FILTER,
+  visibleTransitions,
   type ViewFilter,
 } from '../model/filter'
 import { TAGS_KEY, parseTags, setTags } from '../model/tags'
@@ -184,6 +185,20 @@ export default function ModelViewer({
   /** Entities the Views filter matches; empty set means "no filter running". */
   const matched = useMemo(() => applyFilter(model, filter), [model, filter])
   const filtering = activeFilterCount(filter) > 0
+
+  /**
+   * The transitions that exist as far as the canvas is concerned.
+   *
+   * In hide mode an unmatched card or row is not painted, so an edge into it
+   * has nothing to land on and hangs in empty space pointing at a row you
+   * cannot see. Dropping the edge with its endpoint is the only honest answer —
+   * and it has to happen here rather than in the renderer so the hit-tester
+   * agrees, or you could still click a line that isn't drawn.
+   */
+  const liveTransitions = useMemo(
+    () => visibleTransitions(model.transitions, matched, filtering, filter.hide),
+    [model.transitions, filtering, filter.hide, matched],
+  )
 
   // The trace: everything one hop from any selected entity. Highlighting both
   // endpoints is what makes a selected row's lineage legible inside a bundle.
@@ -336,7 +351,7 @@ export default function ModelViewer({
     const rect = e.currentTarget.getBoundingClientRect()
     const worldX = e.clientX - rect.left
     const worldY = e.clientY - rect.top
-    const hit = hitTestTransitions(layout, parentOf, model.transitions, worldX, worldY)
+    const hit = hitTestTransitions(layout, parentOf, liveTransitions, worldX, worldY)
     const additive = e.ctrlKey || e.metaKey
 
     if (!hit) {
@@ -1007,10 +1022,12 @@ export default function ModelViewer({
 
           <TransitionLayer
             layout={layout}
-            transitions={model.transitions}
+            transitions={liveTransitions}
             parentOf={parentOf}
             highlighted={highlighted}
             selected={selectedEdges}
+            filtering={filtering}
+            matched={matched}
           />
 
           {visibleCards

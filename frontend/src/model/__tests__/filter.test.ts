@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { activeFilterCount, applyFilter, EMPTY_FILTER, isEmptyFilter } from '../filter'
+import {
+  activeFilterCount,
+  applyFilter,
+  EMPTY_FILTER,
+  isEmptyFilter,
+  visibleTransitions,
+} from '../filter'
 import type { LineageModel } from '../types'
 
 /**
@@ -124,5 +130,27 @@ describe('applyFilter', () => {
       properties: [{ key: 'Data type', value: 'int' }],
     })
     expect(specific.has('A2')).toBe(false)
+  })
+})
+
+describe('visibleTransitions', () => {
+  const edges = [
+    { id: 'T1', source: 'A1', target: 'A3' },
+    { id: 'T2', source: 'A2', target: 'A4' },
+  ]
+  const matched = new Set(['A1', 'A3'])
+
+  it('keeps every edge when no filter is running', () => {
+    expect(visibleTransitions(edges, new Set(), false, true)).toBe(edges)
+  })
+
+  it('keeps every edge in dim mode — the renderer fades them instead', () => {
+    expect(visibleTransitions(edges, matched, true, false)).toBe(edges)
+  })
+
+  it('drops an edge in hide mode when EITHER endpoint is hidden', () => {
+    // T2's rows are not painted in hide mode, so drawing T2 would leave a line
+    // hanging off a row that is not on screen.
+    expect(visibleTransitions(edges, matched, true, true).map((t) => t.id)).toEqual(['T1'])
   })
 })

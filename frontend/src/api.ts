@@ -554,6 +554,15 @@ export interface SandboxColumnFlow {
   to_table: string
   to_column: string
   from_column: string
+  /**
+   * The source column's owning table, when the deriving engine knew it.
+   *
+   * The Spark path resolves attributes by name and cannot say; the sqlglot path
+   * qualifies every column against the schemas and knows exactly. Absent means
+   * "not known" — never "no table" — so the reader falls back to matching on
+   * the column name rather than dropping the flow.
+   */
+  from_table?: string | null
   transform?: string | null
 }
 
@@ -580,7 +589,14 @@ export interface SandboxRunResult {
   cells: SandboxCellResult[]
   reads: string[]
   writes: string[]
-  /** Schema per touched table (Spark engine only; empty for stub). */
+  /**
+   * Schema per touched table.
+   *
+   * The Spark engine fills both sides from the analyzer. The stub engine echoes
+   * back the schemas it was given (so read tables carry real columns and types)
+   * and derives a written table's columns from the projection that produced it
+   * (names only — nothing off-engine knows their types).
+   */
   table_schemas: Record<string, SandboxColumn[]>
   /** Column-level lineage from the analyzed plans (Spark engine only). */
   column_lineage: SandboxColumnFlow[]

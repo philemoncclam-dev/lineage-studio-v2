@@ -33,6 +33,7 @@ from pathlib import Path
 # isolation contract above still holds.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _refs  # noqa: E402
+import _sqllineage  # noqa: E402
 
 _READ = [
     re.compile(r"""spark\.table\(\s*['"]([\w. ]+)['"]""", re.I),
@@ -130,6 +131,36 @@ def main() -> None:
             {"index": i, "status": "ok", "reads": reads, "writes": writes, "stdout": "", "error": None}
         )
 
+    # Column-level lineage for the SQL half of the notebook (see _sqllineage).
+    #
+    # The regex pass above answers "which tables" and is blind to columns. For a
+    # `spark.sql(...)` cell the columns ARE recoverable without an engine, so
+    # this is where production stops producing attribute-less models. It also
+    # sharpens the table answer: a CTE or a subquery that the regexes read as a
+    # table, or miss entirely, is resolved properly by the parser.
+    sql_reads, sql_writes, column_lineage, sql_log = _sqllineage.analyze_cells(
+        cells, table_schemas, ctx
+    )
+    all_writes |= sql_writes
+    all_reads |= sql_reads - all_writes
+    log.extend(sql_log)
+
+    # A written table's columns, from the projection that produced it. The Spark
+    # path gets these from the analyzer complete with types; here the names come
+    # from the query and the types are unknown, which is still the difference
+    # between a card with a schema and a bare one. Only filled for tables the
+    # backend didn't already send a schema for.
+    # Frozen before the loop below mutates `table_schemas`, so "did the backend
+    # send this one" stays answerable.
+    given = set(table_schemas)
+    for flow in column_lineage:
+        target = flow["to_table"]
+        if target in given:
+            continue
+        columns = table_schemas.setdefault(target, [])
+        if not any(c["name"] == flow["to_column"] for c in columns):
+            columns.append({"name": flow["to_column"], "type": None})
+
     result = {
         "ok": True,
         "engine": "stub",
@@ -138,6 +169,7 @@ def main() -> None:
         "reads": sorted(all_reads - all_writes),
         "writes": sorted(all_writes),
         "table_schemas": table_schemas,
+        "column_lineage": column_lineage,
         # Schema refs join the side table too, exactly as the Spark path does:
         # a table the run was given columns for is a table the UI may draw, and
         # without its parts here it would render as workspace-unknown.

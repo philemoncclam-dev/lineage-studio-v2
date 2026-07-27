@@ -11,6 +11,10 @@ requests>=2.32
 # Definition import (.xlsx column definitions)
 openpyxl>=3.1
 
+# Column-level lineage from SQL text, for the stub engine — i.e. for PRODUCTION,
+# which has no JVM. See app/sandbox/_sqllineage.py.
+sqlglot>=25.0
+
 # Tests
 pytest>=8.3
 httpx>=0.28          # required by fastapi.testclient

@@ -143,6 +143,47 @@ describe('sequenceToModel', () => {
     expect(stats.transitions).toBe(3)
   })
 
+  it('uses from_table when the engine reported it, resolving the ambiguous join', () => {
+    // The exact case above, except the flow says which side it came from. The
+    // sqlglot engine qualifies every column against the schemas, so it knows;
+    // the Spark engine reports names only and has to fall back to guessing.
+    const s = step('a', 'join')
+    const results = new Map([
+      [
+        s.key,
+        ran(
+          'join',
+          result({
+            engine: 'stub',
+            reads: ['left_t', 'right_t'],
+            writes: ['out_t'],
+            table_schemas: {
+              left_t: [{ name: 'id' }],
+              right_t: [{ name: 'id' }],
+              out_t: [{ name: 'id' }],
+            },
+            column_lineage: [
+              { to_table: 'out_t', to_column: 'id', from_column: 'id', from_table: 'right_t' },
+            ],
+          }),
+        ),
+      ],
+    ])
+    const { model, stats } = sequenceToModel([s], results, 'M')
+    expect(stats.columnEdges).toBe(1)
+
+    const rightId = model.layers[0].objects.find((o) => o.name === 'right_t')!.children[0]
+    const leftId = model.layers[0].objects.find((o) => o.name === 'left_t')!.children[0]
+    const outId = model.layers[2].objects[0].children[0]
+    expect(model.transitions.some((t) => t.source === rightId.id && t.target === outId.id)).toBe(
+      true,
+    )
+    // ...and emphatically not from the other side of the join.
+    expect(model.transitions.some((t) => t.source === leftId.id && t.target === outId.id)).toBe(
+      false,
+    )
+  })
+
   it('chains two steps so a written table feeds the next step', () => {
     const a = step('a', 'build_silver')
     const b = step('b', 'build_gold')

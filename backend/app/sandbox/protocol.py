@@ -61,16 +61,23 @@ class RunRequest(BaseModel):
 
 
 class ColumnFlow(BaseModel):
-    """One output column ← one source column, from Spark's analyzed plan.
+    """One output column ← one source column.
 
-    `from_column` is a source column *name* (the frontend resolves which read
-    table owns it); `transform` is the SQL of the producing expression when the
-    column is computed rather than passed through unchanged.
+    `transform` is the SQL of the producing expression when the column is
+    computed rather than passed through unchanged.
+
+    `from_table` is the source column's OWNING table when the deriving engine
+    knew it. The Spark path resolves attributes by name and cannot say (so the
+    frontend matches on the column name and drops the edge when two candidates
+    tie); the sqlglot path qualifies every column against the schemas and knows
+    exactly. Optional rather than required because that asymmetry is real — an
+    absent value means "not known", never "no table".
     """
 
     to_table: str
     to_column: str
     from_column: str
+    from_table: str | None = None
     transform: str | None = None
 
 
@@ -107,7 +114,9 @@ class RunResult(BaseModel):
     #: WRITTEN tables need an analyzer, so only those are missing there. Feeds
     #: attribute-level model creation.
     table_schemas: dict[str, list[ColumnSchema]] = Field(default_factory=dict)
-    #: Column-level lineage from the analyzed plans (spark engine only).
+    #: Column-level lineage. The spark engine derives it from analyzed plans
+    #: (all cells, no source table); the stub engine derives it from the SQL
+    #: text with sqlglot (SQL cells only, source table resolved).
     column_lineage: list[ColumnFlow] = Field(default_factory=list)
     #: ref → its parts, for every ref named in `reads`, `writes` or
     #: `table_schemas`. Lets the UI group tables by workspace without parsing

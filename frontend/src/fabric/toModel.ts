@@ -17,7 +17,13 @@
 import type { LineageModel, Layer, ModelObject, Attribute, Transition, EntityId } from '../model/types'
 import { emptyModel } from '../model/store'
 import { TAGS_KEY } from '../model/tags'
-import { refLabel, refWorkspace, type SandboxColumn, type SandboxTableRef } from '../api'
+import {
+  refLabel,
+  refWorkspace,
+  type SandboxColumn,
+  type SandboxColumnFlow,
+  type SandboxTableRef,
+} from '../api'
 import { stepReads, stepTables, stepWrites, type Step, type StepResult } from './sequence'
 
 /** A node on the way to becoming an object. */
@@ -95,18 +101,28 @@ function layerName(inColumn: Node[], col: number, lastCol: number): string {
 }
 
 /**
- * Which read table a bare column name came from. Spark's column lineage names
- * the source column but not its table, so we resolve it against the schemas of
- * the tables this run read. An ambiguous name (two inputs both have `id`) is
- * left unresolved rather than guessed — a wrong column edge is worse than a
- * missing one, and the table-level edge still carries the lineage.
+ * Which read table a source column came from.
+ *
+ * Prefer what the engine SAID. The sqlglot path qualifies every column against
+ * the schemas and reports `from_table` outright, so there is nothing to infer —
+ * and it is right in exactly the case the fallback below cannot be: a join
+ * where both sides carry the same column name.
+ *
+ * Spark's plan analysis names the column but not its table, so for that engine
+ * we still resolve against the schemas of the tables this run read. An ambiguous
+ * name (two inputs both have `id`) stays unresolved rather than guessed — a
+ * wrong column edge is worse than a missing one, and the table-level edge still
+ * carries the lineage.
  */
 function resolveSourceTable(
-  column: string,
+  flow: SandboxColumnFlow,
   readTables: string[],
   schemas: Map<string, SandboxColumn[]>,
 ): string | undefined {
-  const hits = readTables.filter((t) => (schemas.get(t) ?? []).some((c) => c.name === column))
+  if (flow.from_table) return flow.from_table
+  const hits = readTables.filter((t) =>
+    (schemas.get(t) ?? []).some((c) => c.name === flow.from_column),
+  )
   return hits.length === 1 ? hits[0] : undefined
 }
 
@@ -359,7 +375,7 @@ export function sequenceToModel(
       for (const f of flows) {
         const targetAttr = attrIdOf.get(`${f.to_table}\0${f.to_column}`)
         if (!targetAttr) continue
-        const fromTable = resolveSourceTable(f.from_column, reads, schemas)
+        const fromTable = resolveSourceTable(f, reads, schemas)
         if (!fromTable) continue
         const sourceAttr = attrIdOf.get(`${fromTable}\0${f.from_column}`)
         if (!sourceAttr || sourceAttr === targetAttr) continue

@@ -57,8 +57,9 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
   ],
   fabric: [
     { key: 'overview', label: 'Overview', icon: 'overview', to: '/fabric/overview' },
+    // No Sandbox entry: the sandbox is a tab inside Explore now (its sequence
+    // builder and lineage canvas both live there), not a page of its own.
     { key: 'explore', label: 'Explore', icon: 'explore', to: '/fabric/explore' },
-    { key: 'sandbox', label: 'Sandbox', icon: 'sandbox', to: '/fabric/sandbox' },
   ],
   products: [
     { key: 'catalog', label: 'Products', icon: 'products', to: '/products' },

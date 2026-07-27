@@ -13,11 +13,14 @@
   padding: var(--spacing-6, 24px);
   overflow: hidden;
 }
+/* Three columns on Explore: tree | detail | sandbox sequence. The card grew
+   from 1120px because the third column is what the empty side space was
+   always going to become; the detail column stays the elastic one. */
 .fx-explorer {
   display: grid;
-  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(260px, 320px);
   width: 100%;
-  max-width: 1120px;
+  max-width: 1560px;
   min-height: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card, 10px);
@@ -40,7 +43,116 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
+}
+/* Details | Sandbox — the detail column's two faces. The sandbox has no route
+   of its own; its canvas and report render in this column. */
+.fx-detail-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.fx-detail-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-text-tertiary);
+  font: inherit;
+  font-size: var(--text-sm, 13px);
+  font-weight: 600;
+  cursor: pointer;
+}
+.fx-detail-tab:hover {
+  color: var(--color-text-primary);
+}
+.fx-detail-tab[data-active] {
+  color: var(--color-text-primary);
+  border-bottom-color: var(--color-accent);
+}
+.fx-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-accent);
+  color: var(--color-surface-canvas, #0b0d10);
+  font-size: var(--text-micro, 10px);
+  font-weight: 700;
+}
+.fx-detail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: auto;
+}
+/* The docked sandbox sequence builder (Explore's third column). */
+.fx-explorer-seq {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-surface-2, transparent);
+}
+/* Narrow screens: the sequence drops below rather than squeezing the detail. */
+@media (max-width: 1180px) {
+  .fx-explorer:not(.fx-explorer--single) {
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  }
+  .fx-explorer-seq {
+    grid-column: 1 / -1;
+    max-height: 40vh;
+    border-left: 0;
+    border-top: 1px solid var(--color-border);
+  }
+}
+
+.fx-panel-head--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fx-panel-clear {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-text-tertiary);
+  font: inherit;
+  font-size: var(--text-micro, 11px);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.fx-panel-clear:hover:not(:disabled) {
+  color: var(--color-destructive);
+}
+.fx-panel-clear:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* The ▶ glyph inline in the empty-state sentence, so the affordance being
+   described is recognisable before it has ever been hovered. */
+.fx-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-accent);
+  font-size: 9px;
+  vertical-align: -3px;
 }
 
 .fx-panel-head {
@@ -152,6 +264,31 @@
 .fx-open svg {
   width: 14px;
   height: 14px;
+}
+
+/* Add-to-sequence, on the tree row beside Open-in-Fabric. It is the ONLY way
+   to add a step — the sequence panel has no picker of its own — so unlike the
+   Fabric link it stays visible once the item is in the sequence, carrying the
+   count as its own receipt. */
+.fx-add {
+  gap: 3px;
+}
+.fx-add[data-queued] {
+  opacity: 1;
+  width: auto;
+  padding: 0 5px;
+  color: var(--color-accent);
+}
+.fx-add-n {
+  min-width: 13px;
+  padding: 0 3px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-accent);
+  color: var(--color-surface-canvas, #0b0d10);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 13px;
+  text-align: center;
 }
 
 .fx-chevron {
@@ -474,13 +611,8 @@
 }
 
 /* --- notebook sandbox (sequence builder) -------------------------------- */
-/* Two-panel like the explorer, but the right (lineage) panel is the star. */
-.fx-explorer.sbx-shell {
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-}
-.sbx-canvas-wrap {
-  overflow: hidden;
-}
+/* The sandbox has no page of its own: the builder is Explore's third column
+   and this canvas body renders in its detail column's Sandbox tab. */
 .sbx-canvas-body {
   display: flex;
   flex-direction: column;
@@ -858,6 +990,37 @@
   background: #d3f0e0;
   color: #114a2b;
 }
+/* A table card's column rows: name left, type right, in the muted weight the
+   Modeling attribute rows use — the schema is context for the lineage, not
+   the thing being traced. */
+.sbx-flow-type {
+  flex: none;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #7b8496;
+  font-size: 10px;
+}
+/* "+n more" / "Show less" — a row, not a button-looking control, so a tall
+   schema stays scannable. */
+.sbx-flow-more {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0 6px;
+  border: 0;
+  border-top: 1px dashed rgb(28 35 51 / 0.18);
+  background: none;
+  color: #5a6478;
+  font: inherit;
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.sbx-flow-more:hover {
+  background: #eef2f7;
+  color: #1c2333;
+}
 
 /* The single-run `.sbx-actions` / `.sbx-run` BUTTON rules that used to live
    here are gone. Nothing rendered them any more, but `.sbx-run` is also the
@@ -1010,11 +1173,56 @@
 }
 .sbx-io-list li {
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--color-text-primary);
   font-family: var(--font-mono);
   font-size: var(--text-micro, 11px);
+}
+/* A touched table row: click to disclose the schema the run resolved for it.
+   Collapsed by default — a run touches many tables, and an open stack of
+   schemas would push the lineage off screen. */
+.sbx-io-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 1px 2px;
+  border: none;
+  border-radius: var(--radius-control, 4px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sbx-io-row:disabled {
+  cursor: default;
+}
+.sbx-io-row:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--io) 12%, transparent);
+}
+.sbx-io-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sbx-io-chev {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  color: var(--color-text-tertiary);
+  transition: transform 0.12s ease;
+}
+.sbx-io-item[data-open] .sbx-io-chev {
+  transform: rotate(90deg);
+}
+.sbx-io-schema {
+  margin: 2px 0 6px 15px;
+  width: calc(100% - 15px);
+}
+.sbx-io-schema td {
+  padding: 1px 6px 1px 0;
 }
 .sbx-io-none {
   margin: 4px 0 0;

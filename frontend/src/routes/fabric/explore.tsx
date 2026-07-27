@@ -6,13 +6,21 @@
 // decoded code, or a table's columns — with actions to open the item in Fabric
 // or send a notebook to the sandbox.
 //
+// Third column: the sandbox sequence builder (`fabric/SequencePanel`), the same
+// panel the /fabric/sandbox page uses over the same module store — so browsing
+// and stacking a run sequence are one motion, and the wide screen the
+// two-panel explorer used to leave empty now carries the sandbox.
+//
 // Detail data comes from two read-only endpoints added alongside the tree:
 // /notebooks/{id}/source (decoded cells) and /tables/{name}/schema (OneLake
 // Delta columns) — see backend/app/fabric/router.py.
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { BarsSpinner } from '../../shell/BarsSpinner'
+import { SequencePanel } from '../../fabric/SequencePanel'
+import { SequenceCanvas } from '../../fabric/SequenceCanvas'
+import { addStep, useSequence } from '../../fabric/sequence'
 import {
   fetchFabricStatus,
   fetchFabricWorkspaces,
@@ -189,6 +197,32 @@ function Icon({ kind }: { kind: keyof typeof ICONS }) {
   )
 }
 
+// Add-to-sequence lives on the tree row, beside "Open in Fabric" — the tree is
+// the picker. There is deliberately no second way to add: no flat search list
+// in the sequence panel, no button in the detail pane. You add a thing where
+// you are looking at it, and the panel is only the ordered list plus Run.
+function AddToSequence({ count, onAdd }: { count: number; onAdd: () => void }) {
+  const label = count ? `Add again (${count} in sequence)` : 'Add to sandbox sequence'
+  return (
+    <button
+      className="fx-open fx-add"
+      type="button"
+      title={label}
+      aria-label={label}
+      data-queued={count > 0 || undefined}
+      onClick={(e) => {
+        e.stopPropagation()
+        onAdd()
+      }}
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M8 5v14l11-7z" />
+      </svg>
+      {count > 0 && <span className="fx-add-n">{count}</span>}
+    </button>
+  )
+}
+
 function OpenInFabric({ href }: { href: string }) {
   return (
     <a
@@ -221,9 +255,27 @@ interface RowProps {
   onToggle?: () => void
   fabricHref?: string
   hint?: string
+  /** Present on rows that can become a sandbox step (notebooks, pipelines). */
+  onAddToSequence?: () => void
+  /** How many steps already target this item — duplicates are legitimate. */
+  queued?: number
 }
 
-function Row({ depth, kind, label, meta, open, leaf, selected, onSelect, onToggle, fabricHref, hint }: RowProps) {
+function Row({
+  depth,
+  kind,
+  label,
+  meta,
+  open,
+  leaf,
+  selected,
+  onSelect,
+  onToggle,
+  fabricHref,
+  hint,
+  onAddToSequence,
+  queued = 0,
+}: RowProps) {
   const pad = 8 + depth * 18
   return (
     <div className="fx-row" style={{ paddingLeft: pad }} data-open={open} data-selected={selected || undefined}>
@@ -244,6 +296,7 @@ function Row({ depth, kind, label, meta, open, leaf, selected, onSelect, onToggl
         <span className="fx-label">{label}</span>
         {meta && <span className="fx-meta">{meta}</span>}
       </button>
+      {onAddToSequence && <AddToSequence count={queued} onAdd={onAddToSequence} />}
       {fabricHref && <OpenInFabric href={fabricHref} />}
     </div>
   )
@@ -264,6 +317,7 @@ function Note({ state, indent }: { state: Async<unknown>; indent?: number }) {
 
 function NotebookRow({ workspaceId, notebook, depth }: { workspaceId: string; notebook: FabricItem; depth: number }) {
   const { select, selectedKey } = useSelection()
+  const { steps } = useSequence()
   const key = `nb:${notebook.id}`
   return (
     <Row
@@ -275,13 +329,19 @@ function NotebookRow({ workspaceId, notebook, depth }: { workspaceId: string; no
       hint="Show notebook code"
       onSelect={() => select({ kind: 'notebook', key, workspaceId, notebook })}
       fabricHref={fabricUrl.notebook(workspaceId, notebook.id)}
+      queued={steps.filter((s) => s.itemId === notebook.id).length}
+      onAddToSequence={() =>
+        addStep({ kind: 'notebook', ws: workspaceId, itemId: notebook.id, name: notebook.name })
+      }
     />
   )
 }
 
 function OtherRow({ workspaceId, item, depth }: { workspaceId: string; item: FabricItem; depth: number }) {
   const { select, selectedKey } = useSelection()
+  const { steps } = useSequence()
   const key = `it:${item.id}`
+  const isPipeline = item.type.toLowerCase().includes('pipeline')
   return (
     <Row
       depth={depth}
@@ -292,6 +352,12 @@ function OtherRow({ workspaceId, item, depth }: { workspaceId: string; item: Fab
       selected={selectedKey === key}
       hint="Show details"
       onSelect={() => select({ kind: 'item', key, workspaceId, item })}
+      queued={isPipeline ? steps.filter((s) => s.itemId === item.id).length : 0}
+      onAddToSequence={
+        isPipeline
+          ? () => addStep({ kind: 'pipeline', ws: workspaceId, itemId: item.id, name: item.name })
+          : undefined
+      }
     />
   )
 }
@@ -489,14 +555,6 @@ function OpenFabricIcon() {
   )
 }
 
-function SandboxIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-      <path d="M8 5v14l11-7z" />
-    </svg>
-  )
-}
-
 function DetailHeader({
   kind,
   title,
@@ -605,7 +663,6 @@ function FolderDetail({ sel }: { sel: Extract<Selected, { kind: 'folder' }> }) {
 }
 
 function NotebookDetail({ sel }: { sel: Extract<Selected, { kind: 'notebook' }> }) {
-  const navigate = useNavigate()
   const source = useAsync(
     () => fetchFabricNotebookSource(sel.workspaceId, sel.notebook.id, sel.notebook.name),
     [sel.workspaceId, sel.notebook.id],
@@ -622,14 +679,6 @@ function NotebookDetail({ sel }: { sel: Extract<Selected, { kind: 'notebook' }> 
       />
       {sel.notebook.description && <p className="fx-detail-desc">{sel.notebook.description}</p>}
       <div className="fx-detail-actions">
-        <DetailAction
-          primary
-          onClick={() =>
-            navigate({ to: '/fabric/sandbox', search: { ws: sel.workspaceId, item: sel.notebook.id, name: sel.notebook.name } })
-          }
-        >
-          <SandboxIcon /> Open in sandbox
-        </DetailAction>
         {source.status === 'ok' && (
           <DetailAction
             onClick={() => {
@@ -901,6 +950,53 @@ function Detail({ sel }: { sel?: Selected }) {
   }
 }
 
+// The middle column: the selected object's detail, or the sandbox — the
+// sequence drawn as lineage plus its run report. Two tabs rather than two
+// pages; the sandbox has no route of its own any more.
+function DetailColumn({ sel }: { sel?: Selected }) {
+  const { steps, results, running } = useSequence()
+  const [tab, setTab] = useState<'detail' | 'sandbox'>('detail')
+
+  // A run is the moment the canvas matters, so surface it without being asked.
+  useEffect(() => {
+    if (running) setTab('sandbox')
+  }, [running])
+
+  // Selecting something in the tree is a request to look at that thing.
+  useEffect(() => {
+    if (sel) setTab('detail')
+  }, [sel])
+
+  return (
+    <>
+      <div className="fx-detail-tabs" role="tablist">
+        <button
+          className="fx-detail-tab"
+          role="tab"
+          aria-selected={tab === 'detail'}
+          data-active={tab === 'detail' || undefined}
+          onClick={() => setTab('detail')}
+        >
+          Details
+        </button>
+        <button
+          className="fx-detail-tab"
+          role="tab"
+          aria-selected={tab === 'sandbox'}
+          data-active={tab === 'sandbox' || undefined}
+          onClick={() => setTab('sandbox')}
+        >
+          Sandbox
+          {steps.length > 0 && <span className="fx-tab-count">{steps.length}</span>}
+        </button>
+      </div>
+      <div className="fx-detail-scroll">
+        {tab === 'detail' ? <Detail sel={sel} /> : <SequenceCanvas steps={steps} results={results} />}
+      </div>
+    </>
+  )
+}
+
 // The tree + detail, with selection state. Split out and keyed on the deep-link
 // target so a palette jump (new target while already on this page) remounts it,
 // re-initializing the drilled-open path and selection.
@@ -947,7 +1043,10 @@ function ExplorerBody({
         </div>
       </div>
       <div className="fx-explorer-detail">
-        <Detail sel={selected} />
+        <DetailColumn sel={selected} />
+      </div>
+      <div className="fx-explorer-seq">
+        <SequencePanel />
       </div>
     </SelectionCtx.Provider>
   )

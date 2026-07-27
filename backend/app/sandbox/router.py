@@ -20,7 +20,7 @@ from ..fabric.schema import (
     workspace_index,
 )
 from ._refs import referenced_workspace_ids
-from .protocol import ColumnSchema, RunRequest, RunResult
+from .protocol import ColumnSchema, RunRequest, RunResult, SchemaResolution
 from .runner import run_sandbox
 
 router = APIRouter(prefix="/fabric/sandbox", tags=["sandbox"])
@@ -47,6 +47,9 @@ class SandboxRunRequest(BaseModel):
 def sandbox_run(req: SandboxRunRequest) -> RunResult:
     cells = req.cells
     schemas: dict[str, list[ColumnSchema]] = dict(req.schemas or {})
+    # Stays None when no fetch is attempted — caller-supplied cells or schemas.
+    # That is a real third state, distinct from "attempted and found nothing".
+    resolution: SchemaResolution | None = None
     workspace = req.workspace or ""
     lakehouse = req.lakehouse or ""
     # GUID → display name, so `abfss://` paths (which carry GUIDs) resolve to
@@ -79,18 +82,32 @@ def sandbox_run(req: SandboxRunRequest) -> RunResult:
             workspace = workspace or name_map.get(req.workspace_id.lower(), "")
         except FabricError:
             ws_index = {}
-        # Fetch the read tables' schemas from OneLake so the Spark engine can
-        # register empty views the notebook resolves against. Best-effort:
-        # anything unresolved just surfaces as a per-cell error in the run.
+        # Fetch the read tables' schemas from OneLake. The Spark engine
+        # registers them as empty views the notebook resolves against; the stub
+        # engine needs them to resolve columns at all (see _sqllineage), so on
+        # production this fetch IS the column lineage.
+        #
+        # Still best-effort — one unreadable table must not fail a run that can
+        # resolve the rest — but no longer silent: `resolution` records what was
+        # asked for, what came back, and every refusal in between, and rides out
+        # on the result. Empty schemas and empty column lineage are what a
+        # principal without OneLake access produces, and that used to be
+        # indistinguishable from a notebook that simply had no SQL.
         if not schemas:
+            resolution = SchemaResolution()
             try:
                 refs = scan_read_tables(cells, workspace, lakehouse, name_map)
-                fetched = resolve_read_schemas(client, req.workspace_id, refs, ws_index)
+                fetched = resolve_read_schemas(
+                    client, req.workspace_id, refs, ws_index, resolution
+                )
                 schemas = {k: list(v) for k, v in fetched.items()}
-            except FabricError:
+            except FabricError as exc:
+                # The scan itself failed, so `requested` may be empty too — the
+                # message is the only diagnosis there is.
+                resolution.failures.append(f"schema fetch abandoned — {exc}")
                 schemas = {}
 
-    return run_sandbox(
+    result = run_sandbox(
         RunRequest(
             notebook_name=req.name,
             cells=cells,
@@ -100,3 +117,7 @@ def sandbox_run(req: SandboxRunRequest) -> RunResult:
             name_map=name_map,
         )
     )
+    # Attached here rather than inside the executor: the child has no network
+    # and no credential, so it could not know any of this even in principle.
+    result.schema_resolution = resolution
+    return result

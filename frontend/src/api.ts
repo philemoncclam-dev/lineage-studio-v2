@@ -617,6 +617,24 @@ export interface SandboxRunResult {
    * (names only — nothing off-engine knows their types).
    */
   table_schemas: Record<string, SandboxColumn[]>
+  /**
+   * Whether the input schemas the run needed were readable from OneLake.
+   *
+   * Off-engine column lineage is derived by resolving each column against
+   * these, so an unreadable OneLake — a service principal without workspace
+   * access, most often — yields empty `column_lineage` that looks exactly like
+   * a notebook with no SQL in it. `unresolved` is how the two are told apart.
+   *
+   * Undefined when no fetch was attempted (cells or schemas supplied by the
+   * caller), which is a third state and not the same as "found nothing".
+   */
+  schema_resolution?: {
+    requested: string[]
+    resolved: string[]
+    unresolved: string[]
+    /** Empty with a non-empty `unresolved` means not-found, not refused. */
+    failures: string[]
+  } | null
   /** Column-level lineage from the analyzed plans (Spark engine only). */
   column_lineage: SandboxColumnFlow[]
   /**

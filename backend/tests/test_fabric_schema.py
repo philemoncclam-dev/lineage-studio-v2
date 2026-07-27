@@ -18,7 +18,9 @@ from app.fabric.schema import (
     resolve_read_schemas,
     scan_read_tables,
 )
+from app.fabric.client import FabricError
 from app.sandbox._refs import make_ref, table_of
+from app.sandbox.protocol import SchemaResolution
 
 
 def _commit_with_schema(fields: list[tuple[str, str]]) -> str:
@@ -168,3 +170,63 @@ def test_scan_read_tables_keeps_a_cross_workspace_read_distinct():
         make_ref("customers", "Gold", "Finance"),
         make_ref("customers", "Gold", "Analytics"),
     }
+
+
+# --- Reporting: why a schema did NOT come back -------------------------------
+#
+# Every failure below is swallowed so one bad table cannot fail a whole run.
+# That is right, and it made a refused principal look exactly like a notebook
+# with nothing to resolve. These pin the diagnosis to the report instead.
+
+
+def test_report_records_a_refused_workspace_rather_than_returning_silently():
+    class Refused(FakeOneLake):
+        def list_items(self, workspace_id):
+            raise FabricError("GET /workspaces/ws1/items failed [403]: forbidden")
+
+    fake = Refused(items=[], tree={}, commits={})
+    report = SchemaResolution()
+    ref = make_ref("raw_customers", "Bronze", "Analytics")
+
+    assert resolve_read_schemas(fake, "ws1", {ref}, {"analytics": "ws1"}, report) == {}
+    assert report.requested == [ref]
+    assert report.resolved == []
+    assert report.unresolved == [ref]
+    assert any("403" in f for f in report.failures)
+
+
+def test_report_distinguishes_a_missing_table_from_a_refusal():
+    """No failures + an unresolved ref means the lookups worked and it wasn't there.
+
+    This is the distinction the whole report exists for: an empty answer that
+    was *earned* reads differently from one that was refused.
+    """
+    lh = "lh1"
+    fake = FakeOneLake(
+        items=[{"id": lh, "type": "Lakehouse"}],
+        tree={f"{lh}/Tables": [f"{lh}/Tables/dbo/something_else/_delta_log"]},
+        commits={},
+    )
+    report = SchemaResolution()
+    ref = make_ref("raw_customers", "Bronze", "Analytics")
+
+    resolve_read_schemas(fake, "ws1", {ref}, {"analytics": "ws1"}, report)
+    assert report.unresolved == [ref]
+    assert all("403" not in f for f in report.failures)
+    assert any("no Delta table of that name" in f for f in report.failures)
+
+
+def test_report_names_a_workspace_with_no_visible_lakehouse():
+    """`200 {"value": []}` is what Fabric answers for "you cannot see this"."""
+    fake = FakeOneLake(items=[{"id": "nb", "type": "Notebook"}], tree={}, commits={})
+    report = SchemaResolution()
+    ref = make_ref("raw_customers", "Bronze", "Analytics")
+
+    resolve_read_schemas(fake, "ws1", {ref}, {"analytics": "ws1"}, report)
+    assert any("no lakehouse visible" in f for f in report.failures)
+
+
+def test_report_is_optional_and_absent_by_default():
+    """Every existing caller keeps its signature and its behaviour."""
+    fake = FakeOneLake(items=[], tree={}, commits={})
+    assert resolve_read_schemas(fake, "ws1", {make_ref("t", "Bronze", "Analytics")}) == {}

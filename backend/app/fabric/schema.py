@@ -21,8 +21,21 @@ import json
 
 from ..parser import _READ_PATTERNS, _find_raw, _without_python_imports
 from ..sandbox._refs import parse_ref, qualify, table_of
-from ..sandbox.protocol import ColumnSchema
+from ..sandbox.protocol import ColumnSchema, SchemaResolution
 from .client import FabricError
+
+
+def _note(report: SchemaResolution | None, message: str) -> None:
+    """Record a failure that is otherwise swallowed.
+
+    Every `except FabricError` below continues rather than raising — one
+    unreadable table must not fail a run that can still resolve the rest. That
+    is right, but it made a refusal silent. The `report` out-parameter is how a
+    caller that wants the diagnosis gets it, without any of them changing
+    behaviour for a caller that does not.
+    """
+    if report is not None:
+        report.failures.append(message)
 
 # Delta type name → a Spark-DDL-parseable type string (for empty-view creation).
 _DELTA_TO_DDL = {
@@ -121,7 +134,12 @@ def table_dirs_for_lakehouse(client, workspace_id: str, lakehouse_id: str) -> di
     return out
 
 
-def fetch_table_schema(client, workspace_id: str, table_dir: str) -> list[ColumnSchema]:
+def fetch_table_schema(
+    client,
+    workspace_id: str,
+    table_dir: str,
+    report: SchemaResolution | None = None,
+) -> list[ColumnSchema]:
     """The Delta schema of one table, or `[]` if it can't be read.
 
     Reads `_delta_log` commits newest-first and stops at the first with a
@@ -129,20 +147,26 @@ def fetch_table_schema(client, workspace_id: str, table_dir: str) -> list[Column
     """
     try:
         log_paths = client.onelake_list(workspace_id, f"{table_dir}/_delta_log", recursive=False)
-    except FabricError:
+    except FabricError as exc:
+        _note(report, f"{table_dir}: _delta_log not listable — {exc}")
         return []
     commits = sorted(
         (p.get("name") for p in log_paths if (p.get("name") or "").endswith(".json")),
         reverse=True,
     )
+    if not commits:
+        _note(report, f"{table_dir}: _delta_log listed but held no commit files")
+        return []
     for commit in commits:
         try:
             text = client.onelake_read_text(workspace_id, commit)
-        except FabricError:
+        except FabricError as exc:
+            _note(report, f"{commit}: not readable — {exc}")
             continue
         cols = parse_delta_schema([text])
         if cols:
             return cols
+    _note(report, f"{table_dir}: no commit carried a parseable metaData schema")
     return []
 
 
@@ -194,20 +218,28 @@ def guid_name_map(client, workspace_ids: list[str]) -> dict[str, str]:
     return out
 
 
-def _lakehouse_table_index(client, workspace_id: str) -> dict[str, str]:
+def _lakehouse_table_index(
+    client, workspace_id: str, report: SchemaResolution | None = None
+) -> dict[str, str]:
     """`short table name → OneLake table dir` across one workspace's lakehouses."""
     try:
         items = client.list_items(workspace_id)
-    except FabricError:
+    except FabricError as exc:
+        _note(report, f"workspace {workspace_id}: items not listable — {exc}")
         return {}
+    lakehouses = [i for i in items if (i.get("type") or "").lower() == "lakehouse"]
+    if not lakehouses:
+        # A workspace that lists zero lakehouses is the exact shape a workspace
+        # the principal cannot see also takes — worth saying, not worth calling
+        # an error.
+        _note(report, f"workspace {workspace_id}: no lakehouse visible to this principal")
     index: dict[str, str] = {}
-    for item in items:
-        if (item.get("type") or "").lower() != "lakehouse":
-            continue
+    for item in lakehouses:
         try:
             for short, table_dir in table_dirs_for_lakehouse(client, workspace_id, item["id"]).items():
                 index.setdefault(short, table_dir)
-        except FabricError:
+        except FabricError as exc:
+            _note(report, f"lakehouse {item.get('displayName') or item['id']}: Tables not listable — {exc}")
             continue
     return index
 
@@ -217,6 +249,7 @@ def resolve_read_schemas(
     workspace_id: str,
     read_refs: set[str],
     ws_index: dict[str, str] | None = None,
+    report: SchemaResolution | None = None,
 ) -> dict[str, list[ColumnSchema]]:
     """Schemas for the read tables, fetched from each ref's own workspace.
 
@@ -229,6 +262,8 @@ def resolve_read_schemas(
     on a collision: enough to register an empty view, and the sandbox reports
     per-cell errors honestly for anything that stays unresolved.
     """
+    if report is not None:
+        report.requested = sorted(read_refs)
     if not read_refs:
         return {}
     ws_index = ws_index if ws_index is not None else workspace_index(client)
@@ -243,13 +278,18 @@ def resolve_read_schemas(
     schemas: dict[str, list[ColumnSchema]] = {}
     for wid, refs in by_workspace.items():
         if not wid:
+            _note(report, f"{', '.join(sorted(refs))}: workspace could not be resolved to an id")
             continue
-        index = _lakehouse_table_index(client, wid)
+        index = _lakehouse_table_index(client, wid, report)
         for ref in refs:
             table_dir = index.get(table_of(ref).lower())
             if not table_dir:
+                _note(report, f"{ref}: no Delta table of that name in workspace {wid}")
                 continue
-            cols = fetch_table_schema(client, wid, table_dir)
+            cols = fetch_table_schema(client, wid, table_dir, report)
             if cols:
                 schemas[ref] = cols
+    if report is not None:
+        report.resolved = sorted(schemas)
+        report.unresolved = sorted(read_refs - set(schemas))
     return schemas

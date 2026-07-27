@@ -38,6 +38,37 @@ class TableRef(BaseModel):
     resolved: bool = False
 
 
+class SchemaResolution(BaseModel):
+    """Whether the input schemas the run needed were actually readable.
+
+    Off-engine column lineage is only ever as good as these. sqlglot's `qualify`
+    resolves a column to its owning table using the schemas the backend fetched
+    from OneLake, and a table with no known columns is *omitted* from the
+    mapping rather than entered empty — so an unreadable OneLake yields an empty
+    `column_lineage` that looks exactly like "this notebook has no SQL".
+
+    Every failure along that chain used to be swallowed (`except FabricError:
+    return {}`), and in these APIs empty means "no permission" at least as often
+    as it means "nothing there". So each one is recorded here instead of
+    vanishing, and the run reports what it could not read.
+
+    `None` on a result means no fetch was attempted — the caller supplied
+    `schemas`, or supplied `cells` directly and never went near Fabric.
+    """
+
+    #: Read tables the static pre-scan found, as canonical refs.
+    requested: list[str] = Field(default_factory=list)
+    #: Of those, the ones a schema came back for.
+    resolved: list[str] = Field(default_factory=list)
+    #: Of those, the ones that stayed unknown — each one is columns the run
+    #: cannot resolve and lineage it will therefore not derive.
+    unresolved: list[str] = Field(default_factory=list)
+    #: One line per swallowed failure, in the order they occurred. Empty with a
+    #: non-empty `unresolved` means the lookups succeeded and the table simply
+    #: was not found — a genuinely different diagnosis from being refused.
+    failures: list[str] = Field(default_factory=list)
+
+
 class RunRequest(BaseModel):
     """Backend → executor: what to run and the schemas to stand up.
 
@@ -122,6 +153,10 @@ class RunResult(BaseModel):
     #: `table_schemas`. Lets the UI group tables by workspace without parsing
     #: refs itself, and lets it mark cross-workspace access.
     tables: dict[str, TableRef] = Field(default_factory=dict)
+    #: How the input-schema fetch went. Filled by the backend AFTER the executor
+    #: returns — the child process has no network and no credential, so it could
+    #: not report this even in principle. See `SchemaResolution`.
+    schema_resolution: SchemaResolution | None = None
     log: list[str] = Field(default_factory=list)
     saw_credentials: bool = False
     error: str | None = None

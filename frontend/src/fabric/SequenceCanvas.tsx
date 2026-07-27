@@ -916,6 +916,16 @@ export function SequenceCanvas({ steps, results }: { steps: Step[]; results: Map
   const totalReads = new Set(notebookRuns.flatMap(({ r }) => r.reads)).size
   const totalWrites = new Set(notebookRuns.flatMap(({ r }) => r.writes)).size
 
+  // Input schemas, across the run. These decide whether column lineage is
+  // possible at all off-engine, so a run that resolved none of them has to say
+  // so — otherwise the empty result is read as "this notebook has no columns"
+  // when it actually means "this principal cannot read OneLake".
+  const schemaReports = notebookRuns.map(({ r }) => r.schema_resolution).filter((x) => !!x)
+  const schemaRequested = new Set(schemaReports.flatMap((s) => s.requested))
+  const schemaResolved = new Set(schemaReports.flatMap((s) => s.resolved))
+  const schemaUnresolved = [...new Set(schemaReports.flatMap((s) => s.unresolved))].sort()
+  const schemaFailures = [...new Set(schemaReports.flatMap((s) => s.failures))]
+
   if (steps.length === 0)
     return (
       <div className="fx-detail-empty">
@@ -962,6 +972,14 @@ export function SequenceCanvas({ steps, results }: { steps: Step[]; results: Map
                     <dt>Writes</dt>
                     <dd>{totalWrites}</dd>
                   </div>
+                  {schemaRequested.size > 0 && (
+                    <div>
+                      <dt>Schemas</dt>
+                      <dd data-warn={schemaUnresolved.length > 0 || undefined}>
+                        {schemaResolved.size}/{schemaRequested.size}
+                      </dd>
+                    </div>
+                  )}
                 </dl>
               </>
             )}
@@ -972,6 +990,33 @@ export function SequenceCanvas({ steps, results }: { steps: Step[]; results: Map
               Fabric credentials were reachable from inside the sandbox. Treat these results as
               untrusted and check the harness before running again.
             </p>
+          )}
+
+          {/* Not an error — the run is valid, its column lineage is just
+              incomplete in a way nothing else on screen would show. The
+              failures are listed verbatim because the distinction that matters
+              (refused vs genuinely absent) lives in the message. */}
+          {schemaUnresolved.length > 0 && (
+            <details className="sbx-schema-gap">
+              <summary>
+                {schemaUnresolved.length} input table
+                {schemaUnresolved.length === 1 ? '' : 's'} had no readable schema — columns and
+                column lineage for {schemaUnresolved.length === 1 ? 'it' : 'them'} are missing, not
+                absent.
+              </summary>
+              <ul>
+                {schemaUnresolved.map((ref) => (
+                  <li key={ref}>{ref}</li>
+                ))}
+              </ul>
+              {schemaFailures.length > 0 && (
+                <ul className="sbx-schema-why">
+                  {schemaFailures.map((f) => (
+                    <li key={f}>{f}</li>
+                  ))}
+                </ul>
+              )}
+            </details>
           )}
 
           <div className="sbx-report-list">

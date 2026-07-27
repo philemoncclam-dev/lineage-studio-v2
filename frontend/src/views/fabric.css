@@ -1169,6 +1169,36 @@
   font-size: var(--text-micro, 12px);
 }
 
+/* Unreadable input schemas. Deliberately NOT destructive-red: the run is
+   valid, its column lineage is merely incomplete. Warning weight, and
+   collapsed by default because a healthy run should not have to explain
+   itself. */
+.sbx-schema-gap {
+  padding: 8px 12px;
+  border-left: 3px solid var(--color-warning, #d97706);
+  background: color-mix(in oklab, var(--color-warning, #d97706) 8%, transparent);
+  font-size: var(--text-micro, 12px);
+  color: var(--color-text-primary);
+}
+.sbx-schema-gap > summary {
+  cursor: pointer;
+}
+.sbx-schema-gap ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--color-text-secondary);
+}
+/* The verbatim reasons — a second tier, since the refs above are the answer
+   and these are the diagnosis. */
+.sbx-schema-gap .sbx-schema-why {
+  font-family: inherit;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+.sbx-report-meta dd[data-warn] {
+  color: var(--color-warning, #d97706);
+}
+
 /* Run shape as labelled figures — the metadata the old green banner crammed
    into one sentence. */
 .sbx-report-meta {

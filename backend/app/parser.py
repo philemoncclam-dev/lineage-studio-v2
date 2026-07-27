@@ -29,7 +29,7 @@ from .models import (
 _READ_PATTERNS = [
     re.compile(r"""spark\.table\(\s*['"]([\w.]+)['"]""", re.I),
     re.compile(r"""spark\.read[\w.]*\.table\(\s*['"]([\w.]+)['"]""", re.I),
-    re.compile(r"""\.load\(\s*['"]([\w./]+)['"]""", re.I),
+    re.compile(r"""\.load\(\s*['"]([\w.:/@ -]+)['"]""", re.I),
     re.compile(r"""\bFROM\s+([\w.]+)""", re.I),
     re.compile(r"""\bJOIN\s+([\w.]+)""", re.I),
 ]
@@ -70,6 +70,16 @@ def _find(patterns: list[re.Pattern[str]], text: str) -> set[str]:
         for m in pat.finditer(text):
             found.add(_short(m.group(1)))
     return found
+
+
+def _find_raw(patterns: list[re.Pattern[str]], text: str) -> set[str]:
+    """Matches exactly as written, keeping any workspace/lakehouse qualification.
+
+    `_find` deliberately shortens to a bare table name for the Phase-1 graph.
+    The sandbox needs the opposite — the qualification is the identity there,
+    because a notebook can read across workspaces.
+    """
+    return {m.group(1) for pat in patterns for m in pat.finditer(text)}
 
 
 def _column_maps(cell: str, notebook: str, cell_index: int) -> list[ColumnMap]:

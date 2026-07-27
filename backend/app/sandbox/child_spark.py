@@ -27,6 +27,11 @@ import types
 from contextlib import redirect_stdout
 from pathlib import Path
 
+# Sibling module, pure stdlib — see the note in child_stub.py. Not part of
+# `app`, so the isolation contract in the docstring above still holds.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _refs  # noqa: E402
+
 # Loopback binding + a Python interpreter for the driver — set before Spark
 # imports so the JVM picks them up. (Actions still won't run; this keeps the
 # driver side clean.)
@@ -45,11 +50,6 @@ _VIEW_IN_PLAN = re.compile(r"View \(`([^`]+)`", re.I)
 _UNRESOLVED_IN_PLAN = re.compile(r"UnresolvedRelation \[([^\],]+)", re.I)
 
 
-def _short(ref: str) -> str:
-    ref = ref.strip().strip("`").rstrip("/")
-    return ref.split("/")[-1].split(".")[-1]
-
-
 def _scala_seq(seq) -> list:  # noqa: ANN001
     try:
         return [seq.apply(i) for i in range(seq.size())]
@@ -57,7 +57,7 @@ def _scala_seq(seq) -> list:  # noqa: ANN001
         return []
 
 
-def _column_flows(df, target: str) -> list[dict]:
+def _column_flows(df, target_ref: str) -> list[dict]:
     """Per-output-column source columns, from the write's analyzed plan.
 
     Each output NamedExpression exposes its input `references()` (attributes by
@@ -92,7 +92,7 @@ def _column_flows(df, target: str) -> list[dict]:
         refs, transform = flows.get(out_col, ([out_col], None))
         for src in refs:
             result.append(
-                {"to_table": _short(target), "to_column": out_col, "from_column": src, "transform": transform}
+                {"to_table": target_ref, "to_column": out_col, "from_column": src, "transform": transform}
             )
     return result
 
@@ -114,6 +114,12 @@ def main() -> None:
     cells: list[str] = req.get("cells", [])
     schemas: dict[str, list[dict]] = req.get("schemas", {})
     creds = _saw_credentials()
+    # The notebook's own workspace/lakehouse — what a bare table name means.
+    ctx = {
+        "default_workspace": req.get("workspace", ""),
+        "default_lakehouse": req.get("lakehouse", ""),
+        "name_map": req.get("name_map", {}),
+    }
 
     from pyspark.sql import SparkSession
     from pyspark.sql.readwriter import DataFrameWriter
@@ -135,40 +141,109 @@ def main() -> None:
         log.append("[spark] WARNING: credential env visible to child — isolation breach.")
 
     # Empty temp views carrying the real schema, so reads resolve with zero data.
-    registered: set[str] = set()
+    # `views` maps a Spark view name back to the ref it stands for, which is how
+    # a plan's `View (\`name\`)` is resolved to a workspace-qualified table.
+    views: dict[str, str] = {}
     for tname, cols in schemas.items():
-        view = _short(tname)
+        ref = _refs.as_ref(tname, **ctx)
+        view = _refs.view_name(ref, views)
         ddl = _ddl(cols)
         df = spark.createDataFrame([], ddl) if ddl else spark.createDataFrame([], StructType())
         df.createOrReplaceTempView(view)
-        registered.add(view)
-    if registered:
-        log.append(f"[spark] registered {len(registered)} empty view(s): {sorted(registered)}")
+    if views:
+        log.append(f"[spark] registered {len(views)} empty view(s): {sorted(views)}")
 
     writes: list[str] = []
     reads: set[str] = set()
     # Seed with the registered input views so read tables carry their columns
     # too — the frontend needs source-side columns to draw column edges.
     table_schemas: dict[str, list[dict]] = {
-        _short(t): [{"name": c["name"], "type": c.get("type")} for c in cols]
+        _refs.as_ref(t, **ctx): [{"name": c["name"], "type": c.get("type")} for c in cols]
         for t, cols in schemas.items()
     }
     column_lineage: list[dict] = []
 
+    def _register_written(ref: str, df) -> None:
+        """Publish a written table back into the session as an empty view.
+
+        Without this a later cell reading the table this notebook just wrote
+        can't resolve the name: it falls through to the session catalog, which
+        off-Fabric has no such table. The read edge is then lost and the
+        downstream table gets no columns. Registering the *schema* (never any
+        data) makes the chain resolve exactly as it would in Fabric.
+        """
+        try:
+            view = _refs.view_name(ref, views)
+            ddl = _ddl(table_schemas.get(ref, []))
+            empty = spark.createDataFrame([], ddl) if ddl else spark.createDataFrame([], StructType())
+            empty.createOrReplaceTempView(view)
+        except Exception as exc:  # noqa: BLE001 — best effort; the run continues
+            log.append(f"[spark] could not publish {_refs.table_of(ref)} as a view: {exc}")
+
+    def _resolve_read(token: str) -> str:
+        """A name out of a plan → a ref: a known view if it is one, else parsed."""
+        return views.get(token.strip("`"), "") or _refs.as_ref(token, **ctx)
+
     def _capture(target: str, df) -> None:
-        name = _short(target)
-        if name not in writes:
-            writes.append(name)
+        # A SQL write's target may already have been rewritten to a view name
+        # (when the notebook writes to a table it also reads); map it back.
+        ref = views.get(target.strip("`"), "") or _refs.as_ref(target, **ctx)
+        if ref not in writes:
+            writes.append(ref)
         try:
             plan = df._jdf.queryExecution().analyzed().toString()
-            reads.update(_short(m) for m in _VIEW_IN_PLAN.findall(plan))
-            reads.update(_short(m) for m in _UNRESOLVED_IN_PLAN.findall(plan))
-            table_schemas[name] = [
+            for m in _VIEW_IN_PLAN.findall(plan):
+                reads.add(_resolve_read(m))
+            for m in _UNRESOLVED_IN_PLAN.findall(plan):
+                reads.add(_resolve_read(m))
+            table_schemas[ref] = [
                 {"name": f.name, "type": f.dataType.simpleString()} for f in df.schema.fields
             ]
-            column_lineage.extend(_column_flows(df, name))
+            column_lineage.extend(_column_flows(df, ref))
         except Exception as exc:  # noqa: BLE001 — a capture failure must not abort the run
-            log.append(f"[spark] could not analyze write to {name}: {exc}")
+            log.append(f"[spark] could not analyze write to {_refs.table_of(ref)}: {exc}")
+        _register_written(ref, df)
+
+    def _view_for(raw: str) -> str:
+        """The registered view standing in for a table the notebook names.
+
+        A notebook refers to tables the way Fabric does — `table`,
+        `lakehouse.table`, `workspace.lakehouse.table`, or an `abfss://` path —
+        but a temp view is a plain identifier, so the reference has to be
+        translated. Reading is also recorded here: even when nothing is
+        registered under that name (so the cell will fail honestly), the *intent
+        to read* is real lineage and belongs in the graph.
+        """
+        ref = _refs.as_ref(raw, **ctx)
+        reads.add(ref)
+        for view, owned in views.items():
+            if owned == ref:
+                return view
+        return _refs.view_name(ref)
+
+    # Intercept reads so cross-workspace names resolve to the right view.
+    _orig_table = spark.table
+    spark.table = lambda name, *a, **k: _orig_table(_view_for(name), *a, **k)
+
+    _orig_reader_table = type(spark.read).table
+    type(spark.read).table = lambda self, name, *a, **k: _orig_reader_table(
+        self, _view_for(name), *a, **k
+    )
+
+    def _rewrite_sql(query: str) -> str:
+        """Swap qualified table names in SQL for the views standing in for them.
+
+        Spark would read `Finance.Gold.customers` as catalog/database/table and
+        fail; the empty view carrying that table's schema is what should answer.
+        Longest name first so `ws.lh.t` isn't half-matched by `lh.t`.
+        """
+        for view, ref in sorted(views.items(), key=lambda kv: -len(kv[1])):
+            ws, lh, table = _refs.parse_ref(ref)
+            for candidate in ([f"{ws}.{lh}.{table}", f"{lh}.{table}"] if ws and lh else []):
+                query = re.sub(
+                    rf"(?<![\w.]){re.escape(candidate)}(?![\w.])", view, query, flags=re.I
+                )
+        return query
 
     # Intercept the DataFrame write verbs — capture the plan instead of running.
     def _saveAsTable(self, name, *a, **k):  # noqa: ANN001
@@ -185,7 +260,8 @@ def main() -> None:
     _orig_sql = spark.sql
 
     def _sql(query, *a, **k):  # noqa: ANN001
-        m = _WRITE_SQL.match(query or "")
+        query = _rewrite_sql(query or "")
+        m = _WRITE_SQL.match(query)
         if m:
             target = m.group("t1") or m.group("t2")
             select = m.group("sel1") or m.group("sel2")
@@ -193,7 +269,9 @@ def main() -> None:
                 _capture(target, _orig_sql(select))
             except Exception as exc:  # noqa: BLE001
                 log.append(f"[spark] sql write to {target} not analyzable: {exc}")
-                writes.append(_short(target))
+                ref = _refs.qualify(target, **ctx)
+                if ref not in writes:
+                    writes.append(ref)
             return None
         return _orig_sql(query, *a, **k)
 
@@ -238,11 +316,13 @@ def main() -> None:
     result = {
         "ok": True,
         "engine": "spark",
+        "workspace": ctx["default_workspace"],
         "cells": cell_results,
-        "reads": sorted(reads - set(writes)),
+        "reads": sorted(r for r in (reads - set(writes)) if _refs.table_of(r)),
         "writes": sorted(set(writes)),
         "table_schemas": table_schemas,
         "column_lineage": column_lineage,
+        "tables": _refs.table_refs(sorted(reads | set(writes) | set(table_schemas))),
         "log": log,
         "saw_credentials": creds,
         "error": None,

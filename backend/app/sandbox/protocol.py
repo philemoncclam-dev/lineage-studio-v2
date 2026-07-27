@@ -20,17 +20,43 @@ class ColumnSchema(BaseModel):
     type: str | None = None
 
 
+class TableRef(BaseModel):
+    """The parts behind a canonical ref, for display and grouping.
+
+    Carried as a side table on the result (ref → TableRef) rather than by
+    replacing the ref strings with objects: `reads`, `writes` and
+    `table_schemas` stay keyed by a plain string, so every existing consumer —
+    including models saved before workspaces existed — keeps working, and only
+    the views that want to group by workspace read this.
+    """
+
+    workspace: str = ""
+    lakehouse: str = ""
+    table: str = ""
+    #: False when the workspace could not be determined, so the UI can show it
+    #: as unknown instead of implying it belongs to the notebook's own.
+    resolved: bool = False
+
+
 class RunRequest(BaseModel):
     """Backend → executor: what to run and the schemas to stand up.
 
-    `schemas` maps a table name to its columns; the executor registers each as
-    an *empty* temp view so the notebook's reads resolve without any real data
-    moving. It is unused by the stub engine and populated for real in M2b.
+    `schemas` maps a canonical table ref to its columns; the executor registers
+    each as an *empty* temp view so the notebook's reads resolve without any
+    real data moving. It is unused by the stub engine and populated for real in
+    M2b.
+
+    `workspace`/`lakehouse` are the notebook's own — the defaults an unqualified
+    table name resolves against, exactly as inside Fabric. `name_map` resolves
+    the GUIDs in `abfss://` paths to display names.
     """
 
     notebook_name: str
     cells: list[str]
     schemas: dict[str, list[ColumnSchema]] = Field(default_factory=dict)
+    workspace: str = ""
+    lakehouse: str = ""
+    name_map: dict[str, str] = Field(default_factory=dict)
 
 
 class ColumnFlow(BaseModel):
@@ -68,6 +94,9 @@ class RunResult(BaseModel):
 
     ok: bool
     engine: Literal["stub", "spark"]
+    #: The notebook's own workspace, echoed back so a consumer can tell which of
+    #: the tables it touched are in *other* workspaces without re-deriving it.
+    workspace: str = ""
     cells: list[CellResult] = Field(default_factory=list)
     reads: list[str] = Field(default_factory=list)
     writes: list[str] = Field(default_factory=list)
@@ -77,6 +106,10 @@ class RunResult(BaseModel):
     table_schemas: dict[str, list[ColumnSchema]] = Field(default_factory=dict)
     #: Column-level lineage from the analyzed plans (spark engine only).
     column_lineage: list[ColumnFlow] = Field(default_factory=list)
+    #: ref → its parts, for every ref named in `reads`, `writes` or
+    #: `table_schemas`. Lets the UI group tables by workspace without parsing
+    #: refs itself, and lets it mark cross-workspace access.
+    tables: dict[str, TableRef] = Field(default_factory=dict)
     log: list[str] = Field(default_factory=list)
     saw_credentials: bool = False
     error: str | None = None

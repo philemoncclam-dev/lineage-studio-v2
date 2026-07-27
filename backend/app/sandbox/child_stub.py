@@ -23,33 +23,42 @@ import re
 import sys
 from pathlib import Path
 
+# Sibling module, pure stdlib — importable because this file is launched by
+# path, so its own directory leads sys.path. It is NOT part of `app`, so the
+# isolation contract above still holds.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _refs  # noqa: E402
+
 _READ = [
-    re.compile(r"""spark\.table\(\s*['"]([\w.]+)['"]""", re.I),
-    re.compile(r"""spark\.read[\w.]*\.table\(\s*['"]([\w.]+)['"]""", re.I),
-    re.compile(r"""\.load\(\s*['"]([\w./]+)['"]""", re.I),
-    re.compile(r"""\bFROM\s+([\w.]+)""", re.I),
-    re.compile(r"""\bJOIN\s+([\w.]+)""", re.I),
+    re.compile(r"""spark\.table\(\s*['"]([\w. ]+)['"]""", re.I),
+    re.compile(r"""spark\.read[\w.]*\.table\(\s*['"]([\w. ]+)['"]""", re.I),
+    re.compile(r"""\.load\(\s*['"]([\w.:/@ -]+)['"]""", re.I),
+    re.compile(r"""\bFROM\s+([\w.`]+)""", re.I),
+    re.compile(r"""\bJOIN\s+([\w.`]+)""", re.I),
 ]
 _WRITE = [
-    re.compile(r"""\.saveAsTable\(\s*['"]([\w.]+)['"]""", re.I),
-    re.compile(r"""\.insertInto\(\s*['"]([\w.]+)['"]""", re.I),
-    re.compile(r"""\bINSERT\s+INTO\s+([\w.]+)""", re.I),
-    re.compile(r"""\bCREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+([\w.]+)""", re.I),
+    re.compile(r"""\.saveAsTable\(\s*['"]([\w. ]+)['"]""", re.I),
+    re.compile(r"""\.insertInto\(\s*['"]([\w. ]+)['"]""", re.I),
+    re.compile(r"""\.save\(\s*['"]([\w.:/@ -]+)['"]""", re.I),
+    re.compile(r"""\bINSERT\s+INTO\s+([\w.`]+)""", re.I),
+    re.compile(r"""\bCREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+([\w.`]+)""", re.I),
 ]
 _IMPORT = re.compile(r"^\s*(?:from\s+[\w.]+\s+import\b|import\s+[\w.]+)", re.M)
 
 
-def _short(ref: str) -> str:
-    ref = ref.strip().strip("`").rstrip("/")
-    return ref.split("/")[-1].split(".")[-1]
-
-
-def _find(patterns: list[re.Pattern[str]], text: str) -> list[str]:
+def _find(patterns: list[re.Pattern[str]], text: str, ctx: dict) -> list[str]:
+    """Canonical refs for every table the patterns match in `text`."""
     found: set[str] = set()
     for pat in patterns:
         for m in pat.finditer(text):
-            found.add(_short(m.group(1)))
+            ref = _refs.qualify(m.group(1), **ctx)
+            if _refs.table_of(ref):
+                found.add(ref)
     return sorted(found)
+
+
+def _table_refs(refs: set[str]) -> dict:
+    return _refs.table_refs(sorted(refs))
 
 
 def _saw_credentials() -> bool:
@@ -69,6 +78,12 @@ def main() -> None:
     req = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     cells = req.get("cells", [])
     creds = _saw_credentials()
+    # The notebook's own workspace/lakehouse — what a bare table name means.
+    ctx = {
+        "default_workspace": req.get("workspace", ""),
+        "default_lakehouse": req.get("lakehouse", ""),
+        "name_map": req.get("name_map", {}),
+    }
 
     log = ["[stub] engine=stub — static analysis only, no Spark session started."]
     if creds:
@@ -79,11 +94,14 @@ def main() -> None:
     all_writes: set[str] = set()
     for i, cell in enumerate(cells):
         scannable = _IMPORT.sub("", cell)
-        reads = _find(_READ, scannable)
-        writes = _find(_WRITE, scannable)
+        reads = _find(_READ, scannable, ctx)
+        writes = _find(_WRITE, scannable, ctx)
         all_reads.update(reads)
         all_writes.update(writes)
-        log.append(f"[stub] cell {i}: reads={reads or '—'} writes={writes or '—'}")
+        log.append(
+            f"[stub] cell {i}: reads={[_refs.table_of(r) for r in reads] or '—'} "
+            f"writes={[_refs.table_of(w) for w in writes] or '—'}"
+        )
         cell_results.append(
             {"index": i, "status": "ok", "reads": reads, "writes": writes, "stdout": "", "error": None}
         )
@@ -91,9 +109,11 @@ def main() -> None:
     result = {
         "ok": True,
         "engine": "stub",
+        "workspace": ctx["default_workspace"],
         "cells": cell_results,
         "reads": sorted(all_reads - all_writes),
         "writes": sorted(all_writes),
+        "tables": _table_refs(all_reads | all_writes),
         "log": log,
         "saw_credentials": creds,
         "error": None,

@@ -7,9 +7,9 @@
 // same reading as `modeling/ModelViewer`.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import type { SandboxColumn, SandboxRunResult } from '../api'
+import { refLabel, refWorkspace, type SandboxColumn, type SandboxRunResult, type SandboxTableRef } from '../api'
 import { StepIcon } from './SequencePanel'
-import { stepReads, stepWrites, type Step, type StepResult } from './sequence'
+import { stepReads, stepTables, stepWrites, type Step, type StepResult } from './sequence'
 import {
   sequenceToModel,
   defaultModelName,
@@ -37,6 +37,12 @@ interface FlowNode {
   sub?: string
   badge?: string
   rows: FlowRow[]
+  /**
+   * A table's workspace — the grouping key for the tables column, and shown on
+   * the card. Empty means the run could not resolve one, which is deliberately
+   * distinct from "the notebook's own" and renders as `unknown`.
+   */
+  ws?: string
   /**
    * A table's full column list. `rows` is the truncated view the card shows
    * until it is expanded — a 60-column table would otherwise be a mile of card
@@ -97,6 +103,13 @@ export type CanvasView = 'flow' | 'sequence'
 interface Layout {
   pos: Map<string, { x: number; y: number }>
   bands: { key: number; label: string; left: number; width: number; centerX: number }[]
+  /**
+   * Workspace headers above the tables column (sequence view only). A group's
+   * name is drawn once rather than badged on every card: the column is already
+   * ordered by workspace, so one header per run of cards says it without
+   * repeating the same word down the canvas.
+   */
+  groups: { key: string; label: string; x: number; y: number }[]
   width: number
   height: number
 }
@@ -117,20 +130,75 @@ function band(key: number, label: string, col: number, lastCol: number) {
   return { key, label, left, width: right - left, centerX: col * (NW + GX) + NW / 2 }
 }
 
+/** Extra vertical space between two workspace groups in the tables column. */
+const GROUP_GAP = 22
+/** Height reserved for a workspace header above its group of table cards. */
+const GROUP_H = 18
+
+/**
+ * Order the tables column by workspace, keeping first-touched order within each
+ * group, and return the group each table starts (so the card can be labelled).
+ *
+ * Grouping rather than one flat column because a notebook that writes into
+ * another workspace is the thing that is hard to see otherwise: interleaved,
+ * two `customers` cards from two workspaces read as a duplicate rather than as
+ * a cross-workspace write. Unresolved workspaces sort last — they are the least
+ * trustworthy rows and should not head the column.
+ */
+function groupByWorkspace(tables: FlowNode[]): { table: FlowNode; startsGroup: boolean }[] {
+  const order: string[] = []
+  for (const t of tables) {
+    const ws = t.ws ?? ''
+    if (!order.includes(ws)) order.push(ws)
+  }
+  order.sort((a, b) => (a === '' ? 1 : b === '' ? -1 : 0))
+  const out: { table: FlowNode; startsGroup: boolean }[] = []
+  for (const ws of order) {
+    tables
+      .filter((t) => (t.ws ?? '') === ws)
+      .forEach((table, i) => out.push({ table, startsGroup: i === 0 }))
+  }
+  return out
+}
+
 /**
  * Two columns, tables then steps. Node order is preserved from `buildFlow`,
- * which pushes steps in sequence order and tables as they are first touched —
- * so "first step on top" needs no sorting, only the split.
+ * which pushes steps in sequence order — so "first step on top" needs no
+ * sorting. The tables column is regrouped by workspace.
  */
 function layoutSequence(nodes: FlowNode[]): Layout {
   const steps = nodes.filter((n) => n.kind !== 'table')
   const tables = nodes.filter((n) => n.kind === 'table')
   const pos: Layout['pos'] = new Map()
   const stepH = stackColumn(steps, 0, pos)
-  const tableH = stackColumn(tables, NW + GX, pos)
+
+  const grouped = groupByWorkspace(tables)
+  const groups: Layout['groups'] = []
+  let y = 0
+  grouped.forEach(({ table, startsGroup }, i) => {
+    if (startsGroup) {
+      if (i > 0) y += GROUP_GAP
+      groups.push({
+        key: table.ws || '__unknown',
+        label: table.ws || 'workspace unresolved',
+        x: NW + GX,
+        y,
+      })
+      y += GROUP_H
+    }
+    pos.set(table.id, { x: NW + GX, y })
+    y += nodeHeight(table) + GY
+  })
+  const tableH = Math.max(0, y - GY)
+
+  const spaces = new Set(tables.map((t) => t.ws ?? '').filter(Boolean))
   return {
     pos,
-    bands: [band(0, 'Notebooks & pipelines', 0, 1), band(1, 'Tables', 1, 1)],
+    bands: [
+      band(0, 'Notebooks & pipelines', 0, 1),
+      band(1, spaces.size > 1 ? `Tables · ${spaces.size} workspaces` : 'Tables', 1, 1),
+    ],
+    groups,
     width: 2 * (NW + GX) - GX,
     height: Math.max(1, stepH, tableH),
   }
@@ -202,7 +270,7 @@ function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
     return band(c, label, c, maxCol)
   })
 
-  return { pos, bands, width: (maxCol + 1) * (NW + GX) - GX, height }
+  return { pos, bands, groups: [], width: (maxCol + 1) * (NW + GX) - GX, height }
 }
 
 function FlowCanvas({
@@ -248,7 +316,7 @@ function FlowCanvas({
     const stepIds = new Set(rawNodes.filter((n) => n.kind !== 'table').map((n) => n.id))
     return sequenceEdges(edges, stepIds)
   }, [edges, rawNodes, view])
-  const { pos, bands, width, height } = useMemo(
+  const { pos, bands, groups, width, height } = useMemo(
     () => (view === 'sequence' ? layoutSequence(nodes) : layoutFlow(nodes, edges)),
     [nodes, edges, view],
   )
@@ -269,6 +337,17 @@ function FlowCanvas({
         </div>
 
         <div className="sbx-flow-canvas" style={{ width: w, height: h }}>
+          {groups.map((g) => (
+            <div
+              key={g.key}
+              className="sbx-flow-ws"
+              data-unknown={g.key === '__unknown' || undefined}
+              style={{ left: g.x + PAD, top: g.y + PAD, width: NW, height: GROUP_H }}
+              title={g.key === '__unknown' ? 'the run could not resolve a workspace' : g.label}
+            >
+              {g.label}
+            </div>
+          ))}
           <svg className="sbx-flow-edges" width={w} height={h}>
             <defs>
               <marker id="sbx-arrow" markerWidth="8" markerHeight="8" refX="6.5" refY="3.5" orient="auto">
@@ -377,15 +456,23 @@ export function buildFlow(steps: Step[], results: Map<string, StepResult>): { no
   const nodes: FlowNode[] = []
   const edges: FlowEdge[] = []
   const schemas = collectSchemas(results)
+  // Ref → parts, merged over every step, so a table read by one notebook and
+  // written by another is one card carrying one workspace.
+  const refs: Record<string, SandboxTableRef> = Object.assign(
+    {},
+    ...steps.map((s) => stepTables(results.get(s.key))),
+  )
   const tableSeen = new Set<string>()
-  const ensureTable = (name: string) => {
-    const id = `t:${name.toLowerCase()}`
+  const ensureTable = (ref: string) => {
+    // Keyed by the full ref, not the leaf name: two workspaces can hold a
+    // `customers`, and they are two tables, not one.
+    const id = `t:${ref.toLowerCase()}`
     if (!tableSeen.has(id)) {
       tableSeen.add(id)
       // A table card carries its schema as attribute rows — the same reading as
       // an object card in Modeling, and the reason the canvas is worth looking
       // at rather than just the report.
-      const allRows: FlowRow[] = (schemas.get(name) ?? []).map((c) => ({
+      const allRows: FlowRow[] = (schemas.get(ref) ?? []).map((c) => ({
         key: `c:${c.name}`,
         label: c.name,
         tone: 'col' as const,
@@ -394,7 +481,8 @@ export function buildFlow(steps: Step[], results: Map<string, StepResult>): { no
       nodes.push({
         id,
         kind: 'table',
-        label: name,
+        label: refLabel(ref, refs),
+        ws: refWorkspace(ref, refs),
         sub: allRows.length ? `${allRows.length} cols` : undefined,
         rows: allRows,
         allRows,
@@ -416,10 +504,20 @@ export function buildFlow(steps: Step[], results: Map<string, StepResult>): { no
             : undefined
     const reads = stepReads(res)
     const writes = stepWrites(res)
-    const rows: FlowRow[] = [
-      ...reads.map((r) => ({ key: `r:${r}`, label: r, tone: 'read' as const })),
-      ...writes.map((r) => ({ key: `w:${r}`, label: r, tone: 'write' as const })),
-    ]
+    // The notebook's own workspace — anything else is a cross-workspace access,
+    // which is the fact this view exists to make visible.
+    const own = res?.runs.find((x) => x.result?.workspace)?.result?.workspace ?? ''
+    const io = (ref: string, tone: 'read' | 'write'): FlowRow => {
+      const ws = refWorkspace(ref, refs)
+      const foreign = !!own && !!ws && ws !== own
+      return {
+        key: `${tone[0]}:${ref}`,
+        label: refLabel(ref, refs),
+        tone,
+        meta: foreign ? ws : undefined,
+      }
+    }
+    const rows: FlowRow[] = [...reads.map((r) => io(r, 'read')), ...writes.map((r) => io(r, 'write'))]
     nodes.push({ id: stepId, kind: step.kind, label: step.name, sub, badge: String(i + 1), rows })
 
     for (const r of reads) edges.push({ from: ensureTable(r), to: stepId, toRow: `r:${r}`, tone: 'read' })

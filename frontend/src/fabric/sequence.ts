@@ -7,6 +7,7 @@
 import { useSyncExternalStore } from 'react'
 import {
   runSandbox,
+  type SandboxTableRef,
   fetchFabricPipelineDefinition,
   type SandboxRunResult,
   type FabricPipelineActivity,
@@ -50,6 +51,10 @@ export const stepReads = (r?: StepResult): string[] =>
   [...new Set((r?.runs ?? []).flatMap((x) => x.result?.reads ?? []))]
 export const stepWrites = (r?: StepResult): string[] =>
   [...new Set((r?.runs ?? []).flatMap((x) => x.result?.writes ?? []))]
+
+/** Every table ref this step touched, merged across its runs. */
+export const stepTables = (r?: StepResult): Record<string, SandboxTableRef> =>
+  Object.assign({}, ...(r?.runs ?? []).map((x) => x.result?.tables ?? {}))
 
 let seq = 0
 const newKey = () => `step-${++seq}`

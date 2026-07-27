@@ -18,6 +18,7 @@ from app.fabric.schema import (
     resolve_read_schemas,
     scan_read_tables,
 )
+from app.sandbox._refs import make_ref, table_of
 
 
 def _commit_with_schema(fields: list[tuple[str, str]]) -> str:
@@ -67,6 +68,9 @@ class FakeOneLake:
     def list_items(self, workspace_id):
         return self._items
 
+    def list_workspaces(self):
+        return [{"id": "ws1", "displayName": "Analytics"}]
+
     def onelake_list(self, workspace_id, directory, recursive=False):
         return [{"name": n} for n in self._tree.get(directory, [])]
 
@@ -90,9 +94,39 @@ def test_resolve_read_schemas_matches_a_bare_table_name():
             )
         },
     )
-    schemas = resolve_read_schemas(fake, "ws1", {"raw_customers"})
-    assert set(schemas) == {"raw_customers"}
-    assert [c.name for c in schemas["raw_customers"]] == ["customer_id", "region"]
+    ref = make_ref("raw_customers", "Bronze", "Analytics")
+    schemas = resolve_read_schemas(fake, "ws1", {ref})
+    assert set(schemas) == {ref}
+    assert [c.name for c in schemas[ref]] == ["customer_id", "region"]
+
+
+def test_resolve_read_schemas_uses_each_refs_own_workspace():
+    """A cross-workspace read is looked up where it lives, not in the notebook's."""
+    lh, table_dir = "lh1", "lh1/Tables/dbo/raw_customers"
+    fake = FakeOneLake(
+        items=[{"id": lh, "type": "Lakehouse"}],
+        tree={
+            f"{lh}/Tables": [f"{table_dir}/_delta_log"],
+            f"{table_dir}/_delta_log": [f"{table_dir}/_delta_log/00000000000000000000.json"],
+        },
+        commits={
+            f"{table_dir}/_delta_log/00000000000000000000.json": _commit_with_schema(
+                [("customer_id", "string")]
+            )
+        },
+    )
+    fake.seen = []
+    inner = fake.onelake_list
+
+    def spy(workspace_id, directory, recursive=False):
+        fake.seen.append(workspace_id)
+        return inner(workspace_id, directory, recursive)
+
+    fake.onelake_list = spy
+    foreign = make_ref("raw_customers", "Gold", "Finance")
+    resolve_read_schemas(fake, "ws1", {foreign}, {"finance": "ws-finance"})
+    # listed against Finance's id, never the notebook's own workspace
+    assert "ws-finance" in fake.seen and "ws1" not in fake.seen
 
 
 def test_fetch_table_schema_stops_at_first_commit_with_metadata():
@@ -115,4 +149,22 @@ def test_fetch_table_schema_stops_at_first_commit_with_metadata():
 def test_scan_read_tables_finds_reads_and_ignores_imports():
     cells = ["from pyspark.sql import Row", "df = spark.table('raw_orders')", "x = spark.sql('SELECT * FROM dim_region')"]
     reads = scan_read_tables(cells)
-    assert "raw_orders" in reads and "dim_region" in reads and "sql" not in reads
+    names = {table_of(r) for r in reads}
+    assert "raw_orders" in names and "dim_region" in names and "sql" not in names
+
+
+def test_scan_read_tables_qualifies_against_the_notebooks_own_workspace():
+    reads = scan_read_tables(["df = spark.table('raw_orders')"], "Analytics", "Bronze")
+    assert reads == {make_ref("raw_orders", "Bronze", "Analytics")}
+
+
+def test_scan_read_tables_keeps_a_cross_workspace_read_distinct():
+    reads = scan_read_tables(
+        ["a = spark.table('Finance.Gold.customers')", "b = spark.table('customers')"],
+        "Analytics",
+        "Gold",
+    )
+    assert reads == {
+        make_ref("customers", "Gold", "Finance"),
+        make_ref("customers", "Gold", "Analytics"),
+    }

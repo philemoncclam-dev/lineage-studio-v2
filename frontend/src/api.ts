@@ -557,6 +557,23 @@ export interface SandboxColumnFlow {
   transform?: string | null
 }
 
+/**
+ * The parts behind a table ref.
+ *
+ * `reads`, `writes` and `table_schemas` are keyed by an opaque canonical ref,
+ * because a notebook can read and write across workspaces and a bare table name
+ * is therefore not an identity. This is the side table that turns a ref back
+ * into something displayable — and `resolved: false` means the workspace could
+ * not be determined, which must render as unknown rather than as the notebook's
+ * own.
+ */
+export interface SandboxTableRef {
+  workspace: string
+  lakehouse: string
+  table: string
+  resolved: boolean
+}
+
 export interface SandboxRunResult {
   ok: boolean
   engine: 'stub' | 'spark'
@@ -567,9 +584,30 @@ export interface SandboxRunResult {
   table_schemas: Record<string, SandboxColumn[]>
   /** Column-level lineage from the analyzed plans (Spark engine only). */
   column_lineage: SandboxColumnFlow[]
+  /**
+   * ref → its parts, for every ref named anywhere in this result.
+   *
+   * Optional because a backend deployed before workspace-qualified refs does
+   * not send it (or `workspace`). Consumers fall back to the leaf name and an
+   * unresolved workspace, so an older API degrades instead of breaking.
+   */
+  tables?: Record<string, SandboxTableRef>
+  /** The notebook's own workspace, for spotting cross-workspace access. */
+  workspace?: string
   log: string[]
   saw_credentials: boolean
   error: string | null
+}
+
+/** Display name for a ref, falling back to the ref when it is unknown to us. */
+export function refLabel(ref: string, tables?: Record<string, SandboxTableRef>): string {
+  return tables?.[ref]?.table || ref.split('/').pop() || ref
+}
+
+/** The workspace a ref belongs to, or `''` when it could not be resolved. */
+export function refWorkspace(ref: string, tables?: Record<string, SandboxTableRef>): string {
+  const t = tables?.[ref]
+  return t?.resolved ? t.workspace : ''
 }
 
 export async function runSandbox(body: {
@@ -577,6 +615,9 @@ export async function runSandbox(body: {
   workspace_id?: string
   item_id?: string
   cells?: string[]
+  /** The notebook's own workspace/lakehouse — the defaults bare names resolve against. */
+  workspace?: string
+  lakehouse?: string
 }): Promise<SandboxRunResult> {
   const res = await fetch(`${BASE}/fabric/sandbox/run`, {
     method: 'POST',

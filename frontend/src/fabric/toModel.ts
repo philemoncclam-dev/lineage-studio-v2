@@ -17,8 +17,8 @@
 import type { LineageModel, Layer, ModelObject, Attribute, Transition, EntityId } from '../model/types'
 import { emptyModel } from '../model/store'
 import { TAGS_KEY } from '../model/tags'
-import type { SandboxColumn } from '../api'
-import { stepReads, stepWrites, type Step, type StepResult } from './sequence'
+import { refLabel, refWorkspace, type SandboxColumn, type SandboxTableRef } from '../api'
+import { stepReads, stepTables, stepWrites, type Step, type StepResult } from './sequence'
 
 /** A node on the way to becoming an object. */
 interface Node {
@@ -37,8 +37,14 @@ interface Node {
   io: { table: string; access: 'Read' | 'Write' }[]
   /** Step ordinal, for the property bag. Steps only. */
   ordinal?: number
-  /** Workspace the step came from. Steps only. */
+  /** Workspace the node belongs to — a step's own, or a table's. */
   ws?: string
+  /**
+   * A table's canonical ref. The identity, kept apart from `name` (the leaf)
+   * because two workspaces can hold a same-named table, and because the run's
+   * column lineage is keyed by ref.
+   */
+  ref?: string
 }
 
 interface Link {
@@ -173,10 +179,25 @@ export function sequenceToModel(
       for (const [table, cols] of Object.entries(run.result?.table_schemas ?? {}))
         if (cols.length && !schemas.get(table)?.length) schemas.set(table, cols)
 
-  const ensureTable = (tname: string): string => {
-    const id = tableId(tname)
+  // Ref -> parts, merged across every step, so one table is one card with one
+  // workspace however many notebooks touched it.
+  const refs: Record<string, SandboxTableRef> = Object.assign(
+    {},
+    ...steps.map((s) => stepTables(results.get(s.key))),
+  )
+
+  const ensureTable = (ref: string): string => {
+    const id = tableId(ref)
     if (!byId.has(id)) {
-      const n: Node = { id, kind: 'table', name: tname, columns: schemas.get(tname) ?? [], io: [] }
+      const n: Node = {
+        id,
+        kind: 'table',
+        name: refLabel(ref, refs),
+        ref,
+        ws: refWorkspace(ref, refs),
+        columns: schemas.get(ref) ?? [],
+        io: [],
+      }
       nodes.push(n)
       byId.set(id, n)
     }
@@ -198,7 +219,10 @@ export function sequenceToModel(
         ...writes.map((t) => ({ table: t, access: 'Write' as const })),
       ],
       ordinal: i + 1,
-      ws: step.ws,
+      // The run echoes the notebook's own workspace NAME; `step.ws` is the GUID
+      // the tree navigates by. The name is what tables carry, so comparing the
+      // two is what makes a cross-workspace row detectable.
+      ws: res?.runs.find((r) => r.result?.workspace)?.result?.workspace || step.ws,
     }
     nodes.push(n)
     byId.set(id, n)
@@ -236,12 +260,20 @@ export function sequenceToModel(
       // Without them a step exported as a bare object and the model did not
       // look like the canvas it came from.
       for (const row of n.io) {
-        const attr: Attribute = { id: crypto.randomUUID(), name: row.table, children: [] }
+        const attr: Attribute = { id: crypto.randomUUID(), name: refLabel(row.table, refs), children: [] }
         ioAttrOf.set(`${n.id}|${row.access}|${row.table}`, attr.id)
         // Only the Access LABEL is optional. The row itself is structure —
         // dropping it would put the edge back on the object header and the
         // model would stop looking like the canvas.
-        if (options.accessTags) props[attr.id] = { Access: row.access }
+        // A row whose table lives in ANOTHER workspace is named as such: it is
+        // the fact a reader most needs and cannot otherwise see on the row.
+        const rowWs = refWorkspace(row.table, refs)
+        const foreign = rowWs && n.ws && rowWs !== n.ws ? rowWs : ''
+        if (options.accessTags || foreign)
+          props[attr.id] = {
+            ...(options.accessTags ? { Access: row.access } : {}),
+            ...(foreign ? { Workspace: foreign } : {}),
+          }
         object.children.push(attr)
       }
       if (options.columns)

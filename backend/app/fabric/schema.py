@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import json
 
-from ..parser import _READ_PATTERNS, _find, _without_python_imports
+from ..parser import _READ_PATTERNS, _find_raw, _without_python_imports
+from ..sandbox._refs import parse_ref, qualify, table_of
 from ..sandbox.protocol import ColumnSchema
 from .client import FabricError
 
@@ -84,15 +85,25 @@ def parse_delta_schema(commit_texts_desc: list[str]) -> list[ColumnSchema]:
     return []
 
 
-def scan_read_tables(cells: list[str]) -> set[str]:
-    """Best-effort static pass for the tables a notebook reads.
+def scan_read_tables(
+    cells: list[str],
+    default_workspace: str = "",
+    default_lakehouse: str = "",
+    name_map: dict[str, str] | None = None,
+) -> set[str]:
+    """Best-effort static pass for the tables a notebook reads, as canonical refs.
 
     Needed because view registration has to happen *before* the run, so the
-    accurate reads (from Spark's plans) aren't available yet.
+    accurate reads (from Spark's plans) aren't available yet. Refs rather than
+    bare names because a notebook may read across workspaces, and the schema for
+    `Finance/Gold/customers` is not the one for `Marketing/Gold/customers`.
     """
     reads: set[str] = set()
     for cell in cells:
-        reads |= _find(_READ_PATTERNS, _without_python_imports(cell))
+        for raw in _find_raw(_READ_PATTERNS, _without_python_imports(cell)):
+            ref = qualify(raw, default_workspace, default_lakehouse, name_map)
+            if table_of(ref):
+                reads.add(ref)
     return reads
 
 
@@ -135,22 +146,60 @@ def fetch_table_schema(client, workspace_id: str, table_dir: str) -> list[Column
     return []
 
 
-def resolve_read_schemas(
-    client, workspace_id: str, read_names: set[str]
-) -> dict[str, list[ColumnSchema]]:
-    """Schemas for the named read tables, found across the workspace's lakehouses.
+def workspace_index(client) -> dict[str, str]:
+    """`workspace name (lowered) → id`, plus id → id so a GUID ref resolves too.
 
-    Table names are matched short (last path segment), first lakehouse wins on a
-    collision — good enough to register empty views; the sandbox reports per-cell
-    errors honestly for anything that stays unresolved.
+    A notebook that reads across workspaces names them however the source does;
+    both forms have to reach an id before OneLake can be listed.
     """
-    if not read_names:
+    try:
+        spaces = client.list_workspaces()
+    except FabricError:
         return {}
+    index: dict[str, str] = {}
+    for ws in spaces:
+        wid = ws.get("id")
+        if not wid:
+            continue
+        index[wid.lower()] = wid
+        if ws.get("displayName"):
+            index.setdefault(ws["displayName"].lower(), wid)
+    return index
+
+
+def guid_name_map(client, workspace_ids: list[str]) -> dict[str, str]:
+    """`GUID (lowered) → display name` for workspaces and their lakehouses.
+
+    `abfss://` paths address everything by GUID, so without this a cross-
+    workspace read shows up in the graph as a pair of GUIDs. Best-effort: an
+    unresolved GUID stays as itself, which is still a correct *identity* — just
+    an unfriendly label.
+    """
+    out: dict[str, str] = {}
+    try:
+        for ws in client.list_workspaces():
+            if ws.get("id") and ws.get("displayName"):
+                out[ws["id"].lower()] = ws["displayName"]
+    except FabricError:
+        pass
+    for wid in workspace_ids:
+        if not wid:
+            continue
+        try:
+            for item in client.list_items(wid):
+                if (item.get("type") or "").lower() == "lakehouse" and item.get("id"):
+                    out[item["id"].lower()] = item.get("displayName") or item["id"]
+        except FabricError:
+            continue
+    return out
+
+
+def _lakehouse_table_index(client, workspace_id: str) -> dict[str, str]:
+    """`short table name → OneLake table dir` across one workspace's lakehouses."""
     try:
         items = client.list_items(workspace_id)
     except FabricError:
         return {}
-
     index: dict[str, str] = {}
     for item in items:
         if (item.get("type") or "").lower() != "lakehouse":
@@ -160,13 +209,47 @@ def resolve_read_schemas(
                 index.setdefault(short, table_dir)
         except FabricError:
             continue
+    return index
+
+
+def resolve_read_schemas(
+    client,
+    workspace_id: str,
+    read_refs: set[str],
+    ws_index: dict[str, str] | None = None,
+) -> dict[str, list[ColumnSchema]]:
+    """Schemas for the read tables, fetched from each ref's own workspace.
+
+    Refs are grouped by workspace so a cross-workspace read is resolved against
+    the workspace it actually lives in — previously every read was looked up in
+    the notebook's own workspace, so a foreign table either failed to resolve or,
+    worse, silently matched a same-named local one.
+
+    Within a workspace, names are still matched short and first lakehouse wins
+    on a collision: enough to register an empty view, and the sandbox reports
+    per-cell errors honestly for anything that stays unresolved.
+    """
+    if not read_refs:
+        return {}
+    ws_index = ws_index if ws_index is not None else workspace_index(client)
+
+    by_workspace: dict[str, list[str]] = {}
+    for ref in read_refs:
+        ws, _lh, _table = parse_ref(ref)
+        # An unqualified or unknown workspace means the notebook's own.
+        wid = ws_index.get(ws.lower(), workspace_id) if ws else workspace_id
+        by_workspace.setdefault(wid, []).append(ref)
 
     schemas: dict[str, list[ColumnSchema]] = {}
-    for name in read_names:
-        table_dir = index.get(name.lower())
-        if not table_dir:
+    for wid, refs in by_workspace.items():
+        if not wid:
             continue
-        cols = fetch_table_schema(client, workspace_id, table_dir)
-        if cols:
-            schemas[name] = cols
+        index = _lakehouse_table_index(client, wid)
+        for ref in refs:
+            table_dir = index.get(table_of(ref).lower())
+            if not table_dir:
+                continue
+            cols = fetch_table_schema(client, wid, table_dir)
+            if cols:
+                schemas[ref] = cols
     return schemas

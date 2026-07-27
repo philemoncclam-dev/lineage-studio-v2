@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.sandbox._refs import make_ref
 from app.sandbox.protocol import RunRequest
 from app.sandbox.runner import run_sandbox
 
@@ -28,11 +29,50 @@ def client():
 
 
 def test_stub_run_derives_reads_and_writes():
-    result = run_sandbox(RunRequest(notebook_name="nb", cells=CELLS), engine="stub")
+    result = run_sandbox(
+        RunRequest(notebook_name="nb", cells=CELLS, workspace="Analytics", lakehouse="Bronze"),
+        engine="stub",
+    )
     assert result.ok
     assert result.engine == "stub"
-    assert result.reads == ["raw_orders"]
-    assert result.writes == ["vw_sales"]
+    assert result.reads == [make_ref("raw_orders", "Bronze", "Analytics")]
+    assert result.writes == [make_ref("vw_sales", "Bronze", "Analytics")]
+
+
+def test_stub_run_reports_each_tables_workspace():
+    result = run_sandbox(
+        RunRequest(notebook_name="nb", cells=CELLS, workspace="Analytics", lakehouse="Bronze"),
+        engine="stub",
+    )
+    raw = result.tables[make_ref("raw_orders", "Bronze", "Analytics")]
+    assert (raw.workspace, raw.lakehouse, raw.table) == ("Analytics", "Bronze", "raw_orders")
+    assert raw.resolved is True
+
+
+def test_stub_run_keeps_cross_workspace_tables_apart():
+    """The bug this replaced: both collapsed to `customers` and became one node."""
+    result = run_sandbox(
+        RunRequest(
+            notebook_name="nb",
+            cells=[
+                "a = spark.table('Finance.Gold.customers')",
+                "b = spark.table('Marketing.Gold.customers')",
+            ],
+            workspace="Analytics",
+            lakehouse="Bronze",
+        ),
+        engine="stub",
+    )
+    assert result.reads == [
+        make_ref("customers", "Gold", "Finance"),
+        make_ref("customers", "Gold", "Marketing"),
+    ]
+
+
+def test_stub_run_leaves_an_unknown_workspace_unresolved():
+    """An unqualified name with no notebook context must not claim a workspace."""
+    result = run_sandbox(RunRequest(notebook_name="nb", cells=CELLS), engine="stub")
+    assert result.tables[result.reads[0]].resolved is False
 
 
 def test_import_line_does_not_invent_a_read():
@@ -51,7 +91,7 @@ def test_child_cannot_see_a_parent_credential(monkeypatch):
 def test_a_cell_that_reads_and_writes_the_same_table_is_a_write():
     cells = ["df = spark.table('t'); df.write.saveAsTable('t')"]
     result = run_sandbox(RunRequest(notebook_name="nb", cells=cells), engine="stub")
-    assert result.writes == ["t"]
+    assert result.writes == [make_ref("t")]
     assert result.reads == []
 
 
@@ -63,12 +103,16 @@ def test_run_endpoint_accepts_direct_cells(client):
         json={
             "name": "nb",
             "cells": CELLS,
-            "schemas": {"raw_orders": [{"name": "order_id", "type": "long"}]},
+            "schemas": {make_ref("raw_orders", "Bronze", "Analytics"): [{"name": "order_id", "type": "long"}]},
+            "workspace": "Analytics",
+            "lakehouse": "Bronze",
         },
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["ok"] and body["reads"] == ["raw_orders"] and body["writes"] == ["vw_sales"]
+    assert body["ok"]
+    assert body["reads"] == [make_ref("raw_orders", "Bronze", "Analytics")]
+    assert body["writes"] == [make_ref("vw_sales", "Bronze", "Analytics")]
 
 
 def test_run_endpoint_requires_cells_or_ids(client):

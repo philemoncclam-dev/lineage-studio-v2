@@ -30,9 +30,20 @@ export function sandboxRunToGraph(
   const columnsFor = (name: string): Column[] =>
     (result.table_schemas[name] ?? []).map((c) => ({ name: c.name, data_type: c.type ?? null }))
 
-  // One table node per distinct table the notebook touched, either side.
+  // One table node per distinct table the notebook touched, either side. The
+  // node id stays the full ref — two workspaces can hold a same-named table and
+  // they must not merge — while the display name is the leaf, with the
+  // workspace and lakehouse carried in meta for the model to show.
   for (const t of new Set([...result.reads, ...result.writes])) {
-    nodes.push({ id: tableId(t), kind: 'table', name: t, parent_id: null, columns: columnsFor(t), meta: {} })
+    const ref = result.tables?.[t]
+    nodes.push({
+      id: tableId(t),
+      kind: 'table',
+      name: ref?.table || t,
+      parent_id: null,
+      columns: columnsFor(t),
+      meta: ref?.resolved ? { workspace: ref.workspace, lakehouse: ref.lakehouse } : {},
+    })
   }
 
   // Column maps for a write edge: the run's column flows into that target,

@@ -1393,3 +1393,41 @@
   font-size: 11px;
   line-height: 1.35;
 }
+
+/* Workspace group header above a run of table cards in the sequence view.
+   Drawn once per group rather than badged on every card — the column is
+   already ordered by workspace, so repeating the name down the canvas would
+   be noise. `data-unknown` marks a table whose workspace the run could not
+   resolve: it must not read as belonging to the notebook's own. */
+.sbx-flow-ws {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(28 35 51 / 0.62);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sbx-flow-ws::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(28 35 51 / 0.42);
+}
+.sbx-flow-ws[data-unknown] {
+  color: rgb(28 35 51 / 0.42);
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.sbx-flow-ws[data-unknown]::before {
+  background: transparent;
+  border: 1px dashed rgb(28 35 51 / 0.42);
+}

@@ -11,7 +11,6 @@ import { buildIndex, pathOf } from '../model/index'
 import {
   applySuggestions,
   defaultConfig,
-  defaultMinUidParts,
   generateSuggestions,
   groupSuggestions,
   type AutoMapConfig,
@@ -39,7 +38,6 @@ const ALGORITHMS: { value: Algorithm; label: string; hint: string }[] = [
   { value: 'fast', label: 'Fast', hint: 'Case-insensitive exact match. Best for large models.' },
   { value: 'exhaustive1', label: 'Exhaustive 1', hint: 'Case-sensitive. Fewer, better matches.' },
   { value: 'exhaustive2', label: 'Exhaustive 2', hint: 'Case-insensitive. Better on long strings.' },
-  { value: 'soluid', label: 'SOL.UID', hint: 'Match hierarchical connector keys. Needs a SOL.UID property.' },
 ]
 
 const CRITERIA: { value: Criterion; label: string }[] = [
@@ -80,7 +78,6 @@ export default function AutoMapper({
     setSuggestions(null)
   }, [full])
 
-  const uid = config.algorithm === 'soluid'
   const usesProperty = config.criteria.includes('property')
   const canGenerate =
     config.criteria.length > 0 && (!usesProperty || config.property.trim() !== '')
@@ -234,7 +231,7 @@ export default function AutoMapper({
               <input
                 className="am-input"
                 value={config.property}
-                placeholder={uid ? 'SOL.UID' : 'e.g. Object Type'}
+                placeholder="e.g. Object Type"
                 onChange={(e) => set('property', e.target.value)}
               />
             </div>
@@ -243,7 +240,7 @@ export default function AutoMapper({
           <div className="am-field">
             <span className="am-field-label">
               Acceptable confidence
-              <span className="am-value">{uid ? 'n/a' : `${config.confidence}%`}</span>
+              <span className="am-value">{config.confidence}%</span>
             </span>
             <input
               type="range"
@@ -251,13 +248,11 @@ export default function AutoMapper({
               max={100}
               step={1}
               value={config.confidence}
-              disabled={uid}
               onChange={(e) => set('confidence', Number(e.target.value))}
             />
             <p className="am-note">
-              {uid
-                ? 'The SOL.UID algorithm sets its own bar through the number of matching parts, so the threshold does not apply.'
-                : '100% requires the compared values to be identical. Lowering it yields more suggestions.'}
+              100% requires the compared values to be identical. Lowering it yields more
+              suggestions.
             </p>
           </div>
 
@@ -266,17 +261,7 @@ export default function AutoMapper({
             <select
               className="am-input"
               value={config.algorithm}
-              onChange={(e) => {
-                const next = e.target.value as Algorithm
-                setConfig((c) => ({
-                  ...c,
-                  algorithm: next,
-                  // SOL.UID compares a property value, never a name — selecting
-                  // it without switching the criterion is always a mistake.
-                  criteria: next === 'soluid' ? ['property'] : c.criteria,
-                  property: next === 'soluid' && !c.property ? 'SOL.UID' : c.property,
-                }))
-              }}
+              onChange={(e) => set('algorithm', e.target.value as Algorithm)}
             >
               {ALGORITHMS.map((a) => (
                 <option key={a.value} value={a.value}>
@@ -317,27 +302,6 @@ export default function AutoMapper({
                 />
                 Allow one-to-many
               </label>
-              {uid && (
-                <div className="am-field">
-                  <span className="am-field-label">
-                    Minimum matching final parts
-                    <span className="am-value">{config.minUidParts}</span>
-                  </span>
-                  <input
-                    type="range"
-                    min={1}
-                    max={6}
-                    step={1}
-                    value={config.minUidParts}
-                    onChange={(e) => set('minUidParts', Number(e.target.value))}
-                  />
-                  <p className="am-note">
-                    Counted from the end. The technology part must always match, whatever this is
-                    set to. Defaults: FILE {defaultMinUidParts('FILE')}, everything else{' '}
-                    {defaultMinUidParts('RELATIONAL')}.
-                  </p>
-                </div>
-              )}
             </div>
           )}
         </section>

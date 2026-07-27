@@ -34,8 +34,6 @@ export type Algorithm =
   | 'exhaustive1'
   /** Case-insensitive bigram overlap. Degrades gracefully on long strings. */
   | 'exhaustive2'
-  /** Hierarchical connector key — see the SOL.UID section below. */
-  | 'soluid'
 
 export interface AutoMapConfig {
   /** Scope root for sources; null means Auto. */
@@ -46,15 +44,13 @@ export interface AutoMapConfig {
   criteria: Criterion[]
   /** The property compared when `criteria` includes 'property'. */
   property: string
-  /** 0–100. Suggestions below this are dropped. Ignored by the SOL.UID algorithm. */
+  /** 0–100. Suggestions below this are dropped. */
   confidence: number
   algorithm: Algorithm
   /** Also consider Attributes that have children (Groups), not just leaves. */
   includeGroups: boolean
   /** Allow a source or target to appear in more than one suggestion. */
   allowOneToMany: boolean
-  /** SOL.UID only: how many trailing parts must match. */
-  minUidParts: number
   /** Score two values as identical when both parse to the same instant. */
   dateAware: boolean
 }
@@ -69,7 +65,6 @@ export function defaultConfig(): AutoMapConfig {
     algorithm: 'fast',
     includeGroups: false,
     allowOneToMany: false,
-    minUidParts: 2,
     dateAware: false,
   }
 }
@@ -252,64 +247,7 @@ export function similarity(
     }
     case 'exhaustive2':
       return Math.round(diceBigrams(a.toLowerCase(), b.toLowerCase()) * 100)
-    case 'soluid':
-      // Handled by compareUid — this branch only fires if a caller mixes the
-      // SOL.UID algorithm with a non-SOL.UID criterion.
-      return normalize(a) === normalize(b) ? 100 : 0
   }
-}
-
-// --- SOL.UID ----------------------------------------------------------------
-
-/**
- * A hierarchical connector key: `TECHNOLOGY|level 1|level 2|…|level n`.
- *
- * Different connectors describe the same physical column differently, so name
- * matching cannot tell two representations of `Customer.Customer_Name` apart
- * from two unrelated columns that happen to share a name. The UID encodes
- * *where* the datum lives in its source technology, which is the thing that is
- * actually stable across tools.
- */
-export const UID_SEPARATOR = '|'
-
-/** Default trailing parts required, by the technology named in part one. */
-export function defaultMinUidParts(technology: string): number {
-  return technology.trim().toUpperCase() === 'FILE' ? 1 : 2
-}
-
-export function uidParts(value: string): string[] {
-  return value.split(UID_SEPARATOR).map((p) => p.trim())
-}
-
-/**
- * Compares two SOL.UID values. Returns 0 when they cannot map at all.
- *
- * The rules, in the order they apply:
- *  - the separator must be present on both sides;
- *  - the technology (part one) must match, always, whatever `minParts` says;
- *  - the last `minParts` parts must match;
- *  - confidence reflects how much of the key matched, technology included.
- */
-export function compareUid(a: string, b: string, minParts: number): number {
-  const pa = uidParts(a)
-  const pb = uidParts(b)
-  if (pa.length < 2 || pb.length < 2) return 0
-  if (pa[0].toUpperCase() !== pb[0].toUpperCase()) return 0
-
-  // Count matching parts from the end.
-  let matched = 0
-  while (
-    matched < pa.length - 1 &&
-    matched < pb.length - 1 &&
-    pa[pa.length - 1 - matched].toLowerCase() === pb[pb.length - 1 - matched].toLowerCase()
-  ) {
-    matched += 1
-  }
-  if (matched < Math.max(1, minParts)) return 0
-
-  // +1 on each side for the technology part, which is known to match by here.
-  const longest = Math.max(pa.length, pb.length)
-  return Math.round(((matched + 1) / longest) * 100)
 }
 
 // --- the mapper -------------------------------------------------------------
@@ -366,7 +304,6 @@ export function generateSuggestions(
 
   const criteria = config.criteria.length > 0 ? config.criteria : (['name'] as Criterion[])
   const existing = new Set(model.transitions.map((t) => `${t.source}>${t.target}`))
-  const uid = config.algorithm === 'soluid'
   const directed = config.source !== null || config.target !== null
   const layerOrder = new Map(model.layers.map((l, i) => [l.id, i]))
 
@@ -374,7 +311,7 @@ export function generateSuggestions(
   // sharing a value is a real match, and silently keeping one would hide the
   // others. This mirrors the documented behaviour rather than the checkbox.
   const oneToMany =
-    config.allowOneToMany || (criteria.length === 1 && criteria[0] === 'property' && !uid)
+    config.allowOneToMany || (criteria.length === 1 && criteria[0] === 'property')
 
   const scored: Suggestion[] = []
 
@@ -390,9 +327,7 @@ export function generateSuggestions(
         const a = featureValue(model, index, source, criterion, config.property)
         const b = featureValue(model, index, target, criterion, config.property)
         if (!a || !b) continue
-        const score = uid
-          ? compareUid(a, b, config.minUidParts)
-          : similarity(a, b, config.algorithm, config.dateAware)
+        const score = similarity(a, b, config.algorithm, config.dateAware)
         // A criterion that scores zero is a mismatch, not an abstention: it has
         // to drag the mean down, or adding a second criterion could only ever
         // raise a pair's confidence.
@@ -403,10 +338,7 @@ export function generateSuggestions(
 
       if (counted === 0 || via.length === 0) continue
       const confidence = Math.round(sum / counted)
-      // The SOL.UID algorithm sets its own bar through minUidParts; its slider
-      // is disabled in the wizard, so honouring the threshold here too would
-      // apply a value the user was never allowed to choose.
-      if (!uid && confidence < config.confidence) continue
+      if (confidence < config.confidence) continue
       if (confidence <= 0) continue
 
       scored.push({ source, target, confidence, via })
@@ -418,13 +350,6 @@ export function generateSuggestions(
       b.confidence - a.confidence ||
       (index.entries.get(a.source)?.name ?? '').localeCompare(index.entries.get(b.source)?.name ?? ''),
   )
-
-  // "If matches are found with exactly the same SOL.UIDs, only those mappings
-  // and no others are suggested." An exact key match is evidence strong enough
-  // that every weaker guess beside it is noise.
-  if (uid && scored.some((s) => s.confidence === 100)) {
-    return scored.filter((s) => s.confidence === 100)
-  }
 
   if (oneToMany) return scored
 

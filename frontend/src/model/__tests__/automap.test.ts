@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   applySuggestions,
-  compareUid,
   defaultConfig,
-  defaultMinUidParts,
   generateSuggestions,
   groupSuggestions,
   similarity,
@@ -174,52 +172,6 @@ describe('one-to-many', () => {
     const found = pairs(model, config({ allowOneToMany: true }))
     expect(found).toContain('a1>b1')
     expect(found).toContain('a1>b5')
-  })
-})
-
-describe('SOL.UID', () => {
-  it('requires the technology part to match', () => {
-    expect(compareUid('RELATIONAL|db|Cust|Name', 'JSON|db|Cust|Name', 2)).toBe(0)
-  })
-
-  it('requires the separator', () => {
-    expect(compareUid('RELATIONAL', 'RELATIONAL', 1)).toBe(0)
-  })
-
-  it('scores identical keys at 100', () => {
-    expect(compareUid('RELATIONAL|db|Cust|Name', 'RELATIONAL|db|Cust|Name', 2)).toBe(100)
-  })
-
-  it('scores partial tail matches below identical ones', () => {
-    const partial = compareUid('RELATIONAL|db1|Cust|Name', 'RELATIONAL|db2|Cust|Name', 2)
-    expect(partial).toBeGreaterThan(0)
-    expect(partial).toBeLessThan(100)
-  })
-
-  it('rejects a tail shorter than the required number of parts', () => {
-    expect(compareUid('RELATIONAL|db1|Order|Name', 'RELATIONAL|db2|Cust|Name', 2)).toBe(0)
-    expect(compareUid('RELATIONAL|db1|Order|Name', 'RELATIONAL|db2|Cust|Name', 1)).toBeGreaterThan(0)
-  })
-
-  it('defaults to one matching part for FILE and two for everything else', () => {
-    expect(defaultMinUidParts('FILE')).toBe(1)
-    expect(defaultMinUidParts('RELATIONAL')).toBe(2)
-    expect(defaultMinUidParts('anything else')).toBe(2)
-  })
-
-  it('suppresses weaker guesses once an exact key match exists', () => {
-    const model = fixture()
-    model.properties = {
-      a1: { 'SOL.UID': 'RELATIONAL|db|Cust|Name' },
-      b1: { 'SOL.UID': 'RELATIONAL|db|Cust|Name' },
-      a2: { 'SOL.UID': 'RELATIONAL|other|Cust|Fax' },
-      b2: { 'SOL.UID': 'RELATIONAL|db|Cust|Fax' },
-    }
-    const found = generateSuggestions(
-      model,
-      config({ algorithm: 'soluid', criteria: ['property'], property: 'SOL.UID', minUidParts: 2 }),
-    )
-    expect(found.map((s) => `${s.source}>${s.target}`)).toEqual(['a1>b1'])
   })
 })
 

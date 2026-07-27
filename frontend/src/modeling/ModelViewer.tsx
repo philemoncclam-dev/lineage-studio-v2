@@ -253,6 +253,29 @@ export default function ModelViewer({
     })
   }
 
+  /**
+   * Lands a pending connection on `id`.
+   *
+   * Separate from `select` so the inbound port on an entity's LEFT edge is an
+   * unambiguous drop point: clicking it can only ever mean "finish the line
+   * here", never "select this".
+   */
+  const completeConnect = (id: EntityId) => {
+    if (!connectFrom) return
+    onChange(addTransition(model, connectFrom, id))
+    setConnectFrom(null)
+  }
+
+  // Transitions leave a source on its right edge and enter a target on its left
+  // (see edgeGeometry.curveFor), which is how a reader tells flow direction at a
+  // glance. So while a connection is pending, every entity in ANOTHER layer
+  // opens an inbound port on its left edge — the interaction matches the
+  // picture. Same-layer entities are left alone: the source's own column is
+  // where the line starts, not where it lands.
+  const connectFromLayer = connectFrom
+    ? (index.entries.get(connectFrom)?.layerId ?? null)
+    : null
+
   const commitRename = (id: EntityId, name: string) => {
     const trimmed = name.trim()
     const current = index.entries.get(id)?.name
@@ -847,6 +870,8 @@ export default function ModelViewer({
               selection={selection}
               highlighted={highlighted}
               connectFrom={connectFrom}
+              connectFromLayer={connectFromLayer}
+              onConnectTo={completeConnect}
               editing={editing}
               properties={model.properties}
               onToggle={toggle}
@@ -936,11 +961,14 @@ interface CardProps {
   selection: ReadonlySet<EntityId>
   highlighted: ReadonlySet<EntityId>
   connectFrom: EntityId | null
+  /** Layer the pending connection starts in; its own entities get no inbound port. */
+  connectFromLayer: EntityId | null
   editing: EntityId | null
   properties: LineageModel['properties']
   onToggle: (id: EntityId) => void
   onSelect: (id: EntityId, additive: boolean) => void
   onConnectFrom: (id: EntityId) => void
+  onConnectTo: (id: EntityId) => void
   onEdit: (id: EntityId) => void
   onCommitRename: (id: EntityId, name: string) => void
   onContextMenu: (e: React.MouseEvent, id: EntityId) => void
@@ -952,11 +980,13 @@ function Card({
   selection,
   highlighted,
   connectFrom,
+  connectFromLayer,
   editing,
   properties,
   onToggle,
   onSelect,
   onConnectFrom,
+  onConnectTo,
   onEdit,
   onCommitRename,
   onContextMenu,
@@ -970,6 +1000,10 @@ function Card({
     Math.ceil((view.bottom - rowsTop) / ROW_HEIGHT) + ROW_OVERSCAN,
   )
   const slice = card.rows.slice(firstVisible, Math.max(firstVisible, lastVisible))
+
+  // Rows share their card's layer, so one test covers the card and every row
+  // inside it.
+  const showInbound = connectFrom !== null && connectFromLayer !== card.layerId
 
   return (
     <div
@@ -985,6 +1019,7 @@ function Card({
         onDoubleClick={() => onEdit(card.id)}
         onContextMenu={(e) => onContextMenu(e, card.id)}
       >
+        {showInbound && <InPort id={card.id} label={card.name} onConnectTo={onConnectTo} />}
         <button
           className="mv-twisty"
           data-collapsed={card.collapsed || undefined}
@@ -1026,6 +1061,7 @@ function Card({
               onDoubleClick={() => onEdit(row.id)}
               onContextMenu={(e) => onContextMenu(e, row.id)}
             >
+              {showInbound && <InPort id={row.id} label={row.name} onConnectTo={onConnectTo} />}
               {row.hasChildren ? (
                 <button
                   className="mv-twisty"
@@ -1082,6 +1118,37 @@ function Port({
       onClick={(e) => {
         e.stopPropagation()
         onConnectFrom(id)
+      }}
+    />
+  )
+}
+
+/**
+ * The inbound counterpart of Port, on an entity's LEFT edge.
+ *
+ * It exists only while a connection is pending, and only on entities outside
+ * the source's layer, so it is never ambiguous: if you can see one, clicking it
+ * lands the line here. Positioned absolutely rather than in flow — an in-flow
+ * element would shove every row's contents sideways the moment connect mode
+ * started.
+ */
+function InPort({
+  id,
+  label,
+  onConnectTo,
+}: {
+  id: EntityId
+  label: string
+  onConnectTo: (id: EntityId) => void
+}) {
+  return (
+    <button
+      className="mv-port-in"
+      title={`Land the transition on ${label}`}
+      aria-label={`Land the transition on ${label}`}
+      onClick={(e) => {
+        e.stopPropagation()
+        onConnectTo(id)
       }}
     />
   )

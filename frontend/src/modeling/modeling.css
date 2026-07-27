@@ -393,6 +393,45 @@
   box-shadow: 0 0 0 2px rgb(31 111 235 / 0.3);
 }
 
+/* ===== Inbound port =====
+   A tab on the LEFT edge of a card header or row, mounted only while a
+   connection is pending (see InPort). Transitions leave a source's right edge
+   and enter a target's left one, so this is where the curve will actually land
+   — the affordance sits exactly where the result appears.
+
+   Absolutely positioned, and the two hosts are made position:relative for it.
+   In flow it would push the twisty and the name sideways every time connect
+   mode started. */
+.mv-card-header,
+.mv-row {
+  position: relative;
+}
+
+.mv-port-in {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  width: 5px;
+  height: 11px;
+  padding: 0;
+  border: 1px solid #1f6feb;
+  border-left: 0;
+  border-radius: 0 2px 2px 0;
+  background: #dbe6fb;
+  cursor: crosshair;
+  /* Visible without hover: while connecting, these ARE the instruction. */
+  opacity: 0.7;
+}
+
+.mv-port-in:hover {
+  opacity: 1;
+  width: 7px;
+  background: #1f6feb;
+  box-shadow: 0 0 0 2px rgb(31 111 235 / 0.3);
+}
+
 /* ===== In-model search =====
    The overlay, panel and input are NOT defined here: this dialog reuses the
    shell's command-palette container (.palette-overlay / .palette-content /

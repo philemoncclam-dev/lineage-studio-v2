@@ -94,6 +94,24 @@ def _cells_from_script(text: str) -> list[str]:
     return cells
 
 
+#: Fabric records the notebook's attached lakehouse in its metadata header —
+#: `# META "default_lakehouse_name": "LH_Sales"` in the .py encoding, the same
+#: key under `metadata.dependencies.lakehouse` in .ipynb. It is what an
+#: unqualified table name in that notebook resolves against, so the sandbox
+#: needs it to qualify refs; without it every ref carries an empty lakehouse.
+_DEFAULT_LAKEHOUSE = re.compile(r'"default_lakehouse_name"\s*:\s*"([^"]+)"')
+
+
+def default_lakehouse_of(text: str) -> str | None:
+    """The notebook's attached lakehouse name, or None if it declares none.
+
+    Read straight off the raw text rather than the parsed cells, because the
+    metadata header is exactly what cell parsing strips.
+    """
+    m = _DEFAULT_LAKEHOUSE.search(text)
+    return m.group(1) if m else None
+
+
 def notebook_source_from_ipynb(
     name: str, text: str, lakehouse_default: str | None = None
 ) -> NotebookSource:
@@ -104,7 +122,11 @@ def notebook_source_from_ipynb(
         if stripped.startswith("{") and '"cells"' in text
         else _cells_from_script(text)
     )
-    return NotebookSource(name=name, lakehouse_default=lakehouse_default, cells=cells)
+    return NotebookSource(
+        name=name,
+        lakehouse_default=lakehouse_default or default_lakehouse_of(text),
+        cells=cells,
+    )
 
 
 def notebook_source_from_definition(

@@ -128,3 +128,48 @@ def test_notebook_qualified_name_yields_workspace_and_item_ids():
 def test_a_non_notebook_qualified_name_is_not_mistaken_for_one():
     qn = f"https://app.fabric.microsoft.com/groups/{WS}/lakehouses/{ITEM}/tables/x"
     assert parse_notebook_qualified_name(qn) is None
+
+
+# --- notebook default lakehouse -------------------------------------------
+# Fabric records the notebook's attached lakehouse in its metadata header. It
+# is what an unqualified table name in that notebook resolves against, so the
+# sandbox needs it — without it every ref carries an empty lakehouse segment.
+
+def test_default_lakehouse_read_from_the_py_meta_header():
+    from app.fabric.notebooks import default_lakehouse_of
+
+    text = "\n".join(
+        [
+            "# META {",
+            '# META   "dependencies": {',
+            '# META     "lakehouse": {',
+            '# META       "default_lakehouse": "1ccf6020-81c9-4943-b839-b6227e13c221",',
+            '# META       "default_lakehouse_name": "LH_Sales",',
+            "# META     }",
+            "# META   }",
+            "# META }",
+        ]
+    )
+    assert default_lakehouse_of(text) == "LH_Sales"
+
+
+def test_default_lakehouse_is_none_when_the_notebook_declares_no_lakehouse():
+    from app.fabric.notebooks import default_lakehouse_of
+
+    assert default_lakehouse_of("# CELL\nprint('hi')\n") is None
+
+
+def test_a_table_is_resolved_once_its_workspace_is_known():
+    """`resolved` tracks the WORKSPACE, not all three segments.
+
+    A notebook that declares no default lakehouse still places its tables in a
+    known workspace; requiring the lakehouse too would render every such table
+    'unknown' in the UI even though its workspace is certain.
+    """
+    from app.sandbox._refs import make_ref, table_refs
+
+    no_lakehouse = make_ref("orders", "", "Analytics")
+    no_workspace = make_ref("orders", "", "")
+    refs = table_refs([no_lakehouse, no_workspace])
+    assert refs[no_lakehouse]["resolved"] is True
+    assert refs[no_workspace]["resolved"] is False

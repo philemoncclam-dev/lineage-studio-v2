@@ -184,7 +184,11 @@ def table_refs(refs) -> dict[str, dict]:
             "workspace": ws,
             "lakehouse": lh,
             "table": table,
-            "resolved": bool(ws and lh and table),
+            # Resolved means the WORKSPACE is known — that is what the field is
+            # for and all the UI reads it for. A notebook that declares no
+            # default lakehouse still yields a correctly-placed table, and
+            # demanding all three parts would render every such table "unknown".
+            "resolved": bool(ws and table),
         }
     return out
 

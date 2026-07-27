@@ -63,6 +63,9 @@ def sandbox_run(req: SandboxRunRequest) -> RunResult:
         except (FabricError, NotebookDecodeError) as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         cells = source.cells
+        # The notebook's attached lakehouse, off its own metadata header — what
+        # an unqualified table name inside it resolves against.
+        lakehouse = lakehouse or (source.lakehouse_default or "")
         # Names for the GUIDs the notebook's paths use, and the notebook's own
         # workspace name when the caller didn't supply it.
         try:

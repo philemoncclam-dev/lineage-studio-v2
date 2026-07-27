@@ -59,6 +59,8 @@ const GX = 76
 const GY = 26
 const PAD = 18
 const BAND_H = 26
+/** Bezier reach of a backward (write-back) edge. */
+const LOOP = 46
 
 const nodeHeight = (n: FlowNode) => HEAD_H + n.rows.length * ROW_H
 /** Vertical centre of a row (or of the header when `rowKey` is undefined). */
@@ -67,7 +69,65 @@ function anchorY(n: FlowNode, rowKey?: string) {
   return i < 0 ? HEAD_H / 2 : HEAD_H + i * ROW_H + ROW_H / 2
 }
 
-function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]) {
+/**
+ * How the canvas arranges the same graph.
+ *
+ * `flow` — one column per dependency depth. Reads left-to-right end to end, but
+ * a long sequence walks off to the right and the same table can appear far from
+ * the step that wrote it.
+ *
+ * `sequence` — two columns: every table on the left, every notebook and
+ * pipeline on the right in the order the user stacked them (step 1 on top).
+ * Process-centric: what the run DID, in order, against one canonical column of
+ * tables. Reads run left-to-right into a step; writes loop back out of the
+ * step's left edge into the table's right edge, so a table written and then
+ * re-read is one card rather than two.
+ */
+export type CanvasView = 'flow' | 'sequence'
+
+interface Layout {
+  pos: Map<string, { x: number; y: number }>
+  bands: { key: number; label: string; left: number; width: number; centerX: number }[]
+  width: number
+  height: number
+}
+
+/** Stack a column of nodes top-down, returning the column's total height. */
+function stackColumn(column: FlowNode[], x: number, pos: Layout['pos']): number {
+  let y = 0
+  for (const n of column) {
+    pos.set(n.id, { x, y })
+    y += nodeHeight(n) + GY
+  }
+  return Math.max(0, y - GY)
+}
+
+function band(key: number, label: string, col: number, lastCol: number) {
+  const left = col * (NW + GX) - (col === 0 ? 0 : GX / 2)
+  const right = col * (NW + GX) + NW + (col === lastCol ? 0 : GX / 2)
+  return { key, label, left, width: right - left, centerX: col * (NW + GX) + NW / 2 }
+}
+
+/**
+ * Two columns, tables then steps. Node order is preserved from `buildFlow`,
+ * which pushes steps in sequence order and tables as they are first touched —
+ * so "first step on top" needs no sorting, only the split.
+ */
+function layoutSequence(nodes: FlowNode[]): Layout {
+  const tables = nodes.filter((n) => n.kind === 'table')
+  const steps = nodes.filter((n) => n.kind !== 'table')
+  const pos: Layout['pos'] = new Map()
+  const tableH = stackColumn(tables, 0, pos)
+  const stepH = stackColumn(steps, NW + GX, pos)
+  return {
+    pos,
+    bands: [band(0, 'Tables', 0, 1), band(1, 'Notebooks & pipelines', 1, 1)],
+    width: 2 * (NW + GX) - GX,
+    height: Math.max(1, tableH, stepH),
+  }
+}
+
+function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
   const incoming = new Map<string, string[]>()
   nodes.forEach((n) => incoming.set(n.id, []))
   edges.forEach((e) => {
@@ -114,15 +174,21 @@ function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]) {
           ? 'Source tables'
           : 'Tables'
         : 'Notebooks & pipelines'
-    const left = c * (NW + GX) - (c === 0 ? 0 : GX / 2)
-    const right = c * (NW + GX) + NW + (c === maxCol ? 0 : GX / 2)
-    return { key: c, label, left, width: right - left, centerX: c * (NW + GX) + NW / 2 }
+    return band(c, label, c, maxCol)
   })
 
   return { pos, bands, width: (maxCol + 1) * (NW + GX) - GX, height }
 }
 
-function FlowCanvas({ nodes: rawNodes, edges }: { nodes: FlowNode[]; edges: FlowEdge[] }) {
+function FlowCanvas({
+  nodes: rawNodes,
+  edges,
+  view,
+}: {
+  nodes: FlowNode[]
+  edges: FlowEdge[]
+  view: CanvasView
+}) {
   // Which table cards are showing their whole schema. Truncation happens here
   // rather than in buildFlow so expanding is a pure re-layout — the graph
   // itself never changes.
@@ -152,7 +218,17 @@ function FlowCanvas({ nodes: rawNodes, edges }: { nodes: FlowNode[]; edges: Flow
     [rawNodes, expanded],
   )
 
-  const { pos, bands, width, height } = useMemo(() => layoutFlow(nodes, edges), [nodes, edges])
+  // The dashed step-to-step order edges say nothing in the sequence view: the
+  // steps are already stacked in order in one column, and a same-column edge
+  // would draw as a meaningless loop.
+  const shown = useMemo(
+    () => (view === 'sequence' ? edges.filter((e) => !e.dashed) : edges),
+    [edges, view],
+  )
+  const { pos, bands, width, height } = useMemo(
+    () => (view === 'sequence' ? layoutSequence(nodes) : layoutFlow(nodes, edges)),
+    [nodes, edges, view],
+  )
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
   const w = width + PAD * 2
   const h = height + PAD * 2
@@ -176,24 +252,33 @@ function FlowCanvas({ nodes: rawNodes, edges }: { nodes: FlowNode[]; edges: Flow
                 <path d="M0 0l7 3.5-7 3.5z" fill="currentColor" />
               </marker>
             </defs>
-            {edges.map((e, i) => {
+            {shown.map((e, i) => {
               const sn = byId.get(e.from)
               const tn = byId.get(e.to)
               const s = pos.get(e.from)
               const t = pos.get(e.to)
               if (!sn || !tn || !s || !t) return null
-              const sx = s.x + NW + PAD
               const sy = s.y + anchorY(sn, e.fromRow) + PAD
-              const tx = t.x + PAD
               const ty = t.y + anchorY(tn, e.toRow) + PAD
-              const mx = (sx + tx) / 2
+              // A backward edge — in the sequence view, a step writing to a
+              // table in the column on its LEFT. It leaves the step's left edge
+              // and lands on the table's right edge, so the return trip reads
+              // as a return trip rather than crossing straight through both
+              // cards. Forward edges keep the plain right-to-left curve.
+              const backward = t.x <= s.x
+              const sx = (backward ? s.x : s.x + NW) + PAD
+              const tx = (backward ? t.x + NW : t.x) + PAD
+              const d = backward
+                ? `M${sx} ${sy}C${sx - LOOP} ${sy} ${tx + LOOP} ${ty} ${tx} ${ty}`
+                : `M${sx} ${sy}C${(sx + tx) / 2} ${sy} ${(sx + tx) / 2} ${ty} ${tx} ${ty}`
               return (
                 <path
                   key={i}
                   className="sbx-flow-edge"
                   data-tone={e.tone}
                   data-dashed={e.dashed || undefined}
-                  d={`M${sx} ${sy}C${mx} ${sy} ${mx} ${ty} ${tx} ${ty}`}
+                  data-backward={backward || undefined}
+                  d={d}
                   fill="none"
                   strokeDasharray={e.dashed ? '4 4' : undefined}
                   markerEnd="url(#sbx-arrow)"
@@ -411,10 +496,14 @@ function ToModelBar({
   steps,
   results,
   ran,
+  view,
+  onView,
 }: {
   steps: Step[]
   results: Map<string, StepResult>
   ran: boolean
+  view: CanvasView
+  onView: (v: CanvasView) => void
 }) {
   const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
@@ -424,7 +513,9 @@ function ToModelBar({
     setBusy(true)
     setError(null)
     try {
-      const { model } = sequenceToModel(steps, results, defaultModelName(steps))
+      // The model is built in whichever view is on screen — what you export is
+      // what you were looking at.
+      const { model } = sequenceToModel(steps, results, defaultModelName(steps), view)
       await localStore.save(model)
       await navigate({ to: '/model/$modelId', params: { modelId: model.id } })
     } catch (e) {
@@ -436,6 +527,26 @@ function ToModelBar({
   return (
     <div className="sbx-bar">
       <span className="sbx-bar-title">Sequence lineage</span>
+      <div className="sbx-views" role="tablist" aria-label="Canvas layout">
+        {(
+          [
+            ['flow', 'Flow', 'One column per dependency depth'],
+            ['sequence', 'Sequence', 'Tables in one column, steps in run order in the other'],
+          ] as const
+        ).map(([key, label, hint]) => (
+          <button
+            key={key}
+            className="sbx-view"
+            role="tab"
+            aria-selected={view === key}
+            data-active={view === key || undefined}
+            title={hint}
+            onClick={() => onView(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       {error && (
         <span className="fx-note" data-error="true">
           {error}
@@ -454,6 +565,7 @@ function ToModelBar({
 }
 
 export function SequenceCanvas({ steps, results }: { steps: Step[]; results: Map<string, StepResult> }) {
+  const [view, setView] = useState<CanvasView>('flow')
   const flow = useMemo(() => buildFlow(steps, results), [steps, results])
   const ran = results.size > 0
 
@@ -482,8 +594,8 @@ export function SequenceCanvas({ steps, results }: { steps: Step[]; results: Map
 
   return (
     <div className="sbx-canvas-body">
-      <ToModelBar steps={steps} results={results} ran={ran} />
-      <FlowCanvas nodes={flow.nodes} edges={flow.edges} />
+      <ToModelBar steps={steps} results={results} ran={ran} view={view} onView={setView} />
+      <FlowCanvas nodes={flow.nodes} edges={flow.edges} view={view} />
 
       {ran && (
         <section className="sbx-report" aria-label="Run report">

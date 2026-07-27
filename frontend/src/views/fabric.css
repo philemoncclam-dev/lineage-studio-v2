@@ -620,6 +620,35 @@
   gap: 10px;
   flex: 0 0 auto;
 }
+/* Flow | Sequence — a segmented control, because the two are alternative
+   arrangements of one graph rather than two independent toggles. */
+.sbx-views {
+  flex: 0 0 auto;
+  display: flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control, 6px);
+  background: var(--color-surface-2, transparent);
+}
+.sbx-view {
+  padding: 3px 10px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--color-text-tertiary);
+  font: inherit;
+  font-size: var(--text-micro, 11px);
+  font-weight: 600;
+  cursor: pointer;
+}
+.sbx-view:hover {
+  color: var(--color-text-primary);
+}
+.sbx-view[data-active] {
+  background: var(--color-accent);
+  color: var(--color-surface-canvas, #0b0d10);
+}
 .sbx-bar-title {
   flex: 1 1 auto;
   color: var(--color-text-tertiary);
@@ -923,6 +952,12 @@
 .sbx-flow-edge[data-dashed] {
   stroke: #c2c8d2;
   color: #c2c8d2;
+}
+/* A write looping back into the tables column (sequence view). Slightly
+   lighter than a forward edge so the left-to-right reads stay the dominant
+   direction and the return trips read as returns. */
+.sbx-flow-edge[data-backward] {
+  stroke-opacity: 0.75;
 }
 
 .sbx-flow-card {

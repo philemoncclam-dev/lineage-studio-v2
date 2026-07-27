@@ -182,6 +182,57 @@ describe('sequenceToModel', () => {
   })
 })
 
+describe('sequenceToModel — sequence view', () => {
+  /** Two steps chained through silver, so the flow view would need 5 layers. */
+  function chained() {
+    const a = step('a', 'build_silver')
+    const b = step('b', 'build_gold')
+    const results = new Map([
+      [a.key, ran('build_silver', result({ reads: ['raw'], writes: ['silver'] }))],
+      [b.key, ran('build_gold', result({ reads: ['silver'], writes: ['gold'] }))],
+    ])
+    return { steps: [a, b], results }
+  }
+
+  it('collapses to exactly two layers, tables then steps', () => {
+    const { steps, results } = chained()
+    const { model } = sequenceToModel(steps, results, 'M', 'sequence')
+    expect(model.layers.map((l) => l.name)).toEqual(['Tables', 'Notebooks & pipelines'])
+  })
+
+  it('keeps the steps in the order the user stacked them', () => {
+    const { steps, results } = chained()
+    const { model } = sequenceToModel(steps, results, 'M', 'sequence')
+    expect(model.layers[1].objects.map((o) => o.name)).toEqual(['build_silver', 'build_gold'])
+  })
+
+  it('holds every table once, in first-touch order', () => {
+    const { steps, results } = chained()
+    const { model } = sequenceToModel(steps, results, 'M', 'sequence')
+    expect(model.layers[0].objects.map((o) => o.name)).toEqual(['raw', 'silver', 'gold'])
+  })
+
+  it('draws the same edges as the flow view — only the layering differs', () => {
+    const { steps, results } = chained()
+    const seq = sequenceToModel(steps, results, 'M', 'sequence')
+    const flow = sequenceToModel(steps, results, 'M', 'flow')
+    expect(seq.stats.transitions).toBe(flow.stats.transitions)
+    expect(seq.stats.objects).toBe(flow.stats.objects)
+  })
+
+  it('points a write back into the tables layer', () => {
+    const { steps, results } = chained()
+    const { model } = sequenceToModel(steps, results, 'M', 'sequence')
+    const tables = new Set(model.layers[0].objects.map((o) => o.id))
+    const silverStep = model.layers[1].objects[0]
+    const write = model.transitions.find(
+      (t) => t.source === silverStep.id && tables.has(t.target),
+    )
+    expect(write).toBeDefined()
+    expect(model.properties[write!.id].Access).toBe('Write')
+  })
+})
+
 describe('defaultModelName', () => {
   it('names a single-step sequence after its step', () => {
     expect(defaultModelName([step('a', 'ltv')])).toBe('ltv')

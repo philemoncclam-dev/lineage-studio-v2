@@ -57,6 +57,13 @@ import './modeling.css'
 /** Rows rendered above and below the visible slice, to hide scroll tearing. */
 const ROW_OVERSCAN = 6
 
+/**
+ * Left padding a card's rows and header take on while a connection is pending,
+ * up from the usual 6. Wide enough that the whole inbound port square sits in
+ * open space rather than half-clipped by the card border or under the twisty.
+ */
+const INBOUND_GUTTER = 17
+
 interface Props {
   model: LineageModel
   onChange: (next: LineageModel) => void
@@ -1009,6 +1016,11 @@ function Card({
     <div
       className="mv-card"
       style={{ left: card.x, top: card.y, width: card.width, height: card.height }}
+      // Opens a gutter down the card's left edge for the inbound ports to sit
+      // in whole. Only while connecting, so the dense resting layout is
+      // unchanged — and the shift is itself part of the affordance: the cards
+      // visibly open up on the side the line is going to arrive on.
+      data-inbound={showInbound || undefined}
       data-selected={selection.has(card.id) || undefined}
       data-traced={highlighted.has(card.id) || undefined}
     >
@@ -1054,7 +1066,12 @@ function Card({
             <div
               key={row.id}
               className="mv-row"
-              style={{ height: ROW_HEIGHT, paddingLeft: 6 + row.depth * INDENT }}
+              // The indent is inline, so the inbound gutter has to be added
+              // here rather than in CSS — a class could never beat it.
+              style={{
+                height: ROW_HEIGHT,
+                paddingLeft: (showInbound ? INBOUND_GUTTER : 6) + row.depth * INDENT,
+              }}
               data-selected={selection.has(row.id) || undefined}
               data-traced={highlighted.has(row.id) || undefined}
               onClick={(e) => onSelect(row.id, e.ctrlKey || e.metaKey)}

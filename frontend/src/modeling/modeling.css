@@ -407,30 +407,43 @@
   position: relative;
 }
 
+/* A WHOLE square, clear of the card border on every side — the same 7px handle
+   the outbound port uses, so both ends of a connection look like the same kind
+   of thing. It gets the room to be whole from the gutter below. */
 .mv-port-in {
   position: absolute;
-  left: 0;
+  left: 4px;
   top: 50%;
   transform: translateY(-50%);
   z-index: 1;
-  width: 5px;
-  height: 11px;
+  width: 7px;
+  height: 7px;
   padding: 0;
   border: 1px solid #1f6feb;
-  border-left: 0;
-  border-radius: 0 2px 2px 0;
+  border-radius: 1px;
   background: #dbe6fb;
   cursor: crosshair;
   /* Visible without hover: while connecting, these ARE the instruction. */
-  opacity: 0.7;
+  opacity: 0.75;
 }
 
 .mv-port-in:hover {
   opacity: 1;
-  width: 7px;
   background: #1f6feb;
   box-shadow: 0 0 0 2px rgb(31 111 235 / 0.3);
 }
+
+/* The gutter the ports live in, opened only while connecting. Rows carry their
+   own inline padding (it encodes the nesting indent), so this handles the
+   header and the CARD's own tint; ModelViewer widens the rows. */
+.mv-card[data-inbound] .mv-card-header {
+  padding-left: 17px;
+}
+
+/* Deliberately no card-level highlight here: .mv-card and
+   .mv-card[data-selected] both set box-shadow, and a third rule at this
+   specificity would silently drop the selected ring during connect mode. The
+   ports and the opened gutter are signal enough. */
 
 /* ===== In-model search =====
    The overlay, panel and input are NOT defined here: this dialog reuses the

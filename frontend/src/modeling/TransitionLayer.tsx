@@ -75,23 +75,53 @@ export default function TransitionLayer({
       else plain.push(t)
     }
 
-    const draw = (list: TransitionLike[], stroke: string, lineWidth: number) => {
+    /**
+     * An arrowhead at the target end, filled in the line's own colour.
+     *
+     * Drawn from the curve's incoming tangent rather than from the straight
+     * source→target vector: a right-to-left edge arrives from the LEFT after
+     * looping around, so the straight vector would point the head backwards on
+     * exactly the edges whose direction most needs stating.
+     */
+    const arrowHead = (c: ReturnType<typeof curveFor>, size: number) => {
+      if (!c) return
+      // Tangent at t=1 of a cubic is 3*(P3 - P2); P2 is (cx1, y1) here, so the
+      // incoming direction is (x1 - cx1, 0) — horizontal, sign giving the side.
+      const dir = c.x1 - c.cx1 >= 0 ? 1 : -1
+      const tipX = c.x1
+      const tipY = c.y1
+      ctx.beginPath()
+      ctx.moveTo(tipX, tipY)
+      ctx.lineTo(tipX - dir * size, tipY - size * 0.5)
+      ctx.lineTo(tipX - dir * size, tipY + size * 0.5)
+      ctx.closePath()
+      ctx.fill()
+    }
+
+    const draw = (list: TransitionLike[], stroke: string, lineWidth: number, head: number) => {
       if (list.length === 0) return
       ctx.strokeStyle = stroke
+      ctx.fillStyle = stroke
       ctx.lineWidth = lineWidth
       ctx.beginPath()
+      const curves: (ReturnType<typeof curveFor>)[] = []
       for (const t of list) {
         const c = curveFor(layout, parentOf, t)
         if (!c) continue
+        curves.push(c)
         ctx.moveTo(c.x0, c.y0)
         ctx.bezierCurveTo(c.cx0, c.y0, c.cx1, c.y1, c.x1, c.y1)
       }
       ctx.stroke()
+      // Heads in a second pass: they are filled, the lines are stroked, and
+      // batching each keeps this one path + one fill per style rather than per
+      // edge.
+      for (const c of curves) arrowHead(c, head)
     }
 
-    draw(plain, EDGE, 1)
-    draw(traced, EDGE_TRACED, 1.8)
-    draw(picked, EDGE_SELECTED, 2.4)
+    draw(plain, EDGE, 1, 6)
+    draw(traced, EDGE_TRACED, 1.8, 7.5)
+    draw(picked, EDGE_SELECTED, 2.4, 8.5)
   }, [layout, transitions, parentOf, width, height, highlighted, selected])
 
   return (

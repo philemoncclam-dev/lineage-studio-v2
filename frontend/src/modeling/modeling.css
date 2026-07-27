@@ -281,7 +281,10 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 6px;
+  /* The left gutter is permanent — every entity carries an in-handle on that
+     edge now, so the space is always in use and the layout never jumps when a
+     connection starts. */
+  padding: 0 6px 0 17px;
   background: #fff;
   border-bottom: 1px solid rgb(28 35 51 / 0.14);
   cursor: default;
@@ -494,6 +497,10 @@
 /* A WHOLE square, clear of the card border on every side — the same 7px handle
    the outbound port uses, so both ends of a connection look like the same kind
    of thing. It gets the room to be whole from the gutter below. */
+/* The IN handle, on an entity's left edge: where data arrives. Clicking it
+   starts a transition backwards — "into this, from something I'll pick next" —
+   which is how you author lineage downstream-up. Hidden until hover like its
+   outbound twin, EXCEPT while it is a drop point, when it is the instruction. */
 .mv-port-in {
   position: absolute;
   left: 4px;
@@ -505,8 +512,19 @@
   padding: 0;
   border: 1px solid #1f6feb;
   border-radius: 1px;
-  background: #dbe6fb;
+  background: #fff;
   cursor: crosshair;
+  opacity: 0;
+}
+
+.mv-row:hover .mv-port-in,
+.mv-card-header:hover .mv-port-in,
+.mv-port-in[data-active] {
+  opacity: 1;
+}
+
+.mv-port-in[data-drop] {
+  background: #dbe6fb;
   /* Visible without hover: while connecting, these ARE the instruction. */
   opacity: 0.75;
 }
@@ -517,12 +535,23 @@
   box-shadow: 0 0 0 2px rgb(31 111 235 / 0.3);
 }
 
-/* The gutter the ports live in, opened only while connecting. Rows carry their
-   own inline padding (it encodes the nesting indent), so this handles the
-   header and the CARD's own tint; ModelViewer widens the rows. */
-.mv-card[data-inbound] .mv-card-header {
-  padding-left: 17px;
+/* The OUT handle as a drop point — the mirror case, while the user is picking
+   where a transition comes FROM. */
+.mv-port[data-drop] {
+  background: #dbe6fb;
+  border-color: #1f6feb;
+  opacity: 0.75;
 }
+
+.mv-port[data-drop]:hover {
+  opacity: 1;
+  background: #1f6feb;
+  box-shadow: 0 0 0 2px rgb(31 111 235 / 0.3);
+}
+
+/* The gutter is now permanent (see .mv-card-header). Rows carry their own
+   inline padding, which encodes the nesting indent, so ModelViewer sets their
+   left padding from the same constant. */
 
 /* Deliberately no card-level highlight here: .mv-card and
    .mv-card[data-selected] both set box-shadow, and a third rule at this

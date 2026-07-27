@@ -62,9 +62,10 @@ import './modeling.css'
 const ROW_OVERSCAN = 6
 
 /**
- * Left padding a card's rows and header take on while a connection is pending,
- * up from the usual 6. Wide enough that the whole inbound port square sits in
- * open space rather than half-clipped by the card border or under the twisty.
+ * Left padding every card header and row carries, holding the gutter the IN
+ * handle sits in. Permanent rather than opened only while connecting: every
+ * entity now has an in-handle as well as an out-handle, so the space is always
+ * in use — and nothing reflows the moment a connection starts.
  */
 const INBOUND_GUTTER = 17
 
@@ -92,8 +93,19 @@ export default function ModelViewer({
   const [selection, setSelection] = useState<ReadonlySet<EntityId>>(new Set())
   /** Picked transitions, by transition id — kept separate from entity selection. */
   const [selectedEdges, setSelectedEdges] = useState<ReadonlySet<EntityId>>(new Set())
-  /** Non-null while picking a transition target. */
-  const [connectFrom, setConnectFrom] = useState<EntityId | null>(null)
+  /**
+   * The half-drawn transition, if any.
+   *
+   * `dir` is which END the user has already picked: `from` means they started
+   * at a source's right-hand port and are now picking the target (the original
+   * direction); `to` means they started at a target's LEFT port and are picking
+   * where the data comes from. Both produce the same transition — only the
+   * order of the two clicks differs — so lineage can be authored downstream-up
+   * as naturally as upstream-down.
+   */
+  const [pending, setPending] = useState<{ id: EntityId; dir: 'from' | 'to' } | null>(null)
+  const startConnect = (id: EntityId) => setPending({ id, dir: 'from' })
+  const startReverseConnect = (id: EntityId) => setPending({ id, dir: 'to' })
   /** Entity whose name is being edited in place. */
   const [editing, setEditing] = useState<EntityId | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -217,9 +229,8 @@ export default function ModelViewer({
       setSelection(new Set([id]))
       return
     }
-    if (connectFrom) {
-      onChange(addTransition(model, connectFrom, id))
-      setConnectFrom(null)
+    if (pending) {
+      completeConnect(id)
       return
     }
     if (!additive) setSelectedEdges(new Set())
@@ -269,14 +280,19 @@ export default function ModelViewer({
   /**
    * Lands a pending connection on `id`.
    *
-   * Separate from `select` so the inbound port on an entity's LEFT edge is an
-   * unambiguous drop point: clicking it can only ever mean "finish the line
-   * here", never "select this".
+   * Separate from `select` so a port is an unambiguous drop point: clicking one
+   * can only ever mean "finish the line here", never "select this". The pending
+   * end's `dir` decides which way round the transition goes — a connection
+   * begun at a target's left port produces `id -> pending`, not the reverse.
    */
   const completeConnect = (id: EntityId) => {
-    if (!connectFrom) return
-    onChange(addTransition(model, connectFrom, id))
-    setConnectFrom(null)
+    if (!pending) return
+    // A self-loop is never what the second click meant; treat it as a cancel.
+    if (id !== pending.id) {
+      const [source, target] = pending.dir === 'from' ? [pending.id, id] : [id, pending.id]
+      onChange(addTransition(model, source, target))
+    }
+    setPending(null)
   }
 
   // Transitions leave a source on its right edge and enter a target on its left
@@ -285,9 +301,7 @@ export default function ModelViewer({
   // opens an inbound port on its left edge — the interaction matches the
   // picture. Same-layer entities are left alone: the source's own column is
   // where the line starts, not where it lands.
-  const connectFromLayer = connectFrom
-    ? (index.entries.get(connectFrom)?.layerId ?? null)
-    : null
+  const pendingLayer = pending ? (index.entries.get(pending.id)?.layerId ?? null) : null
 
   const commitRename = (id: EntityId, name: string) => {
     const trimmed = name.trim()
@@ -689,7 +703,7 @@ export default function ModelViewer({
       }
       if (e.key === 'Escape') {
         setPicking(null)
-        setConnectFrom(null)
+        setPending(null)
         setEditing(null)
         setSelection(new Set())
         setSelectedEdges(new Set())
@@ -742,7 +756,7 @@ export default function ModelViewer({
   return (
     <div
       className="mv-host"
-      data-connecting={connectFrom ? true : undefined}
+      data-connecting={pending ? true : undefined}
       data-picking={picking ?? undefined}
       data-mapper={mapperOpen || undefined}
       data-scroll-y={scroll.y > 0 || undefined}
@@ -914,14 +928,15 @@ export default function ModelViewer({
               view={view}
               selection={selection}
               highlighted={highlighted}
-              connectFrom={connectFrom}
-              connectFromLayer={connectFromLayer}
+              pending={pending}
+              pendingLayer={pendingLayer}
               onConnectTo={completeConnect}
               editing={editing}
               properties={model.properties}
               onToggle={toggle}
               onSelect={select}
-              onConnectFrom={setConnectFrom}
+              onConnectFrom={startConnect}
+              onReverseConnect={startReverseConnect}
               onEdit={setEditing}
               onCommitRename={commitRename}
               onContextMenu={openMenu}
@@ -931,8 +946,12 @@ export default function ModelViewer({
       </div>
 
       <div className="mv-status">
-        {connectFrom ? (
-          <>Pick a target — Esc to cancel</>
+        {pending ? (
+          pending.dir === 'from' ? (
+            <>Pick a target — Esc to cancel</>
+          ) : (
+            <>Pick where the data comes FROM — Esc to cancel</>
+          )
         ) : (
           <>
             {layout.layers.length} layers · {layout.cards.length} objects ·{' '}
@@ -1005,14 +1024,15 @@ interface CardProps {
   view: { top: number; bottom: number; left: number; right: number }
   selection: ReadonlySet<EntityId>
   highlighted: ReadonlySet<EntityId>
-  connectFrom: EntityId | null
-  /** Layer the pending connection starts in; its own entities get no inbound port. */
-  connectFromLayer: EntityId | null
+  pending: { id: EntityId; dir: 'from' | 'to' } | null
+  /** Layer the pending connection starts in; its own entities are not drop points. */
+  pendingLayer: EntityId | null
   editing: EntityId | null
   properties: LineageModel['properties']
   onToggle: (id: EntityId) => void
   onSelect: (id: EntityId, additive: boolean) => void
   onConnectFrom: (id: EntityId) => void
+  onReverseConnect: (id: EntityId) => void
   onConnectTo: (id: EntityId) => void
   onEdit: (id: EntityId) => void
   onCommitRename: (id: EntityId, name: string) => void
@@ -1024,13 +1044,14 @@ function Card({
   view,
   selection,
   highlighted,
-  connectFrom,
-  connectFromLayer,
+  pending,
+  pendingLayer,
   editing,
   properties,
   onToggle,
   onSelect,
   onConnectFrom,
+  onReverseConnect,
   onConnectTo,
   onEdit,
   onCommitRename,
@@ -1047,17 +1068,20 @@ function Card({
   const slice = card.rows.slice(firstVisible, Math.max(firstVisible, lastVisible))
 
   // Rows share their card's layer, so one test covers the card and every row
-  // inside it.
-  const showInbound = connectFrom !== null && connectFromLayer !== card.layerId
+  // inside it. A pending connection makes the OPPOSITE end of every entity in
+  // another layer a drop point: picking a target lands on its left port,
+  // picking a source lands on its right one.
+  const otherLayer = pending !== null && pendingLayer !== card.layerId
+  const showInbound = otherLayer && pending!.dir === 'from'
+  const dropRight = otherLayer && pending!.dir === 'to'
 
   return (
     <div
       className="mv-card"
       style={{ left: card.x, top: card.y, width: card.width, height: card.height }}
-      // Opens a gutter down the card's left edge for the inbound ports to sit
-      // in whole. Only while connecting, so the dense resting layout is
-      // unchanged — and the shift is itself part of the affordance: the cards
-      // visibly open up on the side the line is going to arrive on.
+      // Marks the card as a landing side, for styling that wants to know. The
+      // gutter itself is permanent now (see INBOUND_GUTTER) — it no longer
+      // opens on connect, so nothing reflows mid-gesture.
       data-inbound={showInbound || undefined}
       data-selected={selection.has(card.id) || undefined}
       data-traced={highlighted.has(card.id) || undefined}
@@ -1069,7 +1093,14 @@ function Card({
         onDoubleClick={() => onEdit(card.id)}
         onContextMenu={(e) => onContextMenu(e, card.id)}
       >
-        {showInbound && <InPort id={card.id} label={card.name} onConnectTo={onConnectTo} />}
+        <InPort
+          id={card.id}
+          label={card.name}
+          drop={showInbound}
+          active={pending?.id === card.id}
+          onConnectTo={onConnectTo}
+          onReverseConnect={onReverseConnect}
+        />
         <button
           className="mv-twisty"
           data-collapsed={card.collapsed || undefined}
@@ -1093,8 +1124,10 @@ function Card({
         </span>
         <Port
           id={card.id}
-          active={connectFrom === card.id}
+          active={pending?.id === card.id}
+          drop={dropRight}
           onConnectFrom={onConnectFrom}
+          onConnectTo={onConnectTo}
           label={card.name}
         />
       </div>
@@ -1109,7 +1142,7 @@ function Card({
               // here rather than in CSS — a class could never beat it.
               style={{
                 height: ROW_HEIGHT,
-                paddingLeft: (showInbound ? INBOUND_GUTTER : 6) + row.depth * INDENT,
+                paddingLeft: INBOUND_GUTTER + row.depth * INDENT,
               }}
               data-selected={selection.has(row.id) || undefined}
               data-traced={highlighted.has(row.id) || undefined}
@@ -1117,7 +1150,14 @@ function Card({
               onDoubleClick={() => onEdit(row.id)}
               onContextMenu={(e) => onContextMenu(e, row.id)}
             >
-              {showInbound && <InPort id={row.id} label={row.name} onConnectTo={onConnectTo} />}
+              <InPort
+                id={row.id}
+                label={row.name}
+                drop={showInbound}
+                active={pending?.id === row.id}
+                onConnectTo={onConnectTo}
+                onReverseConnect={onReverseConnect}
+              />
               {row.hasChildren ? (
                 <button
                   className="mv-twisty"
@@ -1141,8 +1181,10 @@ function Card({
               <Badges bag={properties[row.id]} />
               <Port
                 id={row.id}
-                active={connectFrom === row.id}
+                active={pending?.id === row.id}
+                drop={dropRight}
                 onConnectFrom={onConnectFrom}
+                onConnectTo={onConnectTo}
                 label={row.name}
               />
             </div>
@@ -1153,27 +1195,41 @@ function Card({
   )
 }
 
-/** The connect handle on an entity's right edge — click to start a transition. */
+/**
+ * The handle on an entity's RIGHT edge — where data leaves.
+ *
+ * Two jobs, decided by `drop`: normally it starts a transition out of this
+ * entity; while the user is picking a SOURCE (having started from some
+ * target's left port) it is instead the drop point, because the line has to
+ * leave here to arrive there.
+ */
 function Port({
   id,
   active,
+  drop,
   label,
   onConnectFrom,
+  onConnectTo,
 }: {
   id: EntityId
   active: boolean
+  drop?: boolean
   label: string
   onConnectFrom: (id: EntityId) => void
+  onConnectTo: (id: EntityId) => void
 }) {
+  const title = drop ? `Take the transition from ${label}` : `Draw a transition from ${label}`
   return (
     <button
       className="mv-port"
       data-active={active || undefined}
-      title={`Draw a transition from ${label}`}
-      aria-label={`Draw a transition from ${label}`}
+      data-drop={drop || undefined}
+      title={title}
+      aria-label={title}
       onClick={(e) => {
         e.stopPropagation()
-        onConnectFrom(id)
+        if (drop) onConnectTo(id)
+        else onConnectFrom(id)
       }}
     />
   )
@@ -1191,20 +1247,33 @@ function Port({
 function InPort({
   id,
   label,
+  drop,
+  active,
   onConnectTo,
+  onReverseConnect,
 }: {
   id: EntityId
   label: string
+  /** True while a pending connection is looking for its target. */
+  drop?: boolean
+  active?: boolean
   onConnectTo: (id: EntityId) => void
+  onReverseConnect: (id: EntityId) => void
 }) {
+  const title = drop
+    ? `Land the transition on ${label}`
+    : `Draw a transition INTO ${label} — then pick where it comes from`
   return (
     <button
       className="mv-port-in"
-      title={`Land the transition on ${label}`}
-      aria-label={`Land the transition on ${label}`}
+      data-drop={drop || undefined}
+      data-active={active || undefined}
+      title={title}
+      aria-label={title}
       onClick={(e) => {
         e.stopPropagation()
-        onConnectTo(id)
+        if (drop) onConnectTo(id)
+        else onReverseConnect(id)
       }}
     />
   )

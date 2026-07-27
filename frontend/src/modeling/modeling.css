@@ -91,23 +91,40 @@
 }
 
 /* ===== Add-layer slot =====
-   Sits immediately past the band's closing line, in the band's own row: a new
-   layer is appended where the eye already expects the next column to go. */
+   Takes the whole rest of the band row, from the closing line to the right edge
+   of the screen: the empty space past the last column IS where the next one
+   goes, so the whole of it is the affordance. The glyph and label sit at the
+   start of the strip, hard against that line, rather than centred in however
+   much empty space the window happens to have. */
 .mv-layer-add {
   position: absolute;
   top: 0;
-  display: grid;
-  place-items: center;
-  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
   border: 0;
   background: transparent;
   color: #98a0b0;
+  font: inherit;
+  font-size: 12px;
   cursor: pointer;
+}
+
+.mv-layer-add-label {
+  /* Revealed on hover: at rest the strip should read as empty canvas, not as a
+     permanent piece of chrome parked beside the model. */
+  opacity: 0;
+  transition: opacity 0.12s;
 }
 
 .mv-layer-add:hover {
   background: rgb(28 35 51 / 0.05);
   color: #1f6feb;
+}
+
+.mv-layer-add:hover .mv-layer-add-label {
+  opacity: 1;
 }
 
 /* Centred on the column, not on the segment — `left` is set inline. */

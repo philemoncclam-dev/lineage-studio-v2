@@ -675,6 +675,16 @@ export default function ModelViewer({
     [scroll, size],
   )
 
+  /**
+   * The world is never narrower than the viewport.
+   *
+   * The add-layer slot runs from the band's closing line to the right edge of
+   * the screen, and it can only do that if the surface it sits on actually
+   * reaches that edge — a world sized purely to the layout stops wherever the
+   * last column happens to end.
+   */
+  const worldWidth = Math.max(layout.width, size.width)
+
   const visibleCards = useMemo(
     () =>
       layout.cards.filter(
@@ -731,7 +741,7 @@ export default function ModelViewer({
       <div className="mv-scroll" ref={scrollRef} onScroll={onScroll}>
         <div
           className="mv-world"
-          style={{ width: layout.width, height: layout.height }}
+          style={{ width: worldWidth, height: layout.height }}
           onClick={onWorldClick}
           onContextMenu={onWorldContextMenu}
         >
@@ -743,7 +753,7 @@ export default function ModelViewer({
             hands both axes to the browser: it moves with the content
             horizontally (always aligned) and pins vertically.
           */}
-          <div className="mv-band" style={{ height: LAYER_HEADER_HEIGHT, width: layout.width }}>
+          <div className="mv-band" style={{ height: LAYER_HEADER_HEIGHT, width: worldWidth }}>
             {layout.layers.map((layer) => (
             <div
               key={layer.id}
@@ -797,14 +807,18 @@ export default function ModelViewer({
             </div>
             ))}
 
-            {/* The band stops at `bandEnd`; this slot sits just past it, so
-                "add a layer" is a place on the canvas rather than something you
-                have to know a right-click menu for. */}
+            {/* The band's layer segments stop at `bandEnd`; this slot takes the
+                rest of the row, all the way to the right edge of the screen, so
+                "add a layer" is the open space where the next column would go
+                rather than something you have to know a menu for. */}
             <button
               className="mv-layer-add"
-              style={{ left: layout.bandEnd, width: LAYER_ADD_WIDTH, height: LAYER_HEADER_HEIGHT }}
+              style={{
+                left: layout.bandEnd,
+                width: Math.max(LAYER_ADD_WIDTH, worldWidth - layout.bandEnd),
+                height: LAYER_HEADER_HEIGHT,
+              }}
               title="Add a layer"
-              aria-label="Add a layer"
               onClick={(e) => {
                 e.stopPropagation()
                 applyAdd(addLayer(model))
@@ -813,6 +827,7 @@ export default function ModelViewer({
               <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
                 <path d="M6 1.5v9M1.5 6h9" stroke="currentColor" strokeWidth="1.3" />
               </svg>
+              <span className="mv-layer-add-label">Add layer</span>
             </button>
           </div>
 

@@ -36,6 +36,57 @@ _ABFSS = re.compile(
 )
 
 
+#: The lakehouse folder that holds raw files rather than Delta tables.
+FILES = "Files"
+
+#: A path segment that identifies one *shard* rather than the dataset: a glob, a
+#: Hive-style partition directory, or a leaf with a file extension. The raw layer
+#: is addressed as `Files/orders/year=2024/*.parquet`, but the thing lineage is
+#: about is `Files/orders` — otherwise every partition and every daily file is a
+#: separate source node and the graph is unreadable.
+_GLOB = re.compile(r"[*?\[\]{}]")
+_PARTITION = re.compile(r"^[^=/]+=[^=/]*$")
+_HAS_EXT = re.compile(r"\.[A-Za-z0-9]{1,8}$")
+
+
+def _dataset_path(segments: list[str]) -> str:
+    """Path segments → the dataset they belong to, shard decoration removed.
+
+    Trailing globs, partition directories and extensioned filenames are dropped
+    from the END only. An interior `=` or `.` is left alone: a folder genuinely
+    named `orders.v2` in the middle of a path is part of the identity.
+    """
+    parts = list(segments)
+    while len(parts) > 1:
+        last = parts[-1]
+        if _GLOB.search(last) or _PARTITION.match(last) or _HAS_EXT.search(last):
+            parts.pop()
+            continue
+        break
+    return SEP.join(parts)
+
+
+def is_file_ref(ref: str) -> bool:
+    """Whether a ref names the raw file layer rather than a Delta table.
+
+    File refs keep the `Files` marker as the head of their leaf — so
+    `Files/orders` and a table named `orders` in the same lakehouse are
+    distinct identities, which they very much are.
+    """
+    leaf = parse_ref(ref)[2]
+    return leaf == FILES or leaf.lower().startswith(FILES.lower() + SEP)
+
+
+def _leaf_from_path(segments: list[str]) -> str:
+    """The identity leaf for a path: a file dataset keeps its `Files/` head, a
+    table is just its name."""
+    lowered = [s.lower() for s in segments]
+    if FILES.lower() in lowered:
+        return _dataset_path(segments[lowered.index(FILES.lower()) :])
+    tail = [s for s in segments if s.lower() != "tables"]
+    return tail[-1] if tail else ""
+
+
 def _esc(part: str) -> str:
     return part.replace("%", "%25").replace(SEP, "%2F")
 
@@ -115,12 +166,22 @@ def qualify(
         lh_seg = segments.pop(0) if segments else ""
         # Drop the `Tables` marker and any Delta schema folder; the leaf is the
         # table. `.Lakehouse`/`.Warehouse` suffixes are Fabric path decoration.
-        tail = [s for s in segments if s.lower() != "tables"]
-        table = tail[-1] if tail else ""
+        # A `Files/...` path instead keeps its marker — see `_leaf_from_path`.
+        table = _leaf_from_path(segments)
         return make_ref(
             _resolve(table, name_map),
             _resolve(_strip_kind(lh_seg), name_map),
             _resolve(ws_seg, name_map),
+        )
+
+    # A relative path — `Files/landing/orders/*.csv`, the form a notebook uses
+    # for its own attached lakehouse. Same rules as the abfss branch, minus the
+    # workspace/lakehouse segments, which are the defaults by definition.
+    if SEP in raw:
+        return make_ref(
+            _leaf_from_path([s for s in raw.split(SEP) if s]),
+            default_lakehouse,
+            default_workspace,
         )
 
     parts = [p for p in raw.split(".") if p]
@@ -211,6 +272,10 @@ def table_refs(refs) -> dict[str, dict]:
             # default lakehouse still yields a correctly-placed table, and
             # demanding all three parts would render every such table "unknown".
             "resolved": bool(ws and table),
+            # The raw file layer is not a table and must not be drawn as one:
+            # it has no Delta schema, no columns, and a landing folder named
+            # `orders` is a different thing from a table named `orders`.
+            "kind": "file" if is_file_ref(ref) else "table",
         }
     return out
 

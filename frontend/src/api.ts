@@ -591,6 +591,15 @@ export interface SandboxTableRef {
   lakehouse: string
   table: string
   resolved: boolean
+  /**
+   * `file` for the raw layer — a `Files/…` path rather than a Delta table.
+   *
+   * The landing layer is files, and it must not be drawn as a table: it has no
+   * schema to disclose, and a landing folder named `orders` is not the table
+   * named `orders`. Optional so a model saved before the raw layer was tracked
+   * still renders; absent means `table`.
+   */
+  kind?: 'table' | 'file'
 }
 
 export interface SandboxRunResult {
@@ -657,6 +666,17 @@ export function refLabel(ref: string, tables?: Record<string, SandboxTableRef>):
   return tables?.[ref]?.table || ref.split('/').pop() || ref
 }
 
+/**
+ * Whether a ref names the raw file layer or a Delta table.
+ *
+ * Prefers what the run said; falls back to the ref's own shape for lineage that
+ * never went through the sandbox (a pipeline Copy activity, a model saved
+ * before the raw layer was tracked).
+ */
+export function refKind(ref: string, tables?: Record<string, SandboxTableRef>): 'table' | 'file' {
+  return tables?.[ref]?.kind ?? refParts(ref).kind ?? 'table'
+}
+
 /** The workspace a ref belongs to, or `''` when it could not be resolved. */
 export function refWorkspace(ref: string, tables?: Record<string, SandboxTableRef>): string {
   const t = tables?.[ref]
@@ -683,6 +703,9 @@ export function refParts(ref: string): SandboxTableRef {
     lakehouse: unescape(lakehouse),
     table,
     resolved: Boolean(workspace && table),
+    // Mirrors `_refs.is_file_ref` — the leaf keeps its `Files/` head precisely
+    // so the distinction survives the ref round-trip.
+    kind: table === 'Files' || table.toLowerCase().startsWith('files/') ? 'file' : 'table',
   }
 }
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 
 from ..parser import _READ_PATTERNS, _find_raw, _without_python_imports
-from ..sandbox._refs import parse_ref, qualify, table_of
+from ..sandbox._refs import is_file_ref, parse_ref, qualify, table_of
 from ..sandbox.protocol import ColumnSchema, SchemaResolution
 from .client import FabricError
 
@@ -262,6 +262,10 @@ def resolve_read_schemas(
     on a collision: enough to register an empty view, and the sandbox reports
     per-cell errors honestly for anything that stays unresolved.
     """
+    # Raw files have no Delta log, so asking OneLake for their schema is not a
+    # gap — it is a category error. Excluded before anything is recorded, or
+    # every landing folder would be reported as an unresolved table.
+    read_refs = {r for r in read_refs if not is_file_ref(r)}
     if report is not None:
         report.requested = sorted(read_refs)
     if not read_refs:

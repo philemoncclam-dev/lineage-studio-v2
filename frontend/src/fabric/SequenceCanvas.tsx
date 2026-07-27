@@ -7,7 +7,7 @@
 // same reading as `modeling/ModelViewer`.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { refLabel, refWorkspace, type SandboxColumn, type SandboxRunResult, type SandboxTableRef } from '../api'
+import { refKind, refLabel, refWorkspace, type SandboxColumn, type SandboxRunResult, type SandboxTableRef } from '../api'
 import { StepIcon } from './SequencePanel'
 import { stepReads, stepTables, stepWrites, type Step, type StepResult } from './sequence'
 import {
@@ -57,6 +57,15 @@ interface FlowNode {
    * distinct from "the notebook's own" and renders as `unknown`.
    */
   ws?: string
+  /**
+   * A raw-file source rather than a Delta table.
+   *
+   * Deliberately NOT a new `FlowKind`: `kind === 'table'` is what puts a node in
+   * the tables column, in six places across this file and toModel, and a landing
+   * folder belongs in that column — it is a data source like any other. Only its
+   * appearance differs, so only its appearance is carried here.
+   */
+  isFile?: boolean
   /**
    * A table's full column list. `rows` is the truncated view the card shows
    * until it is expanded — a 60-column table would otherwise be a mile of card
@@ -408,7 +417,7 @@ function FlowCanvas({
               <div
                 key={n.id}
                 className="sbx-flow-card"
-                data-kind={n.kind}
+                data-kind={n.isFile ? 'file' : n.kind}
                 style={{ left: p.x + PAD, top: p.y + PAD, width: NW }}
               >
                 <div className="sbx-flow-card-head" title={n.sub ? `${n.label} · ${n.sub}` : n.label}>
@@ -508,7 +517,10 @@ export function buildFlow(steps: Step[], results: Map<string, StepResult>): { no
         kind: 'table',
         label: refLabel(ref, refs),
         ws: refWorkspace(ref, refs),
-        sub: allRows.length ? `${allRows.length} cols` : undefined,
+        isFile: refKind(ref, refs) === 'file',
+        // A raw file has no schema to count, so it says what it is instead of
+        // showing "0 cols" — which would read as a table we failed to resolve.
+        sub: refKind(ref, refs) === 'file' ? 'raw files' : allRows.length ? `${allRows.length} cols` : undefined,
         rows: allRows,
         allRows,
       })

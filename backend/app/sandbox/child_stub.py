@@ -35,17 +35,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _refs  # noqa: E402
 import _sqllineage  # noqa: E402
 
+# The file formats a reader/writer names as a method. `spark.read.parquet(p)` is
+# every bit as normal as `spark.read.format('parquet').load(p)`, and only the
+# latter was ever matched — so the landing layer, which is files, was invisible.
+_FMT = r"parquet|csv|json|orc|text|avro|delta|xml"
+
+# A path is delimited by its quotes, so anything but a quote belongs to it.
+# Enumerating permitted characters is what lost `Files/orders/*.csv`: a glob in
+# the path is the normal way to read a landing folder, and `*` was not in the
+# class, so the whole read vanished rather than degrading.
+_PATH = r"""[^'"\n]+"""
+
 _READ = [
     re.compile(r"""spark\.table\(\s*['"]([\w. ]+)['"]""", re.I),
     re.compile(r"""spark\.read[\w.]*\.table\(\s*['"]([\w. ]+)['"]""", re.I),
-    re.compile(r"""\.load\(\s*['"]([\w.:/@ -]+)['"]""", re.I),
+    re.compile(rf"""\.load\(\s*['"]({_PATH})['"]""", re.I),
+    re.compile(rf"""\.read[\w.]*\.(?:{_FMT})\(\s*['"]({_PATH})['"]""", re.I),
     re.compile(r"""\bFROM\s+([\w.`]+)""", re.I),
     re.compile(r"""\bJOIN\s+([\w.`]+)""", re.I),
 ]
 _WRITE = [
     re.compile(r"""\.saveAsTable\(\s*['"]([\w. ]+)['"]""", re.I),
     re.compile(r"""\.insertInto\(\s*['"]([\w. ]+)['"]""", re.I),
-    re.compile(r"""\.save\(\s*['"]([\w.:/@ -]+)['"]""", re.I),
+    re.compile(rf"""\.save\(\s*['"]({_PATH})['"]""", re.I),
+    re.compile(rf"""\.write[\w.()'"= ]*\.(?:{_FMT})\(\s*['"]({_PATH})['"]""", re.I),
     re.compile(r"""\bINSERT\s+INTO\s+([\w.`]+)""", re.I),
     re.compile(r"""\bCREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+([\w.`]+)""", re.I),
 ]

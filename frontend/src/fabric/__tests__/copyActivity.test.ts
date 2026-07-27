@@ -47,6 +47,8 @@ describe('copyActivityRun', () => {
       lakehouse: 'Gold',
       table: 'dim_customer',
       resolved: true,
+      // A Copy activity moves tables, never the raw file layer.
+      kind: 'table',
     })
   })
 
@@ -88,6 +90,8 @@ describe('refParts', () => {
       lakehouse: 'Gold',
       table: 'dim_customer',
       resolved: true,
+      // A Copy activity moves tables, never the raw file layer.
+      kind: 'table',
     })
   })
 
@@ -97,5 +101,21 @@ describe('refParts', () => {
 
   it('unescapes a segment that contained a separator', () => {
     expect(refParts('Fin%2FOps/Gold/t').workspace).toBe('Fin/Ops')
+  })
+})
+
+describe('refParts — the raw file layer', () => {
+  it('reads a Files ref as a file, not a table', () => {
+    // The `Files/` head is kept in the leaf precisely so this survives the
+    // round-trip through an opaque ref string.
+    const p = refParts('Landing/lh_landing/Files%2Forders')
+    expect(p.table).toBe('Files/orders')
+    expect(p.kind).toBe('file')
+    expect(p.workspace).toBe('Landing')
+  })
+
+  it('keeps a landing folder distinct from the table of the same name', () => {
+    expect(refParts('Landing/lh/Files%2Forders').kind).toBe('file')
+    expect(refParts('Landing/lh/orders').kind).toBe('table')
   })
 })

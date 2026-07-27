@@ -36,6 +36,11 @@ class TableRef(BaseModel):
     #: False when the workspace could not be determined, so the UI can show it
     #: as unknown instead of implying it belongs to the notebook's own.
     resolved: bool = False
+    #: `file` for the raw layer — a `Files/…` path rather than a Delta table.
+    #: It has no schema to fetch and no columns to draw, and a landing folder
+    #: named `orders` is not the table named `orders`. Defaults to `table` so
+    #: models saved before the raw layer was tracked keep rendering unchanged.
+    kind: Literal["table", "file"] = "table"
 
 
 class SchemaResolution(BaseModel):

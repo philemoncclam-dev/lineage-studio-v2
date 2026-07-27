@@ -26,10 +26,17 @@ from .models import (
 
 # --- table reference patterns -------------------------------------------------
 
+# Kept deliberately in step with `app/sandbox/child_stub.py`, which duplicates
+# these on purpose (it must not import `app`). See the notes there: file-format
+# reader/writer methods, and a path class that tolerates globs.
+_FMT = r"parquet|csv|json|orc|text|avro|delta|xml"
+_PATH = r"""[^'"\n]+"""
+
 _READ_PATTERNS = [
     re.compile(r"""spark\.table\(\s*['"]([\w.]+)['"]""", re.I),
     re.compile(r"""spark\.read[\w.]*\.table\(\s*['"]([\w.]+)['"]""", re.I),
-    re.compile(r"""\.load\(\s*['"]([\w.:/@ -]+)['"]""", re.I),
+    re.compile(rf"""\.load\(\s*['"]({_PATH})['"]""", re.I),
+    re.compile(rf"""\.read[\w.]*\.(?:{_FMT})\(\s*['"]({_PATH})['"]""", re.I),
     re.compile(r"""\bFROM\s+([\w.]+)""", re.I),
     re.compile(r"""\bJOIN\s+([\w.]+)""", re.I),
 ]
@@ -37,6 +44,8 @@ _READ_PATTERNS = [
 _WRITE_PATTERNS = [
     re.compile(r"""\.saveAsTable\(\s*['"]([\w.]+)['"]""", re.I),
     re.compile(r"""\.insertInto\(\s*['"]([\w.]+)['"]""", re.I),
+    re.compile(rf"""\.save\(\s*['"]({_PATH})['"]""", re.I),
+    re.compile(rf"""\.write[\w.()'"= ]*\.(?:{_FMT})\(\s*['"]({_PATH})['"]""", re.I),
     re.compile(r"""\bINSERT\s+INTO\s+([\w.]+)""", re.I),
     re.compile(r"""\bCREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+([\w.]+)""", re.I),
 ]

@@ -79,9 +79,10 @@ export default function TransitionLayer({
      * An arrowhead at the target end, filled in the line's own colour.
      *
      * Drawn from the curve's incoming tangent rather than from the straight
-     * source→target vector: a right-to-left edge arrives from the LEFT after
-     * looping around, so the straight vector would point the head backwards on
-     * exactly the edges whose direction most needs stating.
+     * source→target vector. `curveFor` mirrors a right-to-left edge onto the
+     * opposite sides of both boxes, so the tangent — and with it the head —
+     * points LEFT on exactly those edges, which is what makes a backwards flow
+     * legible as backwards.
      */
     const arrowHead = (c: ReturnType<typeof curveFor>, size: number) => {
       if (!c) return

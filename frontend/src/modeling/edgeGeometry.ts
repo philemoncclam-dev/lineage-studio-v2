@@ -33,13 +33,26 @@ export function curveFor(
   const to = resolveAnchor(layout, parentOf, t.target)
   if (!from || !to) return null
 
-  // Always leave the source on its right edge and enter the target on its left,
-  // so direction reads consistently even for a right-to-left edge.
-  const x0 = from.right
+  // Which side each end uses follows the direction of travel: a left-to-right
+  // edge leaves the source's right and enters the target's left, and a
+  // right-to-left one MIRRORS that — out of the source's left, into the
+  // target's right.
+  //
+  // The earlier version pinned every edge to right→left sides, so a backwards
+  // edge looped around and still arrived pointing rightwards: the arrowhead was
+  // correct for the curve but stated the wrong direction of flow. Mirroring
+  // makes a backwards edge look backwards, which is the whole point of drawing
+  // the head.
+  //
+  // Backwards is decided on CENTRES, not on whether the boxes overlap: two
+  // near-neighbours with a slight overlap should still take the short mirrored
+  // path rather than the long way around.
+  const backwards = (to.left + to.right) / 2 < (from.left + from.right) / 2
+  const x0 = backwards ? from.left : from.right
   const y0 = from.cy
-  const x1 = to.left
+  const x1 = backwards ? to.right : to.left
   const y1 = to.cy
-  const dx = Math.max(40, Math.abs(x1 - x0) * 0.45)
+  const dx = Math.max(40, Math.abs(x1 - x0) * 0.45) * (backwards ? -1 : 1)
   return { x0, y0, cx0: x0 + dx, cx1: x1 - dx, x1, y1 }
 }
 

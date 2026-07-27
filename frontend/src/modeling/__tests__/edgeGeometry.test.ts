@@ -23,6 +23,26 @@ describe('curveFor', () => {
     const target = layout.anchors.get(model.transitions[0].target)
     expect(c!.x0).toBe(source!.right)
     expect(c!.x1).toBe(target!.left)
+    // Forwards: the incoming tangent (x1 - cx1) points RIGHT, so does the head.
+    expect(c!.x1 - c!.cx1).toBeGreaterThan(0)
+  })
+
+  it('mirrors a right-to-left edge so its arrowhead points left', () => {
+    const { model, layout, parentOf } = setup()
+    // The same transition reversed: its target now sits left of its source.
+    const forward = model.transitions[0]
+    const c = curveFor(layout, parentOf, {
+      id: 'reversed',
+      source: forward.target,
+      target: forward.source,
+    })
+    expect(c).not.toBeNull()
+    const source = layout.anchors.get(forward.target)
+    const target = layout.anchors.get(forward.source)
+    expect(c!.x0).toBe(source!.left)
+    expect(c!.x1).toBe(target!.right)
+    // Backwards: the incoming tangent points LEFT, and so does the head.
+    expect(c!.x1 - c!.cx1).toBeLessThan(0)
   })
 
   it('returns null when an endpoint resolves to nothing', () => {

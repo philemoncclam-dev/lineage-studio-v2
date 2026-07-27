@@ -261,3 +261,75 @@ describe('defaultModelName', () => {
     expect(defaultModelName([step('a', 'ltv'), step('b', 'x'), step('c', 'y')])).toBe('ltv +2')
   })
 })
+
+describe('port options', () => {
+  /** Every property bag on every attribute of every object. */
+  const attrBags = (m: ReturnType<typeof sequenceToModel>['model']) =>
+    m.layers.flatMap((l) =>
+      l.objects.flatMap((o) => o.children.map((a) => m.properties[a.id] ?? {})),
+    )
+
+  it('carries tags, access, provenance, columns and column edges by default', () => {
+    const { steps, results } = simpleRun()
+    const { model, stats } = sequenceToModel(steps, results, 'M')
+    const objects = model.layers.flatMap((l) => l.objects)
+    expect(objects.some((o) => tagsOf(model, o.id).includes('Notebook'))).toBe(true)
+    expect(attrBags(model).some((b) => b.Access === 'Read')).toBe(true)
+    expect(attrBags(model).some((b) => b.Access === 'Write')).toBe(true)
+    expect(objects.some((o) => model.properties[o.id]?.Source === 'Fabric sandbox')).toBe(true)
+    expect(attrBags(model).some((b) => b['Data type'])).toBe(true)
+    expect(stats.columnEdges).toBeGreaterThan(0)
+  })
+
+  it('drops only what is switched off, leaving the graph shape alone', () => {
+    const { steps, results } = simpleRun()
+    const full = sequenceToModel(steps, results, 'M')
+    const bare = sequenceToModel(steps, results, 'M', 'flow', {
+      kindTags: false,
+      accessTags: false,
+      provenance: false,
+      columns: true,
+      columnEdges: true,
+    })
+
+    const objects = bare.model.layers.flatMap((l) => l.objects)
+    expect(objects.every((o) => tagsOf(bare.model, o.id).length === 0)).toBe(true)
+    expect(attrBags(bare.model).every((b) => !b.Access)).toBe(true)
+    expect(objects.every((o) => !bare.model.properties[o.id]?.Source)).toBe(true)
+    // Structure is untouched: same layers, objects and transitions as a full port.
+    expect(bare.stats.layers).toBe(full.stats.layers)
+    expect(bare.stats.objects).toBe(full.stats.objects)
+    expect(bare.stats.transitions).toBe(full.stats.transitions)
+    // The I/O rows themselves survive losing their Access label.
+    expect(bare.stats.attributes).toBe(full.stats.attributes)
+  })
+
+  it('columns off removes attributes and, with them, every column edge', () => {
+    const { steps, results } = simpleRun()
+    const { model, stats } = sequenceToModel(steps, results, 'M', 'flow', {
+      kindTags: true,
+      accessTags: true,
+      provenance: true,
+      columns: false,
+      // On, but it cannot apply: with no column attributes there is nothing for
+      // a column edge to land on, so the export must force it off.
+      columnEdges: true,
+    })
+    expect(stats.columnEdges).toBe(0)
+    expect(attrBags(model).every((b) => !b['Data type'])).toBe(true)
+    // The step's own Read/Write rows are structure and stay.
+    expect(attrBags(model).some((b) => b.Access)).toBe(true)
+  })
+
+  it('leaves no empty property bags behind', () => {
+    const { steps, results } = simpleRun()
+    const { model } = sequenceToModel(steps, results, 'M', 'flow', {
+      kindTags: false,
+      accessTags: false,
+      provenance: false,
+      columns: false,
+      columnEdges: false,
+    })
+    expect(Object.values(model.properties).every((b) => Object.keys(b).length > 0)).toBe(true)
+  })
+})

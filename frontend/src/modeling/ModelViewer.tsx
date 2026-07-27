@@ -1187,12 +1187,11 @@ function Card({
 }
 
 /**
- * The handle on an entity's RIGHT edge — where data leaves.
+ * The handle on an entity's RIGHT edge.
  *
- * Two jobs, decided by `drop`: normally it starts a transition out of this
- * entity; while the user is picking a SOURCE (having started from some
- * target's left port) it is instead the drop point, because the line has to
- * leave here to arrive there.
+ * Two jobs, decided by `drop`: with nothing pending it starts a transition
+ * whose source is this entity; while one is pending it lands the line here as
+ * the target. The side carries no direction — see `pending`.
  */
 function Port({
   id,
@@ -1284,6 +1283,24 @@ function InPort({
 function Badges({ bag }: { bag: Record<string, string> | undefined }) {
   if (!bag) return null
   const out: React.ReactNode[] = []
+  // Access first, and as a single letter: on a step's I/O rows this is the one
+  // thing that distinguishes two otherwise identical row names (the table it
+  // reads vs the table it writes), so it has to be readable without hovering.
+  // R/W and their colours are lifted from the sandbox Sequence canvas — the
+  // model opens looking like the run it was ported from.
+  const access = bag.Access
+  if (access === 'Read' || access === 'Write')
+    out.push(
+      <span
+        key="access"
+        className="mv-badge"
+        data-kind={access.toLowerCase()}
+        title={access}
+        aria-label={access}
+      >
+        {access === 'Read' ? 'R' : 'W'}
+      </span>,
+    )
   if (bag.CDE === 'true') out.push(<span key="cde" className="mv-badge" data-kind="cde">CDE</span>)
   const cls = bag.Classification
   if (cls) out.push(<span key="cls" className="mv-badge" data-kind={cls.toLowerCase()}>{cls}</span>)

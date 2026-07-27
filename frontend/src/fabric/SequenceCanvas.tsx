@@ -5,12 +5,17 @@
 // (its reads and writes). Edges anchor to the row they belong to, not to the
 // card, so a table's line lands on the exact row that reads or writes it —
 // same reading as `modeling/ModelViewer`.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import type { SandboxColumn, SandboxRunResult } from '../api'
 import { StepIcon } from './SequencePanel'
 import { stepReads, stepWrites, type Step, type StepResult } from './sequence'
-import { sequenceToModel, defaultModelName } from './toModel'
+import {
+  sequenceToModel,
+  defaultModelName,
+  DEFAULT_PORT_OPTIONS,
+  type PortOptions,
+} from './toModel'
 import { localStore } from '../model/store'
 
 type FlowKind = 'notebook' | 'pipeline' | 'table'
@@ -526,6 +531,8 @@ function ToModelBar({
   const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [options, setOptions] = usePortOptions()
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const create = async () => {
     setBusy(true)
@@ -533,7 +540,7 @@ function ToModelBar({
     try {
       // The model is built in whichever view is on screen — what you export is
       // what you were looking at.
-      const { model } = sequenceToModel(steps, results, defaultModelName(steps), view)
+      const { model } = sequenceToModel(steps, results, defaultModelName(steps), view, options)
       await localStore.save(model)
       await navigate({ to: '/model/$modelId', params: { modelId: model.id } })
     } catch (e) {
@@ -570,6 +577,12 @@ function ToModelBar({
           {error}
         </span>
       )}
+      <PortSettings
+        options={options}
+        onChange={setOptions}
+        open={settingsOpen}
+        onOpen={setSettingsOpen}
+      />
       <button
         className="fx-btn"
         onClick={create}
@@ -578,6 +591,130 @@ function ToModelBar({
       >
         {busy ? 'Creating…' : 'Create model'}
       </button>
+    </div>
+  )
+}
+
+const PORT_OPTIONS_KEY = 'lineage.port.options'
+
+/**
+ * The port settings, persisted.
+ *
+ * They live in localStorage rather than in component state because they are a
+ * preference about how this user works, not about this run: having to re-tick
+ * the same boxes after every run is exactly the friction the setting was added
+ * to remove. Unknown or corrupt stored values fall back to the defaults rather
+ * than throwing — a bad key must never make the sandbox unusable.
+ */
+function usePortOptions(): [PortOptions, (next: PortOptions) => void] {
+  const [options, setOptions] = useState<PortOptions>(() => {
+    try {
+      const raw = localStorage.getItem(PORT_OPTIONS_KEY)
+      if (!raw) return DEFAULT_PORT_OPTIONS
+      const saved = JSON.parse(raw) as Partial<PortOptions>
+      // Spread over the defaults so a setting added later is ON for someone who
+      // already has a stored blob, matching a first-time user.
+      return { ...DEFAULT_PORT_OPTIONS, ...saved }
+    } catch {
+      return DEFAULT_PORT_OPTIONS
+    }
+  })
+  const update = (next: PortOptions) => {
+    setOptions(next)
+    try {
+      localStorage.setItem(PORT_OPTIONS_KEY, JSON.stringify(next))
+    } catch {
+      // A full or blocked localStorage must not stop the user changing the
+      // setting for this session.
+    }
+  }
+  return [options, update]
+}
+
+/** Label and hint for each toggle, in the order they appear in the popover. */
+const PORT_SETTINGS: { key: keyof PortOptions; label: string; hint: string }[] = [
+  { key: 'kindTags', label: 'Entity tags', hint: 'Badge each object Notebook, Pipeline or Table' },
+  { key: 'accessTags', label: 'Access tags (R/W)', hint: "Badge a step's rows as Read or Write" },
+  { key: 'provenance', label: 'Provenance', hint: 'Source, Step number and Workspace properties' },
+  { key: 'columns', label: 'Table columns', hint: 'Carry each table schema across as attributes' },
+  { key: 'columnEdges', label: 'Column-level edges', hint: 'Column-to-column lineage, where resolved' },
+]
+
+/** The gear beside "Create model": what the port carries into the model. */
+function PortSettings({
+  options,
+  onChange,
+  open,
+  onOpen,
+}: {
+  options: PortOptions
+  onChange: (next: PortOptions) => void
+  open: boolean
+  onOpen: (open: boolean) => void
+}) {
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  // Close on an outside click or Escape. Pointerdown rather than click so the
+  // popover is gone before whatever was clicked underneath reacts.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open, onOpen])
+
+  const off = PORT_SETTINGS.filter(({ key }) => !options[key]).length
+
+  return (
+    <div className="sbx-portset" ref={ref}>
+      <button
+        className="fx-btn"
+        data-quiet="true"
+        aria-expanded={open}
+        aria-haspopup="true"
+        title="Choose what the model carries across from this run"
+        onClick={() => onOpen(!open)}
+      >
+        Port settings{off > 0 && <span className="sbx-portset-count">{off} off</span>}
+      </button>
+      {open && (
+        <div className="sbx-portset-pop" role="group" aria-label="Port settings">
+          <p className="sbx-portset-lead">
+            What the new model carries across. None of these changes the lineage itself — the same
+            objects and table-level edges come across either way.
+          </p>
+          {PORT_SETTINGS.map(({ key, label, hint }) => {
+            // Column edges have nothing to attach to without the columns, so
+            // the UI shows the implication rather than letting it look enabled.
+            const disabled = key === 'columnEdges' && !options.columns
+            return (
+              <label key={key} className="sbx-portset-row" data-disabled={disabled || undefined}>
+                <input
+                  type="checkbox"
+                  checked={options[key] && !disabled}
+                  disabled={disabled}
+                  onChange={(e) => onChange({ ...options, [key]: e.target.checked })}
+                />
+                <span className="sbx-portset-label">
+                  {label}
+                  <span className="sbx-portset-hint">
+                    {disabled ? 'Needs table columns' : hint}
+                  </span>
+                </span>
+              </label>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

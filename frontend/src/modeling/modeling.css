@@ -418,6 +418,26 @@
   color: #114a2b;
 }
 
+/* ===== Access badges =====
+   R and W on a step's I/O rows. The exact colours of .sbx-flow-tag in the
+   sandbox Sequence canvas (views/fabric.css) — a ported model is meant to read
+   as the same picture, so these two must be kept in step with each other.
+   Tabular numerals width so a column of R/W badges lines up. */
+.mv-badge[data-kind='read'],
+.mv-badge[data-kind='write'] {
+  min-width: 13px;
+  text-align: center;
+  font-weight: 600;
+}
+.mv-badge[data-kind='read'] {
+  background: #e2ebfa;
+  color: #1c447f;
+}
+.mv-badge[data-kind='write'] {
+  background: #d3f0e0;
+  color: #114a2b;
+}
+
 /* ===== Tag badges =====
    Free-form tags on any entity (see model/tags.ts). The default is a neutral
    outline so an arbitrary tag never competes with the classification

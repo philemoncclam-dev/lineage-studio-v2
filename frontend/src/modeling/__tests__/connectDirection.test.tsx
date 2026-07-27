@@ -156,3 +156,47 @@ describe('authoring a transition', () => {
     expect({ source: t.source, target: t.target }).toEqual({ source: 'O2', target: 'O1' })
   })
 })
+
+describe('access badges', () => {
+  it('badges a row carrying Access as R or W, the way the sandbox canvas does', async () => {
+    function Tagged() {
+      const [model, setModel] = useState<LineageModel>(() => {
+        const base = twoLayerModel()
+        const read = { id: 'A1', name: 'raw_orders', children: [] }
+        const write = { id: 'A2', name: 'silver_orders', children: [] }
+        base.layers[1].objects[0].children = [read, write]
+        base.properties = { A1: { Access: 'Read' }, A2: { Access: 'Write' } }
+        return base
+      })
+      return (
+        <ModelViewer
+          model={model}
+          onChange={setModel}
+          onUndo={() => {}}
+          onRedo={() => {}}
+          canUndo={false}
+          canRedo={false}
+        />
+      )
+    }
+    const rootRoute = createRootRoute({ component: Outlet })
+    const viewerRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/',
+      component: Tagged,
+    })
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([viewerRoute]),
+      history: createMemoryHistory({ initialEntries: ['/'] }),
+    })
+    render(<RouterProvider router={router as never} />)
+
+    const r = await screen.findByLabelText('Read')
+    const w = await screen.findByLabelText('Write')
+    expect(r).toHaveTextContent('R')
+    expect(w).toHaveTextContent('W')
+    // data-kind is what carries the colour, shared with .sbx-flow-tag.
+    expect(r).toHaveAttribute('data-kind', 'read')
+    expect(w).toHaveAttribute('data-kind', 'write')
+  })
+})

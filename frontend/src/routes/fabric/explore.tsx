@@ -29,6 +29,7 @@ import {
   fetchFabricNotebookSource,
   fetchFabricTableSchema,
   fetchFabricPipelineDefinition,
+  refLabel,
   type FabricWorkspace,
   type FabricWorkspaceItems,
   type FabricItem,
@@ -790,56 +791,158 @@ const ACTIVITY_LABEL: Record<string, string> = {
 }
 const activityLabel = (t: string) => ACTIVITY_LABEL[t] ?? t
 
-const NODE_W = 176
-const NODE_H = 54
-const GAP_X = 48
-const GAP_Y = 16
-const PAD = 10
+// Pipeline sequence view — the same reading as the sandbox's Sequence view
+// (steps stacked in run order on the left, the data they touch on the right),
+// but ordered by the pipeline's own order of events rather than by a run.
+//
+// It replaced a left-to-right dependency DAG. The DAG drew the graph correctly
+// and answered the wrong question: what you want from a pipeline is what
+// happens, in what order, and what each step touches — which is a list, not a
+// layout. Fabric already shows you the DAG; this shows you the sequence.
+const SEQ_W = 268 // activity card
+const SEQ_TW = 190 // table card
+const SEQ_GX = 96 // gutter the edges cross
+const SEQ_GY = 14
+const SEQ_HEAD = 26
+const SEQ_ROW = 20
+const SEQ_PAD = 10
 
-// Left-to-right layered layout: an activity's column is one past its deepest
-// dependency (Fabric's own reading order), rows stack within a column.
-function layoutPipeline(acts: FabricPipelineActivity[]) {
+interface SeqRow {
+  key: string
+  /** The canonical ref — the identity, and the tables column's key. */
+  ref: string
+  /** The leaf, which is what a card shows; the ref goes in the tooltip. */
+  label: string
+  tone: 'read' | 'write'
+}
+
+export interface SeqCard {
+  name: string
+  type: string
+  /** 1-based order of events. Shared by activities that run concurrently. */
+  wave: number
+  /** True when something else runs in the same wave — the badge is not unique. */
+  concurrent: boolean
+  after: string[]
+  rows: SeqRow[]
+}
+
+const seqCardH = (rows: number) => SEQ_HEAD + rows * SEQ_ROW
+
+/**
+ * Activities → waves. An activity's wave is one past its deepest dependency, so
+ * everything in a wave can start together; that is the honest reading of "the
+ * order of events" for a pipeline, which is a DAG and not a line.
+ */
+export function pipelineWaves(acts: FabricPipelineActivity[]): SeqCard[] {
   const byName = new Map(acts.map((a) => [a.name, a]))
-  const colOf = new Map<string, number>()
+  const waveOf = new Map<string, number>()
   const visiting = new Set<string>()
-  function col(name: string): number {
-    const cached = colOf.get(name)
+  function wave(name: string): number {
+    const cached = waveOf.get(name)
     if (cached !== undefined) return cached
-    if (visiting.has(name)) return 0 // defensive cycle guard
+    if (visiting.has(name)) return 0 // defensive cycle guard, as before
     visiting.add(name)
     const deps = (byName.get(name)?.depends_on ?? []).filter((d) => byName.has(d))
-    const c = deps.length ? 1 + Math.max(...deps.map(col)) : 0
+    const w = deps.length ? 1 + Math.max(...deps.map(wave)) : 0
     visiting.delete(name)
-    colOf.set(name, c)
-    return c
+    waveOf.set(name, w)
+    return w
   }
-  acts.forEach((a) => col(a.name))
+  acts.forEach((a) => wave(a.name))
 
-  const rows = new Map<number, number>()
-  const pos = new Map<string, { x: number; y: number }>()
-  acts.forEach((a) => {
-    const c = colOf.get(a.name)!
-    const r = rows.get(c) ?? 0
-    rows.set(c, r + 1)
-    pos.set(a.name, { x: c * (NODE_W + GAP_X), y: r * (NODE_H + GAP_Y) })
-  })
+  const perWave = new Map<number, number>()
+  acts.forEach((a) => perWave.set(waveOf.get(a.name)!, (perWave.get(waveOf.get(a.name)!) ?? 0) + 1))
 
-  const maxCol = Math.max(0, ...colOf.values())
-  const maxRow = Math.max(1, ...rows.values())
-  const width = (maxCol + 1) * (NODE_W + GAP_X) - GAP_X
-  const height = maxRow * (NODE_H + GAP_Y) - GAP_Y
-  const edges = acts.flatMap((a) =>
-    a.depends_on.filter((d) => byName.has(d)).map((d) => ({ from: d, to: a.name })),
-  )
-  return { pos, edges, width, height }
+  return acts
+    .map((a) => {
+      const w = waveOf.get(a.name)!
+      return {
+        name: a.name,
+        type: a.type,
+        wave: w + 1,
+        concurrent: (perWave.get(w) ?? 0) > 1,
+        after: a.depends_on.filter((d) => byName.has(d)),
+        // A Copy activity declares its datasets inline, so its I/O is known
+        // without running anything. Every other type needs the sandbox, and
+        // shows as a bare card until then.
+        rows: [
+          ...a.reads.map((r) => ({ key: `r:${r}`, ref: r, label: refLabel(r), tone: 'read' as const })),
+          ...a.writes.map((r) => ({ key: `w:${r}`, ref: r, label: refLabel(r), tone: 'write' as const })),
+        ],
+      }
+    })
+    .sort((x, y) => x.wave - y.wave)
 }
 
 function PipelineCanvas({ activities }: { activities: FabricPipelineActivity[] }) {
-  const { pos, edges, width, height } = useMemo(() => layoutPipeline(activities), [activities])
-  const w = width + PAD * 2
-  const h = height + PAD * 2
+  const { cards, tables, pos, tablePos, edges, width, height } = useMemo(() => {
+    const cards = pipelineWaves(activities)
+
+    // The tables column, in first-touch order — the order you meet them
+    // reading the sequence top to bottom.
+    const tables: string[] = []
+    for (const c of cards)
+      for (const r of c.rows) if (!tables.includes(r.ref)) tables.push(r.ref)
+
+    const pos = new Map<string, { x: number; y: number }>()
+    let y = 0
+    for (const c of cards) {
+      pos.set(c.name, { x: 0, y })
+      y += seqCardH(c.rows.length) + SEQ_GY
+    }
+    const stepsH = Math.max(0, y - SEQ_GY)
+
+    const tablePos = new Map<string, { x: number; y: number }>()
+    const tx = tables.length ? SEQ_W + SEQ_GX : 0
+    let ty = 0
+    for (const t of tables) {
+      tablePos.set(t, { x: tx, y: ty })
+      ty += SEQ_HEAD + SEQ_GY
+    }
+
+    // Every edge runs step → table, as the sandbox's Sequence view does. Data
+    // moves table → step for a read, but drawing that IS the line looping back
+    // under the whole column, which this view exists to avoid; the row's own
+    // Read/Write tag carries the direction instead.
+    const edges = cards.flatMap((c) =>
+      c.rows
+        .filter((r) => tablePos.has(r.ref))
+        .map((r) => ({
+          key: `${c.name}\0${r.key}`,
+          from: c.name,
+          rowIndex: c.rows.indexOf(r),
+          to: r.ref,
+          tone: r.tone,
+        })),
+    )
+
+    return {
+      cards,
+      tables,
+      pos,
+      tablePos,
+      edges,
+      width: tables.length ? SEQ_W + SEQ_GX + SEQ_TW : SEQ_W,
+      height: Math.max(stepsH, Math.max(0, ty - SEQ_GY), 1),
+    }
+  }, [activities])
+
+  const w = width + SEQ_PAD * 2
+  const h = height + SEQ_PAD * 2
+  const waves = cards.length ? cards[cards.length - 1].wave : 0
+  const anyConcurrent = cards.some((c) => c.concurrent)
+
   return (
-    <div className="fx-pipe">
+    <>
+      <p className="fx-seq-caption">
+        Order of events — {cards.length} {cards.length === 1 ? 'activity' : 'activities'} in{' '}
+        {waves} {waves === 1 ? 'step' : 'steps'}.
+        {anyConcurrent && ' Activities sharing a number start together.'}
+        {tables.length === 0 &&
+          ' Only a Copy activity declares the data it moves; run the pipeline in the Sandbox tab to see what the rest touch.'}
+      </p>
+      <div className="fx-pipe">
       <div className="fx-pipe-canvas" style={{ width: w, height: h }}>
         <svg className="fx-pipe-edges" width={w} height={h}>
           <defs>
@@ -847,17 +950,22 @@ function PipelineCanvas({ activities }: { activities: FabricPipelineActivity[] }
               <path d="M0 0l8 4-8 4z" fill="currentColor" />
             </marker>
           </defs>
-          {edges.map((e, i) => {
+          {edges.map((e) => {
             const s = pos.get(e.from)!
-            const t = pos.get(e.to)!
-            const sx = s.x + NODE_W + PAD
-            const sy = s.y + NODE_H / 2 + PAD
-            const tx = t.x + PAD
-            const ty = t.y + NODE_H / 2 + PAD
+            const t = tablePos.get(e.to)!
+            // Anchored to the ROW, not the card header: the row is the thing
+            // the edge is about, and a port that floats to the header stops
+            // matching what the card shows.
+            const sx = s.x + SEQ_W + SEQ_PAD
+            const sy = s.y + SEQ_HEAD + e.rowIndex * SEQ_ROW + SEQ_ROW / 2 + SEQ_PAD
+            const tx = t.x + SEQ_PAD
+            const ty = t.y + SEQ_HEAD / 2 + SEQ_PAD
             const mx = (sx + tx) / 2
             return (
               <path
-                key={i}
+                key={e.key}
+                className="fx-pipe-edge"
+                data-tone={e.tone}
                 d={`M${sx} ${sy}C${mx} ${sy} ${mx} ${ty} ${tx} ${ty}`}
                 fill="none"
                 markerEnd="url(#fx-arrow)"
@@ -865,22 +973,56 @@ function PipelineCanvas({ activities }: { activities: FabricPipelineActivity[] }
             )
           })}
         </svg>
-        {activities.map((a) => {
-          const p = pos.get(a.name)!
+
+        {cards.map((c) => {
+          const p = pos.get(c.name)!
           return (
             <div
-              key={a.name}
-              className="fx-pipe-node"
-              style={{ left: p.x + PAD, top: p.y + PAD, width: NODE_W, height: NODE_H }}
-              title={`${activityLabel(a.type)} · ${a.name}`}
+              key={c.name}
+              className="fx-seq-card"
+              style={{ left: p.x + SEQ_PAD, top: p.y + SEQ_PAD, width: SEQ_W }}
+              title={c.after.length ? `${c.name} · after ${c.after.join(', ')}` : c.name}
             >
-              <span className="fx-pipe-node-type">{activityLabel(a.type)}</span>
-              <span className="fx-pipe-node-name">{a.name}</span>
+              <div className="fx-seq-head">
+                <span className="fx-seq-num" data-concurrent={c.concurrent || undefined}>
+                  {c.wave}
+                </span>
+                <span className="fx-seq-name">{c.name}</span>
+                <span className="fx-seq-type">{activityLabel(c.type)}</span>
+              </div>
+              {c.rows.map((r) => (
+                <div key={r.key} className="fx-seq-row" style={{ height: SEQ_ROW }}>
+                  <span className="fx-seq-row-name" title={r.ref}>
+                    {r.label}
+                  </span>
+                  <span className="fx-seq-tag" data-tone={r.tone}>
+                    {r.tone === 'read' ? 'Read' : 'Write'}
+                  </span>
+                </div>
+              ))}
             </div>
           )
         })}
+
+        {tables.map((t) => {
+          const p = tablePos.get(t)!
+          return (
+            <div
+              key={t}
+              className="fx-seq-card fx-seq-table"
+              style={{ left: p.x + SEQ_PAD, top: p.y + SEQ_PAD, width: SEQ_TW }}
+            >
+              <div className="fx-seq-head">
+                <span className="fx-seq-name" title={t}>
+                  {refLabel(t)}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 

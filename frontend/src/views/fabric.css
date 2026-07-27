@@ -551,53 +551,136 @@
   font-size: var(--text-micro, 12px);
 }
 
-/* pipeline canvas — a Fabric-like left-to-right flow of activity cards joined
-   by dependency arrows. Nodes are absolutely positioned over an SVG edge layer. */
+/* Pipeline sequence — the sandbox Sequence view's reading, applied to a
+   pipeline's own order of events. Deliberately the same palette and card
+   metrics as `.sbx-flow-*`: the two views answer the same question about
+   different things, and looking alike is the point.
+
+   (`--color-surface-canvas` and `--color-grid-dot` were never defined, so this
+   canvas had been falling back to a dark tint left over from the superseded
+   dark direction — visible as a grey box in a light app.) */
 .fx-pipe {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card, 8px);
-  background: var(--color-surface-canvas, rgba(0, 0, 0, 0.2));
-  background-image: radial-gradient(var(--color-grid-dot, rgba(255, 255, 255, 0.06)) 1px, transparent 1px);
-  background-size: 20px 20px;
+  background: #fff;
   overflow: auto;
   max-height: calc(100vh - 360px);
 }
 .fx-pipe-canvas {
   position: relative;
+  background-image: radial-gradient(rgb(28 35 51 / 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
 }
 .fx-pipe-edges {
   position: absolute;
   inset: 0;
-  color: var(--color-text-tertiary);
+  color: rgb(28 35 51 / 0.32);
   pointer-events: none;
 }
-.fx-pipe-node {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 3px;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border);
-  border-left: 3px solid var(--color-accent);
-  border-radius: var(--radius-control, 6px);
-  background: var(--color-surface-1, var(--color-surface-2));
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  overflow: hidden;
+.fx-pipe-edge {
+  stroke: currentColor;
+  stroke-width: 1.25;
 }
-.fx-pipe-node-type {
-  color: var(--color-text-tertiary);
+/* A read and a write both run left-to-right here (see the note in the layout),
+   so the tint is what distinguishes them at a glance. */
+.fx-pipe-edge[data-tone='read'] {
+  color: #4a72b8;
+}
+.fx-pipe-edge[data-tone='write'] {
+  color: #3f8f66;
+}
+
+.fx-seq-caption {
+  margin: 0 0 8px;
+  color: #6b7385;
   font-size: var(--text-micro, 11px);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
-.fx-pipe-node-name {
-  color: var(--color-text-primary);
-  font-size: var(--text-sm, 13px);
-  font-weight: 500;
+
+.fx-seq-card {
+  position: absolute;
+  background: #fff;
+  border: 1px solid rgb(28 35 51 / 0.28);
+  box-shadow: 0 1px 2px rgb(28 35 51 / 0.05);
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1;
+}
+.fx-seq-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 6px;
+  border-bottom: 1px solid rgb(28 35 51 / 0.14);
+}
+/* A card with no rows carries no divider — there is nothing under it. */
+.fx-seq-card > .fx-seq-head:last-child {
+  border-bottom: none;
+}
+.fx-seq-table .fx-seq-head {
+  background: #f2f5fa;
+}
+.fx-seq-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 2px;
+  background: #e8f0fe;
+  color: #12305e;
+  font-size: 10px;
+  font-weight: 600;
+}
+/* Two activities sharing a number start together, so the badge is not a unique
+   position in a line. Ringed rather than recoloured: it is the same step. */
+.fx-seq-num[data-concurrent] {
+  box-shadow: 0 0 0 1px #7ea3d8;
+}
+.fx-seq-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: #1c2333;
+}
+.fx-seq-type {
+  flex: none;
+  color: #6b7385;
+  font-size: 11px;
+}
+.fx-seq-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 8px;
+  white-space: nowrap;
+}
+.fx-seq-row:hover {
+  background: #eef2f7;
+}
+.fx-seq-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #4a5163;
+  font-size: 11px;
+}
+.fx-seq-tag {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill, 999px);
+  font-size: 10px;
+}
+.fx-seq-tag[data-tone='read'] {
+  background: #e2ebfa;
+  color: #1c447f;
+}
+.fx-seq-tag[data-tone='write'] {
+  background: #d3f0e0;
+  color: #114a2b;
 }
 
 /* code viewer — a gutter of line numbers beside a mono <pre>. */

@@ -42,6 +42,7 @@ import { copyEntities, paste, type Clipboard, type PasteTarget } from '../model/
 import ContextMenu, { type MenuItem } from './ContextMenu'
 import { EntityTagDialog, TagManager } from './TagPanel'
 import { ViewsPanel } from './ViewsPanel'
+import { PropertiesPanel } from './PropertiesPanel'
 import {
   activeFilterCount,
   applyFilter,
@@ -136,8 +137,17 @@ export default function ModelViewer({
   /** Entities whose tags the dialog is editing; null when it's closed. */
   const [tagging, setTagging] = useState<EntityId[] | null>(null)
   const [tagManagerOpen, setTagManagerOpen] = useState(false)
-  const [viewsOpen, setViewsOpen] = useState(false)
   const [filter, setFilter] = useState<ViewFilter>(EMPTY_FILTER)
+  /**
+   * Which of the two right-hand docks is showing, if either.
+   *
+   * One slot, not two: Views and Properties are both `.vw-panel`, both pinned
+   * to the right edge, and both about 300px wide — open together they would sit
+   * on top of each other. Making it a single "which dock" value also means the
+   * rail buttons toggle between panels in one click instead of needing the
+   * other one closed first.
+   */
+  const [dock, setDock] = useState<'views' | 'properties' | null>(null)
   /**
    * The last entity clicked WITHOUT a modifier — where a shift-range starts.
    *
@@ -237,9 +247,19 @@ export default function ModelViewer({
   useEffect(() => registerRailAction('export', () => setExportOpen(true)), [])
   useEffect(() => registerRailAction('mapping', () => setMapperOpen(true)), [])
   useEffect(() => registerRailAction('tags', () => setTagManagerOpen(true)), [])
-  // Views toggles rather than opens: it is a docked panel, so a second click on
-  // the rail button is the obvious way to put it away again.
-  useEffect(() => registerRailAction('views', () => setViewsOpen((v) => !v)), [])
+  // Both docks toggle rather than open: a second click on the rail button is the
+  // obvious way to put a docked panel away again.
+  useEffect(
+    () => registerRailAction('views', () => setDock((d) => (d === 'views' ? null : 'views'))),
+    [],
+  )
+  useEffect(
+    () =>
+      registerRailAction('properties', () =>
+        setDock((d) => (d === 'properties' ? null : 'properties')),
+      ),
+    [],
+  )
 
   /**
    * Selects every entity carrying the picked name and brings the first into
@@ -485,6 +505,11 @@ export default function ModelViewer({
     if (multi) {
       items.push(
         {
+          key: 'properties',
+          label: `Properties of ${selection.size} entities`,
+          onSelect: () => setDock('properties'),
+        },
+        {
           key: 'tags',
           label: `Tag ${selection.size} entities…`,
           onSelect: () => setTagging([...acting]),
@@ -636,7 +661,10 @@ export default function ModelViewer({
     }
 
     items.push(
-      { key: 'tags', label: 'Tags…', separated: true, onSelect: () => setTagging([targetId]) },
+      // The panel reads the SELECTION, and openMenu has already made this entity
+      // the selection above — so there is nothing to pass it.
+      { key: 'properties', label: 'Properties', separated: true, onSelect: () => setDock('properties') },
+      { key: 'tags', label: 'Tags…', onSelect: () => setTagging([targetId]) },
       { key: 'rename', label: 'Rename', onSelect: () => setEditing(targetId) },
       {
         key: 'delete',
@@ -908,7 +936,32 @@ export default function ModelViewer({
           onClose={() => setTagManagerOpen(false)}
         />
       )}
-      {viewsOpen && (
+      {dock === 'properties' && (
+        <PropertiesPanel
+          model={model}
+          index={index}
+          entityIds={[...selection]}
+          transitionIds={[...selectedEdges]}
+          onChange={onChange}
+          // Tags keep their own editor even from here — see RESERVED_KEYS.
+          onEditTags={setTagging}
+          onSelect={(id) => {
+            setSelection(new Set([id]))
+            setSelectedEdges(new Set())
+            setCollapsed((prev) => {
+              // Walking to a parent or an endpoint is pointless if it is buried
+              // under something collapsed — open the path, as search does.
+              const next = new Set(prev)
+              next.delete(id)
+              for (const ancestor of ancestorsOf(index, id)) next.delete(ancestor.id)
+              return next
+            })
+            setReveal(id)
+          }}
+          onClose={() => setDock(null)}
+        />
+      )}
+      {dock === 'views' && (
         <ViewsPanel
           model={model}
           filter={filter}
@@ -920,7 +973,7 @@ export default function ModelViewer({
           onSaveView={(name) => onChange(saveView(model, name, filter))}
           onDeleteView={(id) => onChange(deleteView(model, id))}
           onApplyView={(id) => setFilter(toggleView(model, filter, id))}
-          onClose={() => setViewsOpen(false)}
+          onClose={() => setDock(null)}
         />
       )}
       {menu && (

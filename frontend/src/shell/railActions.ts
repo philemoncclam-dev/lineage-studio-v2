@@ -5,7 +5,13 @@
 // action key and the rail invokes whatever is currently registered; an action
 // with no handler renders disabled rather than silently doing nothing.
 
-export type RailActionKey = 'import' | 'export' | 'mapping' | 'tags' | 'views'
+export type RailActionKey =
+  | 'import'
+  | 'export'
+  | 'mapping'
+  | 'tags'
+  | 'views'
+  | 'properties'
 
 type Handler = () => void
 

@@ -34,6 +34,7 @@ export type RailIconName =
   | 'mapping'
   | 'browser'
   | 'tag'
+  | 'properties'
 
 export interface RailItem {
   key: string
@@ -51,6 +52,7 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
     // No 'All models' entry: the logo's mode menu already lands the mode on
     // /models, so a rail button for it was a second door to the same room and
     // the only NAVIGATION item among commands — it read as the odd one out.
+    { key: 'properties', label: 'Properties', icon: 'properties', action: 'properties' },
     { key: 'views', label: 'Views', icon: 'filter', action: 'views' },
     { key: 'tags', label: 'Tags', icon: 'tag', action: 'tags' },
     { key: 'mapping', label: 'Auto-Mapper', icon: 'mapping', action: 'mapping' },

@@ -78,6 +78,11 @@ const ICONS: Record<RailIconName, ReactNode> = {
   tag: (
     <svg viewBox="0 0 24 24"><path d="M11 3H3.5v7.5l10 10 7.5-7.5-10-10z" /><circle cx="7.5" cy="7.5" r="1.4" /></svg>
   ),
+  // A sliders panel: rows of labelled values you can set. Not an ⓘ — this pane
+  // is editable, and an info glyph would promise a read-only readout.
+  properties: (
+    <svg viewBox="0 0 24 24"><path d="M4 7.5h16M4 12h16M4 16.5h16" /><circle cx="9" cy="7.5" r="1.9" /><circle cx="15" cy="12" r="1.9" /><circle cx="8" cy="16.5" r="1.9" /></svg>
+  ),
 }
 
 export default function Rail({ items }: { items: RailItem[] }) {

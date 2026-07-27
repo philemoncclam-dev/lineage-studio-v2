@@ -1951,3 +1951,120 @@
 .mv-row[data-dimmed]:hover {
   opacity: 0.75;
 }
+
+/* ===== Properties panel =====
+   Shares the Views dock's frame (.vw-panel) and only adds what the key/value
+   list needs. Two docks in the same slot that looked different would read as
+   two different kinds of surface. */
+.pr-panel .vw-body {
+  gap: 14px;
+}
+
+.pr-subject {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid rgb(28 35 51 / 0.1);
+  border-radius: 7px;
+  background: #f6f8fb;
+}
+.pr-subject-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1c2333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-subject-meta {
+  font-size: 11px;
+  color: #7b8496;
+}
+.pr-kind {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+/* Ancestors and transition endpoints are buttons, but must not look like a row
+   of controls stacked under the name — they are the address, drawn as text. */
+.pr-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: #1f6feb;
+  cursor: pointer;
+}
+.pr-link:hover {
+  text-decoration: underline;
+}
+
+.pr-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.pr-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pr-row {
+  display: grid;
+  /* Key column fixed so values line up down the list — a per-row auto width
+     makes a bag of provenance unreadable as a table. */
+  grid-template-columns: 92px 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+.pr-key,
+.pr-key-edit {
+  min-width: 0;
+  font-size: 11px;
+}
+.pr-key {
+  border: 0;
+  padding: 0;
+  background: none;
+  text-align: left;
+  color: #7b8496;
+  font-weight: 600;
+  cursor: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-key:hover {
+  color: #1c2333;
+  text-decoration: underline dotted;
+}
+.pr-value {
+  min-width: 0;
+}
+/* A mixed row shows its placeholder, not a value — italic so the count in the
+   placeholder cannot be mistaken for something one of them actually says. */
+.pr-value[data-mixed]::placeholder {
+  font-style: italic;
+  color: #a2a9b8;
+}
+/* Unlike .tg-row, the remove button is always visible: on a touch or
+   keyboard pass there is no hover to reveal it. */
+.pr-row .tg-act {
+  opacity: 0.5;
+}
+.pr-row:hover .tg-act,
+.pr-row:focus-within .tg-act {
+  opacity: 1;
+}
+
+.pr-add {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 6px;
+}

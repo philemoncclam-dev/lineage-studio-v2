@@ -18,6 +18,7 @@ import type { LineageModel, Layer, ModelObject, Attribute, Transition, EntityId 
 import { emptyModel } from '../model/store'
 import { TAGS_KEY } from '../model/tags'
 import {
+  refKind,
   refLabel,
   refWorkspace,
   type FabricPipelineActivity,
@@ -32,6 +33,13 @@ interface Node {
   id: string
   kind: 'table' | 'notebook' | 'pipeline'
   name: string
+  /**
+   * A raw file source rather than a Delta table. Kept beside `kind` rather than
+   * inside it because `kind === 'table'` is what assigns the layer and the
+   * column — a file belongs there, it is a data source — while the tag, and so
+   * how it reads on the card, must say File.
+   */
+  isFile?: boolean
   /** A table's columns, which become its attributes. */
   columns: SandboxColumn[]
   /**
@@ -265,6 +273,7 @@ export function sequenceToModel(
         name: refLabel(ref, refs),
         ref,
         ws: refWorkspace(ref, refs),
+        isFile: refKind(ref, refs) === 'file',
         columns: schemas.get(ref) ?? [],
         io: [],
       }
@@ -404,8 +413,13 @@ export function sequenceToModel(
       const bag: Record<string, string> = {
         ...(options.kindTags
           ? {
-              [TAGS_KEY]:
-                n.kind === 'table' ? 'Table' : n.kind === 'pipeline' ? 'Pipeline' : 'Notebook',
+              [TAGS_KEY]: n.isFile
+                ? 'File'
+                : n.kind === 'table'
+                  ? 'Table'
+                  : n.kind === 'pipeline'
+                    ? 'Pipeline'
+                    : 'Notebook',
             }
           : {}),
         ...(options.provenance

@@ -663,7 +663,12 @@ export interface SandboxRunResult {
 
 /** Display name for a ref, falling back to the ref when it is unknown to us. */
 export function refLabel(ref: string, tables?: Record<string, SandboxTableRef>): string {
-  return tables?.[ref]?.table || ref.split('/').pop() || ref
+  // The fallback parses rather than splitting on the last separator: a leaf may
+  // legitimately contain an escaped `/` — every raw file path does — and
+  // `split('/').pop()` returns it still escaped, so the card read
+  // `Files%2Forders%2F*.csv`. Only refs with no side table were affected, which
+  // is a pipeline Copy activity and any model saved before one was sent.
+  return tables?.[ref]?.table || refParts(ref).table || ref
 }
 
 /**

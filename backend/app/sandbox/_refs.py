@@ -39,31 +39,21 @@ _ABFSS = re.compile(
 #: The lakehouse folder that holds raw files rather than Delta tables.
 FILES = "Files"
 
-#: A path segment that identifies one *shard* rather than the dataset: a glob, a
-#: Hive-style partition directory, or a leaf with a file extension. The raw layer
-#: is addressed as `Files/orders/year=2024/*.parquet`, but the thing lineage is
-#: about is `Files/orders` — otherwise every partition and every daily file is a
-#: separate source node and the graph is unreadable.
-_GLOB = re.compile(r"[*?\[\]{}]")
-_PARTITION = re.compile(r"^[^=/]+=[^=/]*$")
-_HAS_EXT = re.compile(r"\.[A-Za-z0-9]{1,8}$")
-
-
 def _dataset_path(segments: list[str]) -> str:
-    """Path segments → the dataset they belong to, shard decoration removed.
+    """Path segments → the raw source's identity, verbatim.
 
-    Trailing globs, partition directories and extensioned filenames are dropped
-    from the END only. An interior `=` or `.` is left alone: a folder genuinely
-    named `orders.v2` in the middle of a path is part of the identity.
+    The filename is KEPT — extension, glob and all. `customers.xlsx` and
+    `orders/*.csv` are what the engineer wrote, and the name of the file is the
+    whole point of tracking the raw layer. An earlier version stripped the leaf
+    back to its containing folder, which threw away exactly that.
+
+    Nothing is normalised away, deliberately. Collapsing Hive partition
+    directories was the one plausible exception, but it cannot be done without
+    also deciding what to do with the glob that usually follows them, and a rule
+    that sometimes keeps the filename and sometimes does not is worse than one
+    that always does. What appears on the card is what appears in the notebook.
     """
-    parts = list(segments)
-    while len(parts) > 1:
-        last = parts[-1]
-        if _GLOB.search(last) or _PARTITION.match(last) or _HAS_EXT.search(last):
-            parts.pop()
-            continue
-        break
-    return SEP.join(parts)
+    return SEP.join(segments)
 
 
 def is_file_ref(ref: str) -> bool:

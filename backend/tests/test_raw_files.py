@@ -41,7 +41,7 @@ def _run(*cells: str) -> dict:
 
 def test_a_glob_in_a_landing_path_is_still_a_read():
     out = _run(f"df = spark.read.format('csv').load('{ABFSS}/Files/orders/*.csv')")
-    assert out["reads"] == ["Landing/lh_landing/Files%2Forders"]
+    assert out["reads"] == ["Landing/lh_landing/Files%2Forders%2F*.csv"]
 
 
 def test_spark_read_parquet_is_a_read():
@@ -61,7 +61,7 @@ def test_the_landing_to_bronze_edge_exists():
         f"df = spark.read.csv('{ABFSS}/Files/orders/*.csv')\n"
         "df.write.saveAsTable('bronze_orders')"
     )
-    assert out["reads"] == ["Landing/lh_landing/Files%2Forders"]
+    assert out["reads"] == ["Landing/lh_landing/Files%2Forders%2F*.csv"]
     assert out["writes"] == ["Analytics/Bronze/bronze_orders"]
 
 
@@ -85,23 +85,39 @@ def test_a_file_dataset_is_distinct_from_a_table_of_the_same_name():
 def test_a_file_ref_is_marked_as_a_file():
     refs = table_refs([qualify(f"{ABFSS}/Files/orders/*.csv"), qualify(f"{ABFSS}/Tables/orders")])
     kinds = {r["table"]: r["kind"] for r in refs.values()}
-    assert kinds == {"Files/orders": "file", "orders": "table"}
+    assert kinds == {"Files/orders/*.csv": "file", "orders": "table"}
 
 
-# --- shards collapse to the dataset -----------------------------------------
+# --- the filename is the point ----------------------------------------------
+#
+# An earlier rule stripped the leaf back to its containing folder, so
+# `customers.xlsx` became `Files/landing`. The name of the file is the whole
+# reason for tracking the raw layer, so nothing is normalised away.
 
 
-def test_partitions_and_shards_collapse_to_one_source():
-    """Otherwise every partition is its own node and the graph is unreadable."""
-    same = {
-        qualify(f"{ABFSS}/Files/orders/year=2024/month=01/part-0.parquet"),
-        qualify(f"{ABFSS}/Files/orders/year=2025/*.parquet"),
-        qualify(f"{ABFSS}/Files/orders"),
-    }
-    assert same == {"Landing/lh_landing/Files%2Forders"}
+def test_a_named_file_keeps_its_name_and_extension():
+    ref = qualify(f"{ABFSS}/Files/landing/customers.xlsx")
+    assert parse_ref(ref)[2] == "Files/landing/customers.xlsx"
 
 
-def test_an_interior_dot_is_part_of_the_identity():
-    """Only TRAILING shard decoration is dropped; `orders.v2/` is a real folder."""
-    ref = qualify(f"{ABFSS}/Files/orders.v2/data/*.parquet")
-    assert parse_ref(ref)[2] == "Files/orders.v2/data"
+def test_a_glob_keeps_its_glob():
+    """`orders/*.csv` says csv files under orders — both halves are information."""
+    ref = qualify(f"{ABFSS}/Files/orders/*.csv")
+    assert parse_ref(ref)[2] == "Files/orders/*.csv"
+
+
+def test_a_dated_file_stays_its_own_source():
+    ref = qualify(f"{ABFSS}/Files/raw/2024-01-01_orders.csv")
+    assert parse_ref(ref)[2] == "Files/raw/2024-01-01_orders.csv"
+
+
+def test_a_partitioned_path_is_kept_verbatim_too():
+    """Collapsing partitions cannot be done without also deciding about the glob
+    that follows them, and a rule that only sometimes keeps the filename is
+    worse than one that always does."""
+    ref = qualify(f"{ABFSS}/Files/orders/year=2024/month=01/*.parquet")
+    assert parse_ref(ref)[2] == "Files/orders/year=2024/month=01/*.parquet"
+
+
+def test_a_folder_and_a_file_under_it_are_different_sources():
+    assert qualify(f"{ABFSS}/Files/orders") != qualify(f"{ABFSS}/Files/orders/jan.csv")

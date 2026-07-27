@@ -482,3 +482,45 @@ describe('port options', () => {
     expect(Object.values(model.properties).every((b) => Object.keys(b).length > 0)).toBe(true)
   })
 })
+
+describe('the raw file layer becomes an object', () => {
+  const FILE = 'Landing/lh_landing/Files%2Forders%2F*.csv'
+
+  /** A landing file read into a bronze table — the start of every medallion. */
+  function fileRun() {
+    const s = step('a', 'ingest')
+    return {
+      s,
+      results: new Map([
+        [
+          s.key,
+          ran('ingest', result({ reads: [FILE], writes: ['bronze_orders'] })),
+        ],
+      ]),
+    }
+  }
+
+  it('exports the file as an object named for the file itself', () => {
+    const { s, results } = fileRun()
+    const { model } = sequenceToModel([s], results, 'M')
+    const names = model.layers.flatMap((l) => l.objects.map((o) => o.name))
+    expect(names).toContain('Files/orders/*.csv')
+  })
+
+  it('tags it File, not Table', () => {
+    const { s, results } = fileRun()
+    const { model } = sequenceToModel([s], results, 'M')
+    const file = model.layers.flatMap((l) => l.objects).find((o) => o.name.startsWith('Files/'))!
+    expect(tagsOf(model, file.id)).toEqual(['File'])
+  })
+
+  it('still carries the edge into the table it lands in', () => {
+    // The whole point: bronze is no longer written from nowhere.
+    const { s, results } = fileRun()
+    const { model } = sequenceToModel([s], results, 'M')
+    const objects = model.layers.flatMap((l) => l.objects)
+    const file = objects.find((o) => o.name.startsWith('Files/'))!
+    const ids = new Set([file.id, ...file.children.map((c) => c.id)])
+    expect(model.transitions.some((t) => ids.has(t.source) || ids.has(t.target))).toBe(true)
+  })
+})

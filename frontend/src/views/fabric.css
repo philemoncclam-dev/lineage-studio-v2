@@ -3,24 +3,29 @@
    panel (right). The tree is a flat stack of disclosure rows indented by depth
    rather than nested <ul>s, so every row shares one hover/height rhythm. */
 
-/* Centered page: the explorer card sits in the middle of the content region,
-   no page title/lead — the two panels are self-describing. */
+/* Full-bleed page: the explorer takes the whole content region rather than a
+   centred card. A capped card left a wide screen with margins on both sides
+   while the middle column — the one holding code, schemas and the sandbox
+   canvas — was the thing being starved. The gutter is now padding, not
+   emptiness beside a max-width. */
 .fx-page {
   flex: 1;
   min-height: 0;
   display: flex;
   justify-content: center;
-  padding: var(--spacing-6, 24px);
+  padding: var(--spacing-4, 16px);
   overflow: hidden;
 }
-/* Three columns on Explore: tree | detail | sandbox sequence. The card grew
-   from 1120px because the third column is what the empty side space was
-   always going to become; the detail column stays the elastic one. */
+/* Three columns on Explore: tree | detail | sandbox sequence. Only the middle
+   one is elastic: the tree and the sequence are lists of short rows and get no
+   more readable past ~320px, so every extra pixel of screen goes to the detail.
+   They do widen a little on very large screens (see below) to stop the ratio
+   looking accidental. */
 .fx-explorer {
+  --fx-head-h: 40px;
   display: grid;
   grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(260px, 320px);
   width: 100%;
-  max-width: 1560px;
   min-height: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card, 10px);
@@ -47,18 +52,26 @@
 }
 /* Details | Sandbox — the detail column's two faces. The sandbox has no route
    of its own; its canvas and report render in this column. */
+/* Height is shared with .fx-panel-head, not left to the content: these are the
+   top row of three side-by-side columns and any difference reads as one panel
+   sitting slightly lower than its neighbours. The tabs stretch to fill it so
+   the active underline lands exactly on the same 1px line the other two heads
+   close with. */
 .fx-detail-tabs {
   flex: 0 0 auto;
   display: flex;
+  align-items: stretch;
+  box-sizing: border-box;
+  height: var(--fx-head-h, 40px);
   gap: 2px;
-  padding: 6px 8px 0;
+  padding: 0 8px;
   border-bottom: 1px solid var(--color-border);
 }
 .fx-detail-tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 12px;
+  padding: 0 12px;
   border: none;
   border-bottom: 2px solid transparent;
   background: none;
@@ -102,6 +115,13 @@
   min-height: 0;
   border-left: 1px solid var(--color-border);
   background: var(--color-surface-2, transparent);
+}
+/* Very wide screens: the side columns take a little more, so the layout looks
+   proportioned rather than like two thin strips beside an ocean. */
+@media (min-width: 1800px) {
+  .fx-explorer:not(.fx-explorer--single) {
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr) minmax(320px, 400px);
+  }
 }
 /* Narrow screens: the sequence drops below rather than squeezing the detail. */
 @media (max-width: 1180px) {
@@ -157,7 +177,11 @@
 
 .fx-panel-head {
   flex: 0 0 auto;
-  padding: 12px 14px;
+  box-sizing: border-box;
+  height: var(--fx-head-h, 40px);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text-tertiary);
   font-size: var(--text-micro, 11px);

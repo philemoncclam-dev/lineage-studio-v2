@@ -18,6 +18,8 @@
 //  - transaction time. Versions are a linear snapshot history, not bi-temporal.
 //  - reference models and reference relationships. Lineage models only.
 
+import type { SavedView } from './views'
+
 export type EntityId = string
 
 export type EntityKind = 'layer' | 'object' | 'attribute'
@@ -64,6 +66,14 @@ export interface LineageModel {
   transitions: Transition[]
   /** Keyed by entity id. Entries may outlive their entity — see the note above. */
   properties: Record<EntityId, PropertyBag>
+  /**
+   * Named Views filters, saved with the model so they travel with it.
+   *
+   * Optional for the same reason the browser metadata below is: models written
+   * before saved views existed do not carry the field. `model/views.ts` reads
+   * it through `listViews`, which supplies the empty default.
+   */
+  views?: SavedView[]
 
   // --- Model Browser metadata ---
   //

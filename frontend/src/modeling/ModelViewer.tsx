@@ -50,6 +50,7 @@ import {
   type ViewFilter,
 } from '../model/filter'
 import { TAGS_KEY, parseTags, setTags } from '../model/tags'
+import { activeView, deleteView, saveView, toggleView } from '../model/views'
 import { hitTestTransitions } from './edgeGeometry'
 import {
   CARD_HEADER_HEIGHT,
@@ -913,6 +914,12 @@ export default function ModelViewer({
           filter={filter}
           onChange={setFilter}
           matchCount={matched.size}
+          // Saved views are model edits, so they go through onChange/undo like
+          // any other — a view saved by mistake is undone with ⌃Z, and it
+          // persists exactly when the rest of the model does.
+          onSaveView={(name) => onChange(saveView(model, name, filter))}
+          onDeleteView={(id) => onChange(deleteView(model, id))}
+          onApplyView={(id) => setFilter(toggleView(model, filter, id))}
           onClose={() => setViewsOpen(false)}
         />
       )}
@@ -1068,6 +1075,15 @@ export default function ModelViewer({
           <>
             {layout.layers.length} layers · {layout.cards.length} objects ·{' '}
             {model.transitions.length} transitions
+            {/* The one always-visible sign that what is on screen is not the
+                whole model — the rail badge is easy to miss from the canvas. */}
+            {filtering && (
+              <>
+                {' '}
+                · <strong>{activeView(model, filter)?.name ?? 'Filtered'}</strong>:{' '}
+                {matched.size} shown
+              </>
+            )}
             {selection.size > 0 && <> · {selection.size} selected</>}
             {selectedEdges.size > 0 && <> · {selectedEdges.size} line(s) selected</>}
             {(canUndo || canRedo) && <> · ⌃Z undo</>}

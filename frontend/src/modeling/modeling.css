@@ -1863,6 +1863,52 @@
   gap: 5px;
   align-items: center;
 }
+/* Saved views: a list, not chips. A view has a sentence-length name and the
+   list is read top-to-bottom looking for one, which wrapping chips make hard. */
+.vw-saved {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.vw-saved-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px;
+  align-items: center;
+}
+.vw-saved-pick {
+  text-align: left;
+  padding: 6px 9px;
+  border: 1px solid rgb(28 35 51 / 0.14);
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vw-saved-pick:hover {
+  border-color: #1f6feb;
+}
+.vw-saved-pick[data-on] {
+  background: #1f6feb;
+  border-color: #1f6feb;
+  color: #fff;
+  font-weight: 600;
+}
+.vw-name {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+.vw-name .tg-field {
+  flex: 1;
+  min-width: 0;
+}
+
 /* The Dim/Hide pair reads as one control, so its halves sit flush. */
 .vw-mode {
   display: flex;

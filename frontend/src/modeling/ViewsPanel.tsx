@@ -5,7 +5,7 @@
 // cover the very thing being filtered, forcing an open/close cycle per edit.
 //
 // The rule itself lives in model/filter.ts; this file is only its controls.
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { allTags, tagCounts } from '../model/tags'
 import {
   activeFilterCount,
@@ -15,6 +15,7 @@ import {
   type EntityKind,
   type ViewFilter,
 } from '../model/filter'
+import { activeView, listViews } from '../model/views'
 import type { LineageModel } from '../model/types'
 
 const KINDS: { key: EntityKind; label: string }[] = [
@@ -30,6 +31,9 @@ export function ViewsPanel({
   filter,
   onChange,
   matchCount,
+  onSaveView,
+  onDeleteView,
+  onApplyView,
   onClose,
 }: {
   model: LineageModel
@@ -37,8 +41,17 @@ export function ViewsPanel({
   onChange: (next: ViewFilter) => void
   /** How many entities currently match — the panel's only feedback. */
   matchCount: number
+  /** Save the current filter under a name (replacing a view of that name). */
+  onSaveView: (name: string) => void
+  onDeleteView: (id: string) => void
+  /** Apply a saved view, or clear it if it is already the one on screen. */
+  onApplyView: (id: string) => void
   onClose: () => void
 }) {
+  const views = listViews(model)
+  const current = activeView(model, filter)
+  const [naming, setNaming] = useState(false)
+  const [draftName, setDraftName] = useState('')
   const counts = useMemo(() => tagCounts(model), [model])
   const tags = useMemo(
     () => allTags(model).sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0)),
@@ -61,6 +74,38 @@ export function ViewsPanel({
       </header>
 
       <div className="vw-body">
+        {/* Saved views first: on reopening the panel the question is almost
+            always "put me back in one of my views", not "let me rebuild one". */}
+        {views.length > 0 && (
+          <div className="vw-field">
+            <span className="tg-label">Saved views</span>
+            <div className="vw-saved">
+              {views.map((v) => (
+                <div className="vw-saved-row" key={v.id}>
+                  <button
+                    className="vw-saved-pick"
+                    data-on={current?.id === v.id || undefined}
+                    aria-pressed={current?.id === v.id}
+                    title={
+                      current?.id === v.id ? `Leave ${v.name}` : `Show ${v.name}`
+                    }
+                    onClick={() => onApplyView(v.id)}
+                  >
+                    {v.name}
+                  </button>
+                  <button
+                    className="tg-act"
+                    aria-label={`Delete view ${v.name}`}
+                    onClick={() => onDeleteView(v.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <label className="vw-field">
           <span className="tg-label">Name contains</span>
           <input
@@ -215,16 +260,65 @@ export function ViewsPanel({
       </div>
 
       <footer className="vw-foot">
-        <span className="vw-result">
-          {active === 0 ? 'No filter' : `${matchCount} matching`}
-        </span>
-        <button
-          className="imp-btn"
-          disabled={active === 0 && !filter.hide}
-          onClick={() => onChange(EMPTY_FILTER)}
-        >
-          Clear
-        </button>
+        {naming ? (
+          // The name is asked for INLINE rather than in a prompt() or a modal:
+          // the filter you are naming is the thing a dialog would cover, and
+          // the name you pick depends on reading it.
+          <form
+            className="vw-name"
+            onSubmit={(e) => {
+              e.preventDefault()
+              onSaveView(draftName)
+              setNaming(false)
+            }}
+          >
+            <input
+              className="tg-field"
+              autoFocus
+              value={draftName}
+              placeholder="View name"
+              aria-label="View name"
+              onChange={(e) => setDraftName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.stopPropagation()
+                  setNaming(false)
+                }
+              }}
+            />
+            <button className="imp-btn imp-btn--primary" type="submit" disabled={!draftName.trim()}>
+              Save
+            </button>
+          </form>
+        ) : (
+          <>
+            <span className="vw-result">
+              {active === 0 ? 'No filter' : `${matchCount} matching`}
+            </span>
+            <button
+              className="imp-btn"
+              disabled={active === 0}
+              title={
+                current
+                  ? `Update ${current.name}, or save under a new name`
+                  : 'Save this filter as a named view'
+              }
+              onClick={() => {
+                setDraftName(current?.name ?? '')
+                setNaming(true)
+              }}
+            >
+              {current ? 'Update view' : 'Save view'}
+            </button>
+            <button
+              className="imp-btn"
+              disabled={active === 0 && !filter.hide}
+              onClick={() => onChange(EMPTY_FILTER)}
+            >
+              Clear
+            </button>
+          </>
+        )}
       </footer>
     </aside>
   )

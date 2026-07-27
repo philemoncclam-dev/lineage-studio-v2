@@ -38,23 +38,17 @@
 
 .mb-top-spacer { flex: 1; }
 
-.mb-segmented {
-  display: inline-flex;
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-control);
-  overflow: hidden;
-}
+/* Replaces the hidden icon rail as this screen's route out to other modes. */
+.mb-modes { display: flex; align-items: center; gap: var(--spacing-1); }
 
-.mb-seg {
-  border: 0;
-  background: transparent;
+.mb-mode-link {
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-input);
   color: var(--color-text-secondary);
-  font: inherit;
-  padding: var(--spacing-1) var(--spacing-3);
-  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
 }
-.mb-seg.on { background: var(--color-accent-dim); color: var(--color-accent-hi); font-weight: 600; }
-.mb-seg:disabled { color: var(--color-text-tertiary); cursor: not-allowed; }
+.mb-mode-link:hover { background: var(--color-surface-2); color: var(--color-text-primary); }
 
 /* The native file input is a click target for the Actions menu only. */
 .mb-file { display: none; }
@@ -448,11 +442,77 @@
 
 .mb-menu-sep { height: 1px; margin: var(--spacing-1) 0; background: var(--color-border); }
 
-/* ===== Dialogs ===== */
+/* ===== Dialogs =====
+   Fully self-contained, including the backdrop that positions them. These used
+   to borrow the viewer's `.imp-*` classes out of modeling.css, which this page
+   never imports — so they resolved to nothing and the dialogs landed unstyled
+   in the bottom-left corner. */
 
-.mb-dialog { min-width: 420px; max-width: 520px; }
+.mb-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--spacing-4);
+  background: rgb(16 20 30 / 0.45);
+}
+
+.mb-dialog {
+  width: min(520px, 100%);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-3);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-overlay);
+  overflow: hidden;
+}
+
+.mb-dialog-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding: var(--spacing-3) var(--spacing-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.mb-dialog-title {
+  margin: 0;
+  font-size: var(--text-heading);
+  line-height: var(--text-heading--line-height);
+  font-weight: 600;
+}
+
+.mb-dialog-x {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-input);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mb-dialog-x:hover { background: var(--color-surface-2); color: var(--color-text-primary); }
+
+.mb-dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--spacing-4);
+}
+
+.mb-lede { margin: 0 0 var(--spacing-2); font-size: var(--text-micro); color: var(--color-text-secondary); }
 
 .mb-dialog-foot {
+  flex: none;
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-2);

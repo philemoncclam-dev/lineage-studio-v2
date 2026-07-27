@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import {
   EMPTY_FILTER,
   filterModels,
@@ -297,20 +297,20 @@ export default function ModelBrowser() {
       <header className="mb-top">
         <h1 className="mb-title">Models</h1>
 
-        {/* Reference models are a real concept in the model spec but are
-            explicitly out of scope (model/types.ts) — the control is shown
-            disabled rather than hidden, so the distinction stays visible
-            instead of being quietly dropped. */}
-        <div className="mb-segmented" role="group" aria-label="Model kind">
-          <button className="mb-seg on" aria-pressed="true">
-            Lineage
-          </button>
-          <button className="mb-seg" disabled title="Reference models aren’t supported yet.">
-            Reference
-          </button>
-        </div>
-
         <div className="mb-top-spacer" />
+
+        {/* This screen hides the shell's icon rail (see railConfig.isChromeless),
+            so it has to carry its own way out to the other modes — otherwise the
+            landing screen is a dead end. */}
+        <nav className="mb-modes" aria-label="Other modes">
+          <Link className="mb-mode-link" to="/fabric/overview">
+            Fabric Toolkit
+          </Link>
+          <Link className="mb-mode-link" to="/products">
+            Data Products
+          </Link>
+        </nav>
+
 
         <button className="mb-btn primary" onClick={() => setModal({ kind: 'create' })}>
           Create
@@ -640,7 +640,7 @@ export default function ModelBrowser() {
           confirmLabel={`Delete ${modal.models.length === 1 ? 'model' : `${modal.models.length} models`}`}
           body={
             <>
-              <p className="imp-lede">
+              <p className="mb-lede">
                 {modal.models.length === 1
                   ? modal.models[0].name
                   : modal.models.map((m) => m.name).join(', ')}

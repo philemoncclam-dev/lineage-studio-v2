@@ -2,9 +2,11 @@
 // file stays about the list, and because all four share one shell and one set
 // of dismissal rules.
 //
-// They reuse the Import/Export dialogs' `.ms-backdrop` / `.imp-*` classes
-// rather than inventing a parallel modal skin — the browser's modals should be
-// indistinguishable from the viewer's.
+// The styling is self-contained in modelBrowser.css. An earlier version reused
+// the viewer's `.imp-*` classes, which live in modeling.css — a file only
+// ModelViewer imports. On this page they resolved to nothing and every dialog
+// rendered as unstyled markup in the bottom-left corner. Do not reach across
+// into another view's stylesheet for a skin.
 
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { normalizeTags } from '../model/store'
@@ -34,21 +36,21 @@ function DialogShell({ title, label, onClose, children, footer }: ShellProps) {
   }, [onClose])
 
   return (
-    <div className="ms-backdrop" onMouseDown={onClose}>
+    <div className="mb-backdrop" onMouseDown={onClose}>
       <div
-        className="imp-panel mb-dialog"
+        className="mb-dialog"
         onMouseDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={label}
       >
-        <header className="imp-head">
-          <h2 className="imp-title">{title}</h2>
-          <button className="imp-x" onClick={onClose} aria-label="Close">
+        <header className="mb-dialog-head">
+          <h2 className="mb-dialog-title">{title}</h2>
+          <button className="mb-dialog-x" onClick={onClose} aria-label="Close">
             ×
           </button>
         </header>
-        <div className="imp-body">{children}</div>
+        <div className="mb-dialog-body">{children}</div>
         <footer className="mb-dialog-foot">{footer}</footer>
       </div>
     </div>
@@ -209,7 +211,7 @@ export function TagDialog({
         </>
       }
     >
-      <p className="imp-lede">{subject}</p>
+      <p className="mb-lede">{subject}</p>
       {bulk && (
         <p className="mb-warn">
           These tags <strong>replace</strong> the existing tags on every selected model.

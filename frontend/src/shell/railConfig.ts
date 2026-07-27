@@ -87,6 +87,19 @@ export function isFullBleedPath(pathname: string): boolean {
   return pathname.startsWith('/model/')
 }
 
+/**
+ * Whether the route renders without the shell's rail column entirely.
+ *
+ * The Model Browser does: it is the landing screen, it carries its own header
+ * with its own actions, and none of the model rail's entries (Auto-Mapper,
+ * Import, Export) can do anything before a model is open — the rail would be a
+ * column of permanently disabled buttons. A chromeless route is responsible for
+ * offering its own navigation to the other modes.
+ */
+export function isChromeless(pathname: string): boolean {
+  return pathname === '/models'
+}
+
 /** Where the app-logo mode menu (D-02) navigates each mode to. */
 export const MODE_LANDING: Record<ModeKey, string> = {
   // The browser, not a model — the mode menu has no way to know which model.

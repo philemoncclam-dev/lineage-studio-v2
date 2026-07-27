@@ -603,7 +603,20 @@
   background: #fdf0ef;
 }
 
-/* ===== Import / Export dialogs ===== */
+/* ===== Import / Export dialogs =====
+   `.ms-backdrop` is what centres them, and it was never actually declared —
+   ImportDialog and ExportDialog both rendered as an unpositioned block in the
+   page flow. Found while fixing the same class of bug in the Model Browser. */
+.ms-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--spacing-4);
+  background: rgb(16 20 30 / 0.45);
+}
+
 .imp-panel {
   width: min(680px, calc(100vw - 32px));
   max-height: 82vh;

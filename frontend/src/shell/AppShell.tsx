@@ -8,7 +8,7 @@ import { useRouterState } from '@tanstack/react-router'
 import ModeMenu from './ModeMenu'
 import Rail from './Rail'
 import RailBottomCluster from './RailBottomCluster'
-import { isFullBleedPath, modeFromPathname, railConfig } from './railConfig'
+import { isChromeless, isFullBleedPath, modeFromPathname, railConfig } from './railConfig'
 import { requestSearch } from './searchBridge'
 import '../styles/components.css'
 import '../styles/shell.css'
@@ -62,11 +62,13 @@ export default function AppShell({ children, overlays = true }: { children: Reac
           separate because Modeling contains both the Model Viewer, which needs
           it, and the Model Browser, which is an ordinary page. */}
       <div className="shell" data-mode={mode} data-fullbleed={isFullBleedPath(pathname) || undefined}>
-        <div className="shell-rail-col">
-          <ModeMenu />
-          <Rail items={railConfig[mode]} />
-          <RailBottomCluster onOpenSearch={openPalette} />
-        </div>
+        {!isChromeless(pathname) && (
+          <div className="shell-rail-col">
+            <ModeMenu />
+            <Rail items={railConfig[mode]} />
+            <RailBottomCluster onOpenSearch={openPalette} />
+          </div>
+        )}
         <div className="shell-canvas">
           {children}
         </div>

@@ -1036,8 +1036,20 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 4px 0 6px;
+  /* Left padding is INLINE (it carries the nesting indent) — see the row
+     render in SequenceCanvas. Only the right side belongs here. */
+  padding: 0 4px 0 0;
   white-space: nowrap;
+}
+/* An activity inside a pipeline: the tables under it are its I/O, so it reads
+   as a heading rather than as another row of the same kind. */
+.sbx-flow-row[data-tone='run'] {
+  font-weight: 600;
+  color: #1c2333;
+  background: #f3f6fa;
+}
+.sbx-flow-row[data-tone='run'] .sbx-flow-row-name {
+  color: #1c2333;
 }
 .sbx-flow-row:hover {
   background: #eef2f7;

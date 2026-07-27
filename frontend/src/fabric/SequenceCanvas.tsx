@@ -19,8 +19,11 @@ import {
 import { localStore } from '../model/store'
 
 type FlowKind = 'notebook' | 'pipeline' | 'table'
-/** `read`/`write` are a notebook's I/O rows; `col` is a table's own column. */
-type RowTone = 'read' | 'write' | 'col'
+/**
+ * `read`/`write` are a step's I/O rows; `col` is a table's own column; `run` is
+ * one activity INSIDE a pipeline, heading the tables that activity touched.
+ */
+type RowTone = 'read' | 'write' | 'col' | 'run'
 /** The tone an edge can carry — a column row is never an edge endpoint. */
 type EdgeTone = 'read' | 'write'
 interface FlowRow {
@@ -29,6 +32,17 @@ interface FlowRow {
   tone: RowTone
   /** Column type, shown to the right of the name on a table card. */
   meta?: string
+  /**
+   * Indent level. Only a pipeline card nests: its rows are its notebooks, and
+   * under each one the tables THAT notebook read and wrote.
+   *
+   * A flat merge of every table the pipeline touched — which is what this was —
+   * answers "what did this pipeline touch" but loses "which step touched it",
+   * and that is the question a pipeline card exists to answer. A table read by
+   * two of its notebooks now appears under both, because it genuinely is two
+   * accesses.
+   */
+  depth?: number
 }
 interface FlowNode {
   id: string
@@ -414,11 +428,22 @@ function FlowCanvas({
                       {r.label}
                     </button>
                   ) : (
-                    <div key={r.key} className="sbx-flow-row" data-tone={r.tone} style={{ height: ROW_H }}>
+                    <div
+                      key={r.key}
+                      className="sbx-flow-row"
+                      data-tone={r.tone}
+                      // Inline, like the Modeling canvas's row indent — the row
+                      // height is fixed by the layout, so the nesting must not
+                      // come from anything that could change it.
+                      style={{ height: ROW_H, paddingLeft: 8 + (r.depth ?? 0) * 10 }}
+                    >
                       <span className="sbx-flow-row-name" title={r.meta ? `${r.label} · ${r.meta}` : r.label}>
                         {r.label}
                       </span>
-                      {r.tone === 'col' ? (
+                      {r.tone === 'col' || r.tone === 'run' ? (
+                        // A run row heads its own tables; the R/W belongs to
+                        // those, and a tag here would read as the activity
+                        // itself being an access.
                         r.meta && <span className="sbx-flow-type">{r.meta}</span>
                       ) : (
                         <span className="sbx-flow-tag" data-tone={r.tone}>
@@ -502,26 +527,83 @@ export function buildFlow(steps: Step[], results: Map<string, StepResult>): { no
           : step.kind === 'pipeline' && res?.activities
             ? `${res.activities.length} act · ${res.runs.length} run`
             : undefined
-    const reads = stepReads(res)
-    const writes = stepWrites(res)
-    // The notebook's own workspace — anything else is a cross-workspace access,
+    // The step's own workspace — anything else is a cross-workspace access,
     // which is the fact this view exists to make visible.
     const own = res?.runs.find((x) => x.result?.workspace)?.result?.workspace ?? ''
-    const io = (ref: string, tone: 'read' | 'write'): FlowRow => {
+    const io = (
+      ref: string,
+      tone: 'read' | 'write',
+      opts: { depth?: number; scope?: string } = {},
+    ): FlowRow => {
       const ws = refWorkspace(ref, refs)
       const foreign = !!own && !!ws && ws !== own
       return {
-        key: `${tone[0]}:${ref}`,
+        // Scoped by activity inside a pipeline: the same table under two
+        // notebooks is two rows, and two rows need two keys or the edges into
+        // them both land on the first.
+        key: `${tone[0]}:${opts.scope ? `${opts.scope}:` : ''}${ref}`,
         label: refLabel(ref, refs),
         tone,
         meta: foreign ? ws : undefined,
+        depth: opts.depth,
       }
     }
-    const rows: FlowRow[] = [...reads.map((r) => io(r, 'read')), ...writes.map((r) => io(r, 'write'))]
+
+    const rows: FlowRow[] = []
+    /** `[table ref, row key]` per access, so the edges follow the rows. */
+    const readAnchors: [string, string][] = []
+    const writeAnchors: [string, string][] = []
+
+    const runs = res?.runs ?? []
+    if (step.kind === 'pipeline' && runs.length) {
+      // A pipeline's rows are its ACTIVITIES, each heading the tables it
+      // touched — the shape of the pipeline, not a merged inventory.
+      runs.forEach((run, ri) => {
+        const scope = `a${ri}`
+        const runReads = run.result?.reads ?? []
+        const runWrites = run.result?.writes ?? []
+        rows.push({
+          key: `a:${scope}`,
+          label: run.name,
+          tone: 'run',
+          meta:
+            run.status === 'error'
+              ? 'error'
+              : runReads.length + runWrites.length === 0
+                ? 'no tables'
+                : undefined,
+        })
+        for (const r of runReads) {
+          const row = io(r, 'read', { depth: 1, scope })
+          rows.push(row)
+          readAnchors.push([r, row.key])
+        }
+        for (const w of runWrites) {
+          const row = io(w, 'write', { depth: 1, scope })
+          rows.push(row)
+          writeAnchors.push([w, row.key])
+        }
+      })
+    } else {
+      // A notebook step IS the notebook, so there is nothing to nest under.
+      for (const r of stepReads(res)) {
+        const row = io(r, 'read')
+        rows.push(row)
+        readAnchors.push([r, row.key])
+      }
+      for (const w of stepWrites(res)) {
+        const row = io(w, 'write')
+        rows.push(row)
+        writeAnchors.push([w, row.key])
+      }
+    }
+
     nodes.push({ id: stepId, kind: step.kind, label: step.name, sub, badge: String(i + 1), rows })
 
-    for (const r of reads) edges.push({ from: ensureTable(r), to: stepId, toRow: `r:${r}`, tone: 'read' })
-    for (const wr of writes) edges.push({ from: stepId, fromRow: `w:${wr}`, to: ensureTable(wr), tone: 'write' })
+    for (const [ref, key] of readAnchors)
+      edges.push({ from: ensureTable(ref), to: stepId, toRow: key, tone: 'read' })
+    for (const [ref, key] of writeAnchors)
+      edges.push({ from: stepId, fromRow: key, to: ensureTable(ref), tone: 'write' })
   })
 
   // Faint order edges between consecutive steps so the sequence reads clearly

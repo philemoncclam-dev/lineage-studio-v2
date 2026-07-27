@@ -31,22 +31,29 @@ function renderBrowser() {
     component: () => <div>viewer</div>,
   })
 
+  // The header's mode toggle links here; the route has to exist or the Link
+  // cannot resolve an href.
+  const fabricRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/fabric/overview',
+    component: () => <div>fabric</div>,
+  })
+
   const router = createRouter({
-    routeTree: rootRoute.addChildren([modelsRoute, viewerRoute]),
+    routeTree: rootRoute.addChildren([modelsRoute, viewerRoute, fabricRoute]),
     history: createMemoryHistory({ initialEntries: ['/models'] }),
   })
 
-  render(<RouterProvider router={router as never} />)
-  return router
+  const { container } = render(<RouterProvider router={router as never} />)
+  return Object.assign(router, { container })
 }
 
 async function seeded(names: string[]) {
   for (const name of names) await localStore.create(name)
 }
 
-// Model names appear in BOTH the list and the sidebar's "Recently viewed", and
-// "Create" is both a top-bar button and a dialog submit. So every query below
-// is scoped to the region it means, rather than searching the whole screen.
+// "Create" is both a top-bar button and a dialog submit, so queries are scoped
+// to the region they mean rather than searching the whole screen.
 const list = () => within(screen.getByRole('list', { name: 'Models' }))
 const dialog = () => within(screen.getByRole('dialog'))
 
@@ -107,19 +114,11 @@ describe('ModelBrowser', () => {
     ).toBeInTheDocument()
   })
 
-  it('filters to starred only from the sidebar', async () => {
-    const user = userEvent.setup()
-    await seeded(['Starred one', 'Plain one'])
-    const [first] = await localStore.list()
-    await localStore.patchMeta(first.id, { starred: true })
-
+  it('offers a way through to the Fabric Toolkit', async () => {
+    await seeded(['Mortgage lineage'])
     renderBrowser()
-    await findInList('Starred one')
-
-    await user.click(screen.getByRole('button', { name: /Starred only/ }))
-
-    await notInList('Plain one')
-    expect(list().getByRole('button', { name: 'Starred one' })).toBeInTheDocument()
+    const link = await screen.findByRole('link', { name: 'Fabric Toolkit' })
+    expect(link).toHaveAttribute('href', '/fabric/overview')
   })
 
   it('creates a model and navigates straight into it', async () => {
@@ -177,7 +176,7 @@ describe('ModelBrowser', () => {
     await findInList('Mortgage lineage (copy)')
   })
 
-  it('tags a model, then filters by that tag from the sidebar', async () => {
+  it('tags a model, then filters by clicking that tag on the row', async () => {
     const user = userEvent.setup()
     await seeded(['Mortgage lineage', 'Payments'])
     renderBrowser()
@@ -187,8 +186,8 @@ describe('ModelBrowser', () => {
     await user.type(await screen.findByLabelText('Add a tag'), 'Logical{Enter}')
     await user.click(dialog().getByRole('button', { name: 'Save' }))
 
-    // The sidebar picks the new tag up, with its count.
-    await user.click(await screen.findByRole('button', { name: /Logical\s*1/ }))
+    // With the sidebar gone, the tag chip on the row is the filter affordance.
+    await user.click(await findInList('Logical'))
 
     await notInList('Payments')
     expect(list().getByRole('button', { name: 'Mortgage lineage' })).toBeInTheDocument()
@@ -229,15 +228,14 @@ describe('ModelBrowser', () => {
     expect(screen.getByText(row.id)).toBeInTheDocument()
   })
 
-  it('hides and restores the sidebar', async () => {
+  it('switches the list and grid layouts', async () => {
     const user = userEvent.setup()
     await seeded(['Mortgage lineage'])
-    renderBrowser()
+    const { container } = renderBrowser()
+    await findInList('Mortgage lineage')
 
-    await user.click(await screen.findByRole('button', { name: 'Hide the sidebar' }))
-    expect(screen.queryByText('Most used tags')).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Show the sidebar' }))
-    expect(await screen.findByText('Most used tags')).toBeInTheDocument()
+    expect(container.querySelector('.mb')).toHaveAttribute('data-layout', 'list')
+    await user.click(screen.getByRole('button', { name: 'Switch to grid layout' }))
+    expect(container.querySelector('.mb')).toHaveAttribute('data-layout', 'grid')
   })
 })

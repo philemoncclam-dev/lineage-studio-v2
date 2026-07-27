@@ -64,7 +64,10 @@ export default function AppShell({ children, overlays = true }: { children: Reac
       <div className="shell" data-mode={mode} data-fullbleed={isFullBleedPath(pathname) || undefined}>
         {!isChromeless(pathname) && (
           <div className="shell-rail-col">
-            <ModeMenu />
+            {/* Modeling drops the mode menu: the Model Viewer carries its own
+                Lineage Studio mark in its top bar, which goes to the Model
+                Browser, and the browser is where modes are switched now. */}
+            {mode !== 'model' && <ModeMenu />}
             <Rail items={railConfig[mode]} />
             <RailBottomCluster onOpenSearch={openPalette} />
           </div>

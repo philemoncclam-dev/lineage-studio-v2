@@ -184,6 +184,10 @@
      Lives here because shell.css positions the floating rail beneath it and
      modeling.css sizes the band itself — both need the same number. */
   --mv-band-height: 31px;
+  /* Model Viewer top bar (logo + model name), which sits ABOVE the band. Same
+     reason it lives here: modeling.css sizes it and insets the scroller by it,
+     shell.css offsets the floating rail by it. */
+  --mv-topbar-height: 36px;
 
   color-scheme: light dark;
   font-synthesis: none;

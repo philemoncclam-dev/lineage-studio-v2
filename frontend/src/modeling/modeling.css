@@ -14,11 +14,59 @@
   user-select: none;
 }
 
+/* ===== Top bar =====
+   Sits ABOVE the layer band and outside the scroller, so it never moves. Holds
+   the Lineage Studio mark (back to the Model Browser) and the open model's
+   name — which the viewer otherwise never showed anywhere. */
+.mv-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--mv-topbar-height);
+  z-index: 4; /* above the sticky band (z-index 3) */
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: 0 var(--spacing-3);
+  background: var(--color-surface-1);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.mv-home {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--radius-input);
+  color: var(--color-text-primary);
+}
+.mv-home:hover { background: var(--color-surface-2); }
+.mv-home svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mv-topbar-name {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The scrolling viewport. Real scrollbars, no free panning: the model has a
-   fixed extent and you can never fling it off-screen. */
+   fixed extent and you can never fling it off-screen.
+   Inset from the top by the bar above it, not `inset: 0`. */
 .mv-scroll {
   position: absolute;
-  inset: 0;
+  inset: var(--mv-topbar-height) 0 0 0;
   overflow: auto;
   background: #fbfbfc;
   background-image: radial-gradient(circle at 1px 1px, rgb(28 35 51 / 0.07) 1px, transparent 0);

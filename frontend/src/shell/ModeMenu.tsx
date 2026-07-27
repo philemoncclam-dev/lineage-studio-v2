@@ -7,23 +7,12 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { Link, useRouterState } from '@tanstack/react-router'
+import { LogoMark } from './Logo'
 import { MODE_LABEL, MODE_LANDING, modeFromPathname, type ModeKey } from './railConfig'
 
 // Knowledge Graph and Data Products are disabled as mode-switch destinations —
 // their routes still exist but are no longer reachable from the mode menu.
 const MODE_ORDER: ModeKey[] = ['model', 'fabric']
-
-function LogoMark() {
-  // Abstract mark, not a wordmark — the trigger is icon-only per the rail's
-  // own icon-only convention (D-04's slim-chrome intent extends to the logo
-  // cell above it).
-  return (
-    <svg viewBox="0 0 24 24">
-      <path d="M4 17V9l8-5 8 5v8l-8 5-8-5Z" />
-      <path d="M4 9l8 5 8-5M12 14v8" />
-    </svg>
-  )
-}
 
 function CheckIcon() {
   return (

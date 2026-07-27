@@ -17,6 +17,7 @@
 // while scrolling down a tall model while staying aligned with their columns.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { ancestorsOf, buildIndex } from '../model/index'
 import { registerSearchHandler } from '../shell/searchBridge'
 import { registerRailAction } from '../shell/railActions'
@@ -51,6 +52,7 @@ import {
   type LayoutCard,
 } from '../model/layout'
 import type { EntityId, LineageModel } from '../model/types'
+import { LogoMark } from '../shell/Logo'
 import TransitionLayer from './TransitionLayer'
 import './modeling.css'
 
@@ -767,6 +769,13 @@ export default function ModelViewer({
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
       )}
+
+      <div className="mv-topbar">
+        <Link to="/models" className="mv-home" aria-label="Lineage Studio — back to all models">
+          <LogoMark />
+        </Link>
+        <span className="mv-topbar-name">{model.name}</span>
+      </div>
 
       <div className="mv-scroll" ref={scrollRef} onScroll={onScroll}>
         <div

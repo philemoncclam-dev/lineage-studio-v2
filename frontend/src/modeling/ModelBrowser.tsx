@@ -18,9 +18,6 @@ import {
   EMPTY_FILTER,
   filterModels,
   isFilterActive,
-  modelsToCsv,
-  parseSolBundle,
-  prepareImport,
   SORT_LABELS,
   sortModels,
   tagCounts,
@@ -31,6 +28,7 @@ import {
 import { download } from '../model/exportTabular'
 import { localStore } from '../model/store'
 import { BarsSpinner } from '../shell/BarsSpinner'
+import { LogoMark } from '../shell/Logo'
 import { registerSearchHandler } from '../shell/searchBridge'
 import { ConfirmDialog, DetailsDialog, TagDialog } from './ModelDialogs'
 import type { LineageModel, ModelSummary } from '../model/types'
@@ -52,11 +50,6 @@ const Icon = {
   star: (filled: boolean) => (
     <svg viewBox="0 0 24 24" className={filled ? 'mb-star on' : 'mb-star'}>
       <path d="m12 3.5 2.6 5.6 6 .8-4.4 4.2 1.1 6.1L12 17.3 6.7 20.2l1.1-6.1L3.4 9.9l6-.8z" />
-    </svg>
-  ),
-  chevron: (
-    <svg viewBox="0 0 24 24">
-      <path d="m9 6 6 6-6 6" />
     </svg>
   ),
   dots: (
@@ -123,13 +116,11 @@ export default function ModelBrowser() {
   const [filter, setFilter] = useState<BrowserFilter>(EMPTY_FILTER)
   const [sort, setSort] = useState<SortKey>('viewed')
   const [layout, setLayout] = useState<Layout>('list')
-  const [sidebar, setSidebar] = useState(true)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [expanded, setExpanded] = useState<string | null>(null)
   const [modal, setModal] = useState<Modal>(null)
 
   const searchRef = useRef<HTMLInputElement | null>(null)
-  const fileRef = useRef<HTMLInputElement | null>(null)
 
   const reload = useCallback(async () => {
     try {
@@ -221,10 +212,11 @@ export default function ModelBrowser() {
     }))
 
   // ===== File actions =====
-
-  const exportModelList = () => {
-    download('models.csv', modelsToCsv(visible), 'text/csv;charset=utf-8')
-  }
+  //
+  // The Actions menu that held "export the model list to CSV" and "import a SOL
+  // file" is gone for now. Their engines (modelsToCsv, parseSolBundle,
+  // prepareImport in model/browser.ts) are kept and still tested — the menu is
+  // what was removed, not the capability.
 
   const exportSol = async (rows: ModelSummary[]) => {
     const loaded: LineageModel[] = []
@@ -236,11 +228,6 @@ export default function ModelBrowser() {
     download(name, JSON.stringify(toSolBundle(loaded), null, 2), 'application/json')
   }
 
-  const importSol = async (file: File) => {
-    const imported = prepareImport(parseSolBundle(await file.text()))
-    for (const model of imported) await localStore.save(model)
-    return imported.length
-  }
 
   // ===== Modal submission =====
 
@@ -295,50 +282,28 @@ export default function ModelBrowser() {
   return (
     <div className="mb" data-layout={layout}>
       <header className="mb-top">
+        <span className="mb-brand" aria-hidden>
+          <LogoMark />
+        </span>
         <h1 className="mb-title">Models</h1>
 
         <div className="mb-top-spacer" />
 
         {/* This screen hides the shell's icon rail (see railConfig.isChromeless),
-            so it has to carry its own way out to the other modes — otherwise the
-            landing screen is a dead end. */}
-        <nav className="mb-modes" aria-label="Other modes">
-          <Link className="mb-mode-link" to="/fabric/overview">
+            so it carries the mode switch itself — otherwise the landing screen
+            is a dead end. Models is the current side and is inert. */}
+        <div className="mb-segmented" role="group" aria-label="Mode">
+          <span className="mb-seg on" aria-current="page">
+            Models
+          </span>
+          <Link className="mb-seg" to="/fabric/overview">
             Fabric Toolkit
           </Link>
-          <Link className="mb-mode-link" to="/products">
-            Data Products
-          </Link>
-        </nav>
-
+        </div>
 
         <button className="mb-btn primary" onClick={() => setModal({ kind: 'create' })}>
           Create
         </button>
-
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
-            <button className="mb-btn">Actions ▾</button>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content className="mb-menu" align="end" sideOffset={6}>
-              <DropdownMenu.Item className="mb-menu-item" onSelect={exportModelList}>
-                Export the model list to CSV
-              </DropdownMenu.Item>
-              <DropdownMenu.Item
-                className="mb-menu-item"
-                onSelect={() => void exportSol(visible)}
-                disabled={visible.length === 0}
-              >
-                Export all listed models to SOL
-              </DropdownMenu.Item>
-              <DropdownMenu.Separator className="mb-menu-sep" />
-              <DropdownMenu.Item className="mb-menu-item" onSelect={() => fileRef.current?.click()}>
-                Import a SOL file…
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
 
         <button
           className="mb-icon-btn"
@@ -350,101 +315,7 @@ export default function ModelBrowser() {
         </button>
       </header>
 
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".json,.sol,application/json"
-        className="mb-file"
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          // Reset first: picking the same file twice in a row fires no change
-          // event otherwise, which reads as "import silently did nothing".
-          e.target.value = ''
-          if (!file) return
-          void run('Imported.', async () => {
-            const count = await importSol(file)
-            setNotice(`Imported ${count} model${count === 1 ? '' : 's'}.`)
-          })
-        }}
-      />
-
       <div className="mb-body">
-        {sidebar ? (
-          <aside className="mb-side">
-            <div className="mb-side-head">
-              <span>Filters</span>
-              <button
-                className="mb-icon-btn small"
-                onClick={() => setSidebar(false)}
-                aria-label="Hide the sidebar"
-              >
-                {Icon.chevron}
-              </button>
-            </div>
-
-            <section className="mb-side-block">
-              <h2 className="mb-side-title">Most used tags</h2>
-              {tags.length === 0 ? (
-                <p className="mb-empty-note">No tags yet. Add them from a model’s ⋯ menu.</p>
-              ) : (
-                <ul className="mb-tag-list">
-                  {tags.map(({ tag, count }) => {
-                    const on = filter.tags.some((t) => t.toLowerCase() === tag.toLowerCase())
-                    return (
-                      <li key={tag}>
-                        <button
-                          className={`mb-tag-row${on ? ' on' : ''}`}
-                          onClick={() => toggleTag(tag)}
-                          aria-pressed={on}
-                        >
-                          <span className="mb-tag-name">{tag}</span>
-                          <span className="mb-tag-count">{count}</span>
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </section>
-
-            <section className="mb-side-block">
-              <h2 className="mb-side-title">Starred</h2>
-              <button
-                className={`mb-tag-row${filter.starredOnly ? ' on' : ''}`}
-                onClick={() => setFilter((p) => ({ ...p, starredOnly: !p.starredOnly }))}
-                aria-pressed={filter.starredOnly}
-              >
-                <span className="mb-tag-name">Starred only</span>
-                <span className="mb-tag-count">{all.filter((m) => m.starred).length}</span>
-              </button>
-            </section>
-
-            <section className="mb-side-block">
-              <h2 className="mb-side-title">Recently viewed</h2>
-              <ul className="mb-recent" aria-label="Recently viewed models">
-                {sortModels(all, 'viewed')
-                  .slice(0, 5)
-                  .map((m) => (
-                    <li key={m.id}>
-                      <button className="mb-recent-row" onClick={() => void open(m.id)}>
-                        {m.name}
-                      </button>
-                    </li>
-                  ))}
-                {all.length === 0 && <li className="mb-empty-note">Nothing yet.</li>}
-              </ul>
-            </section>
-          </aside>
-        ) : (
-          <button
-            className="mb-side-show"
-            onClick={() => setSidebar(true)}
-            aria-label="Show the sidebar"
-          >
-            {Icon.chevron}
-          </button>
-        )}
-
         <main className="mb-main">
           <div className="mb-toolbar">
             <label className="mb-search">

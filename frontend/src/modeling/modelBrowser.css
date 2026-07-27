@@ -38,20 +38,42 @@
 
 .mb-top-spacer { flex: 1; }
 
-/* Replaces the hidden icon rail as this screen's route out to other modes. */
-.mb-modes { display: flex; align-items: center; gap: var(--spacing-1); }
+/* The Lineage Studio mark, sitting left of the "Models" heading. */
+.mb-brand {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  color: var(--color-text-primary);
+}
+.mb-brand svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
-.mb-mode-link {
-  padding: var(--spacing-1) var(--spacing-2);
-  border-radius: var(--radius-input);
+/* Replaces the hidden icon rail as this screen's mode switch. The current side
+   is a <span>, not a link — there is nowhere for it to go. */
+.mb-segmented {
+  display: inline-flex;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.mb-seg {
+  padding: var(--spacing-1) var(--spacing-3);
   color: var(--color-text-secondary);
   text-decoration: none;
   white-space: nowrap;
 }
-.mb-mode-link:hover { background: var(--color-surface-2); color: var(--color-text-primary); }
-
-/* The native file input is a click target for the Actions menu only. */
-.mb-file { display: none; }
+.mb-seg.on { background: var(--color-accent-dim); color: var(--color-accent-hi); font-weight: 600; }
+a.mb-seg:hover { background: var(--color-surface-2); color: var(--color-text-primary); }
 
 /* ===== Buttons ===== */
 
@@ -118,82 +140,6 @@
   display: flex;
   min-height: 0;
 }
-
-/* ===== Sidebar ===== */
-
-.mb-side {
-  width: 220px;
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-4);
-  padding: var(--spacing-4);
-  overflow-y: auto;
-  border-right: var(--border-width) solid var(--color-border);
-  background: var(--color-surface-1);
-}
-
-.mb-side-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--text-micro);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-tertiary);
-}
-/* The hide chevron points the way the panel will go. */
-.mb-side-head .mb-icon-btn svg { transform: rotate(180deg); }
-
-/* The reveal handle when the sidebar is hidden — a full-height hairline strip. */
-.mb-side-show {
-  flex: none;
-  width: 18px;
-  border: 0;
-  border-right: var(--border-width) solid var(--color-border);
-  background: var(--color-surface-1);
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-}
-.mb-side-show:hover { background: var(--color-surface-2); color: var(--color-text-primary); }
-.mb-side-show svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-
-.mb-side-block { display: flex; flex-direction: column; gap: var(--spacing-1); }
-
-.mb-side-title {
-  margin: 0 0 var(--spacing-1);
-  font-size: var(--text-micro);
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.mb-tag-list, .mb-recent { list-style: none; margin: 0; padding: 0; }
-
-.mb-tag-row, .mb-recent-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-2);
-  width: 100%;
-  border: 0;
-  border-radius: var(--radius-input);
-  background: transparent;
-  color: var(--color-text-primary);
-  font: inherit;
-  text-align: left;
-  padding: var(--spacing-1) var(--spacing-2);
-  cursor: pointer;
-}
-.mb-tag-row:hover, .mb-recent-row:hover { background: var(--color-surface-2); }
-.mb-tag-row.on { background: var(--color-accent-dim); color: var(--color-accent-hi); font-weight: 600; }
-
-.mb-tag-name, .mb-recent-row { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mb-tag-count { flex: none; font-size: var(--text-micro); color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; }
-.mb-tag-row.on .mb-tag-count { color: inherit; }
-
-.mb-empty-note { margin: 0; font-size: var(--text-micro); color: var(--color-text-tertiary); }
 
 /* ===== Main column ===== */
 

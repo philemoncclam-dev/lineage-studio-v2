@@ -21,7 +21,8 @@
    top of its sidebar. See railConfig.isFullBleedPath. */
 .shell[data-fullbleed] .shell-rail-col {
   position: absolute;
-  top: calc(var(--mv-band-height) + var(--spacing-2));
+  /* Clears the viewer's top bar AND the layer band beneath it. */
+  top: calc(var(--mv-topbar-height) + var(--mv-band-height) + var(--spacing-2));
   left: var(--spacing-2);
   height: auto;
   padding: var(--spacing-2) 0;

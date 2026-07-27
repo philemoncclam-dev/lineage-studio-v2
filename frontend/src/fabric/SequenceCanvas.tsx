@@ -76,12 +76,16 @@ function anchorY(n: FlowNode, rowKey?: string) {
  * a long sequence walks off to the right and the same table can appear far from
  * the step that wrote it.
  *
- * `sequence` — two columns: every table on the left, every notebook and
- * pipeline on the right in the order the user stacked them (step 1 on top).
+ * `sequence` — two columns: every notebook and pipeline on the LEFT in the
+ * order the user stacked them (step 1 on top), every table on the right.
  * Process-centric: what the run DID, in order, against one canonical column of
- * tables. Reads run left-to-right into a step; writes loop back out of the
- * step's left edge into the table's right edge, so a table written and then
- * re-read is one card rather than two.
+ * tables, so a table written and then re-read is one card rather than two.
+ *
+ * Every edge runs step -> table, leaving the step's own read or write row and
+ * landing on the table. A read is data moving the other way in reality, but
+ * orienting it that way would loop it back under the whole tables column; the
+ * direction of travel is carried by the row it leaves and the edge's colour.
+ * The flow view keeps true edge direction.
  */
 export type CanvasView = 'flow' | 'sequence'
 
@@ -114,17 +118,33 @@ function band(key: number, label: string, col: number, lastCol: number) {
  * so "first step on top" needs no sorting, only the split.
  */
 function layoutSequence(nodes: FlowNode[]): Layout {
-  const tables = nodes.filter((n) => n.kind === 'table')
   const steps = nodes.filter((n) => n.kind !== 'table')
+  const tables = nodes.filter((n) => n.kind === 'table')
   const pos: Layout['pos'] = new Map()
-  const tableH = stackColumn(tables, 0, pos)
-  const stepH = stackColumn(steps, NW + GX, pos)
+  const stepH = stackColumn(steps, 0, pos)
+  const tableH = stackColumn(tables, NW + GX, pos)
   return {
     pos,
-    bands: [band(0, 'Tables', 0, 1), band(1, 'Notebooks & pipelines', 1, 1)],
+    bands: [band(0, 'Notebooks & pipelines', 0, 1), band(1, 'Tables', 1, 1)],
     width: 2 * (NW + GX) - GX,
-    height: Math.max(1, tableH, stepH),
+    height: Math.max(1, stepH, tableH),
   }
+}
+
+/**
+ * The sequence view's edges: order edges dropped (the column order already
+ * says it), and reads flipped to leave the step's read row so every line runs
+ * left-to-right into the tables column. See the CanvasView note.
+ */
+function sequenceEdges(edges: FlowEdge[], stepIds: ReadonlySet<string>): FlowEdge[] {
+  const out: FlowEdge[] = []
+  for (const e of edges) {
+    if (e.dashed) continue
+    if (e.tone === 'read' && stepIds.has(e.to))
+      out.push({ from: e.to, fromRow: e.toRow, to: e.from, tone: 'read' })
+    else out.push(e)
+  }
+  return out
 }
 
 function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
@@ -218,13 +238,11 @@ function FlowCanvas({
     [rawNodes, expanded],
   )
 
-  // The dashed step-to-step order edges say nothing in the sequence view: the
-  // steps are already stacked in order in one column, and a same-column edge
-  // would draw as a meaningless loop.
-  const shown = useMemo(
-    () => (view === 'sequence' ? edges.filter((e) => !e.dashed) : edges),
-    [edges, view],
-  )
+  const shown = useMemo(() => {
+    if (view !== 'sequence') return edges
+    const stepIds = new Set(rawNodes.filter((n) => n.kind !== 'table').map((n) => n.id))
+    return sequenceEdges(edges, stepIds)
+  }, [edges, rawNodes, view])
   const { pos, bands, width, height } = useMemo(
     () => (view === 'sequence' ? layoutSequence(nodes) : layoutFlow(nodes, edges)),
     [nodes, edges, view],

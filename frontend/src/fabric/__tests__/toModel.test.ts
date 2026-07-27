@@ -82,20 +82,27 @@ describe('sequenceToModel', () => {
     const raw = model.layers[0].objects[0]
     expect(raw.children.map((a) => a.name)).toEqual(['id', 'amount'])
     expect(model.properties[raw.children[1].id]).toEqual({ 'Data type': 'double' })
-    // A notebook is an object with no attributes — its I/O is the transitions.
-    expect(model.layers[1].objects[0].children).toEqual([])
+    // A notebook's attributes are its I/O rows, mirroring its canvas card.
+    const nb = model.layers[1].objects[0]
+    expect(nb.children.map((a) => a.name)).toEqual(['raw_orders', 'silver_orders'])
+    expect(model.properties[nb.children[0].id]).toEqual({ Access: 'Read' })
+    expect(model.properties[nb.children[1].id]).toEqual({ Access: 'Write' })
   })
 
-  it('draws read and write transitions between objects', () => {
+  it('keeps true direction in the flow view, anchored on the step I/O row', () => {
     const { steps, results } = simpleRun()
     const { model } = sequenceToModel(steps, results, 'M')
     const [raw] = model.layers[0].objects
     const [nb] = model.layers[1].objects
     const [silver] = model.layers[2].objects
+    const readRow = nb.children.find((a) => a.name === 'raw_orders')!
+    const writeRow = nb.children.find((a) => a.name === 'silver_orders')!
     const pair = (s: string, t: string) =>
       model.transitions.find((x) => x.source === s && x.target === t)
-    expect(model.properties[pair(raw.id, nb.id)!.id].Access).toBe('Read')
-    expect(model.properties[pair(nb.id, silver.id)!.id].Access).toBe('Write')
+    // Read: the source table into the notebook's read row.
+    expect(model.properties[pair(raw.id, readRow.id)!.id].Access).toBe('Read')
+    // Write: out of the notebook's write row into the target table.
+    expect(model.properties[pair(writeRow.id, silver.id)!.id].Access).toBe('Write')
   })
 
   it('draws a column transition and records its transform', () => {
@@ -194,25 +201,25 @@ describe('sequenceToModel — sequence view', () => {
     return { steps: [a, b], results }
   }
 
-  it('collapses to exactly two layers, tables then steps', () => {
+  it('collapses to exactly two layers, steps then tables', () => {
     const { steps, results } = chained()
     const { model } = sequenceToModel(steps, results, 'M', 'sequence')
-    expect(model.layers.map((l) => l.name)).toEqual(['Tables', 'Notebooks & pipelines'])
+    expect(model.layers.map((l) => l.name)).toEqual(['Notebooks & pipelines', 'Tables'])
   })
 
   it('keeps the steps in the order the user stacked them', () => {
     const { steps, results } = chained()
     const { model } = sequenceToModel(steps, results, 'M', 'sequence')
-    expect(model.layers[1].objects.map((o) => o.name)).toEqual(['build_silver', 'build_gold'])
+    expect(model.layers[0].objects.map((o) => o.name)).toEqual(['build_silver', 'build_gold'])
   })
 
   it('holds every table once, in first-touch order', () => {
     const { steps, results } = chained()
     const { model } = sequenceToModel(steps, results, 'M', 'sequence')
-    expect(model.layers[0].objects.map((o) => o.name)).toEqual(['raw', 'silver', 'gold'])
+    expect(model.layers[1].objects.map((o) => o.name)).toEqual(['raw', 'silver', 'gold'])
   })
 
-  it('draws the same edges as the flow view — only the layering differs', () => {
+  it('draws the same number of edges as the flow view — only layering and orientation differ', () => {
     const { steps, results } = chained()
     const seq = sequenceToModel(steps, results, 'M', 'sequence')
     const flow = sequenceToModel(steps, results, 'M', 'flow')
@@ -220,16 +227,29 @@ describe('sequenceToModel — sequence view', () => {
     expect(seq.stats.objects).toBe(flow.stats.objects)
   })
 
-  it('points a write back into the tables layer', () => {
+  it('runs EVERY transition from a step out to a table — nothing points back', () => {
     const { steps, results } = chained()
     const { model } = sequenceToModel(steps, results, 'M', 'sequence')
-    const tables = new Set(model.layers[0].objects.map((o) => o.id))
-    const silverStep = model.layers[1].objects[0]
-    const write = model.transitions.find(
-      (t) => t.source === silverStep.id && tables.has(t.target),
-    )
-    expect(write).toBeDefined()
-    expect(model.properties[write!.id].Access).toBe('Write')
+    const tableIds = new Set(model.layers[1].objects.map((o) => o.id))
+    // Sources are the steps' own I/O attributes; targets are always tables.
+    const stepAttrIds = new Set(model.layers[0].objects.flatMap((o) => o.children.map((a) => a.id)))
+    for (const t of model.transitions) {
+      expect(stepAttrIds.has(t.source)).toBe(true)
+      expect(tableIds.has(t.target)).toBe(true)
+    }
+  })
+
+  it('keeps read/write legible on the transition and the row it leaves', () => {
+    const { steps, results } = chained()
+    const { model } = sequenceToModel(steps, results, 'M', 'sequence')
+    const silverStep = model.layers[0].objects[0]
+    const readRow = silverStep.children.find((a) => a.name === 'raw')!
+    const writeRow = silverStep.children.find((a) => a.name === 'silver')!
+    expect(model.properties[readRow.id].Access).toBe('Read')
+    expect(model.properties[writeRow.id].Access).toBe('Write')
+    const from = (id: string) => model.transitions.find((t) => t.source === id)!
+    expect(model.properties[from(readRow.id).id].Access).toBe('Read')
+    expect(model.properties[from(writeRow.id).id].Access).toBe('Write')
   })
 })
 

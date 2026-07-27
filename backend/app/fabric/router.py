@@ -24,8 +24,9 @@ from pydantic import BaseModel
 from ..config import get_settings
 from .client import FabricClient, FabricError
 from .notebooks import NotebookDecodeError, fetch_notebook_source
+from ..sandbox._refs import workspace_of
 from .pipelines import PipelineActivity, parse_pipeline_activities
-from .schema import fetch_table_schema, table_dirs_for_lakehouse
+from .schema import fetch_table_schema, guid_name_map, table_dirs_for_lakehouse
 
 router = APIRouter(prefix="/fabric", tags=["fabric"])
 
@@ -311,11 +312,36 @@ def get_pipeline_definition(workspace_id: str, item_id: str) -> list[PipelineAct
 
     Reads the item's `getDefinition` and parses `pipeline-content.json`'s
     activities + dependsOn edges — the same shape Fabric's authoring canvas
-    draws. A refused read is a 502; an empty list means no activities.
+    draws — plus the table and column lineage a Copy activity declares inline.
+    A refused read is a 502; an empty list means no activities.
     """
     client = _client()
     try:
         definition = client.get_item_definition(workspace_id, item_id)
     except FabricError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return parse_pipeline_activities(definition)
+
+    # Parsed twice on purpose. A Copy stores its workspace and lakehouse as
+    # GUIDs, and which GUIDs those are is only knowable from the definition —
+    # so the first pass discovers them and the second renders them as names.
+    # Cheap (the definition is already in memory) and it keeps the parser pure.
+    first = parse_pipeline_activities(definition, default_workspace=workspace_id)
+    guids = {
+        workspace_of(ref)
+        for activity in first
+        for ref in (*activity.reads, *activity.writes)
+        if workspace_of(ref)
+    }
+    # No tables named, so nothing to put names on — and no reason to spend a
+    # workspace listing on a pipeline that is all notebooks.
+    if not guids:
+        return first
+    try:
+        name_map = guid_name_map(client, sorted(guids | {workspace_id}))
+    except Exception:  # noqa: BLE001
+        # An unresolved GUID is still a correct identity, just an unfriendly
+        # label. Nothing about naming is worth failing a definition read for.
+        name_map = {}
+    return parse_pipeline_activities(
+        definition, name_map=name_map, default_workspace=name_map.get(workspace_id.lower(), "")
+    )

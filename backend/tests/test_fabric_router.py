@@ -276,14 +276,25 @@ def test_pipeline_definition_parses_activities_and_edges(client, monkeypatch):
 
     _use(monkeypatch, PipelineClient())
     body = client.get("/fabric/workspaces/ws1/pipelines/p1/definition").json()
+    # A Copy with no inline datasets names nothing, so its lineage fields are
+    # empty — see test_pipeline_lineage.py for one that declares them.
+    empty = {"reads": [], "writes": [], "column_lineage": []}
     assert body == [
-        {"name": "Copy orders", "type": "Copy", "depends_on": [], "notebook_id": None, "workspace_id": None},
+        {
+            "name": "Copy orders",
+            "type": "Copy",
+            "depends_on": [],
+            "notebook_id": None,
+            "workspace_id": None,
+            **empty,
+        },
         {
             "name": "Run notebook",
             "type": "TridentNotebook",
             "depends_on": ["Copy orders"],
             "notebook_id": "nb-guid",
             "workspace_id": "ws-guid",
+            **empty,
         },
     ]
 

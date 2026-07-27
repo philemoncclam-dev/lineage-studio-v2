@@ -7,6 +7,7 @@
 import { useSyncExternalStore } from 'react'
 import {
   runSandbox,
+  refParts,
   type SandboxTableRef,
   fetchFabricPipelineDefinition,
   type SandboxRunResult,
@@ -55,6 +56,64 @@ export const stepWrites = (r?: StepResult): string[] =>
 /** Every table ref this step touched, merged across its runs. */
 export const stepTables = (r?: StepResult): Record<string, SandboxTableRef> =>
   Object.assign({}, ...(r?.runs ?? []).map((x) => x.result?.tables ?? {}))
+
+/**
+ * A Copy activity as a run entry, without anything having run.
+ *
+ * A pipeline is not Spark, so the sandbox has nothing to execute for one — and
+ * a pipeline whose whole job was a Copy used to contribute NO lineage at all,
+ * because the loop below only ran activities that referenced a notebook. But a
+ * Copy declares its source and sink datasets inline, and its translator is a
+ * literal column map, so the backend reads that lineage straight out of the
+ * definition.
+ *
+ * It is shaped as a `SandboxRunResult` so every downstream consumer — the
+ * canvas, the report, `sequenceToModel` — treats it identically to a real run
+ * without knowing it exists. `engine: 'definition'` is what keeps that from
+ * being a lie: the report says where the lineage came from.
+ *
+ * Returns null for an activity that named no tables, so a Lookup or a Wait
+ * doesn't become an empty node.
+ */
+export function copyActivityRun(a: FabricPipelineActivity): RunEntry | null {
+  const reads = a.reads ?? []
+  const writes = a.writes ?? []
+  if (!reads.length && !writes.length) return null
+
+  const tables: Record<string, SandboxTableRef> = {}
+  for (const ref of [...reads, ...writes]) tables[ref] = refParts(ref)
+
+  // Columns come from the mapping rather than from a schema fetch: a Copy names
+  // exactly the columns it moves, and those are the ones worth drawing.
+  const table_schemas: Record<string, { name: string; type?: string | null }[]> = {}
+  const add = (ref: string | null | undefined, column: string) => {
+    if (!ref) return
+    const columns = (table_schemas[ref] ??= [])
+    if (!columns.some((c) => c.name === column)) columns.push({ name: column, type: null })
+  }
+  for (const flow of a.column_lineage ?? []) {
+    add(flow.from_table, flow.from_column)
+    add(flow.to_table, flow.to_column)
+  }
+
+  return {
+    name: a.name,
+    status: 'ok',
+    result: {
+      ok: true,
+      engine: 'definition',
+      cells: [],
+      reads,
+      writes,
+      table_schemas,
+      column_lineage: a.column_lineage ?? [],
+      tables,
+      log: [`[definition] ${a.type} activity — lineage read from the pipeline definition.`],
+      saw_credentials: false,
+      error: null,
+    },
+  }
+}
 
 let seq = 0
 const newKey = () => `step-${++seq}`
@@ -150,10 +209,20 @@ export async function runAll() {
         next.set(step.key, { status: 'running', runs: [], activities })
         set({ results: new Map(next) })
 
-        // Execute the pipeline's notebook activities in dependency order.
+        // Walk the pipeline's activities in dependency order. Notebooks are
+        // executed in the sandbox; a Copy contributes the lineage it declared,
+        // which needs no execution at all.
         const runs: RunEntry[] = []
         for (const a of orderActivities(activities)) {
-          if (!a.notebook_id) continue
+          if (!a.notebook_id) {
+            const declared = copyActivityRun(a)
+            if (declared) {
+              runs.push(declared)
+              next.set(step.key, { status: 'running', runs: runs.slice(), activities })
+              set({ results: new Map(next) })
+            }
+            continue
+          }
           try {
             const result = await runSandbox({
               name: a.name,

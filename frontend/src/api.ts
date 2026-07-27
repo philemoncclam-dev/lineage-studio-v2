@@ -503,6 +503,16 @@ export interface FabricPipelineActivity {
   depends_on: string[]
   notebook_id?: string | null
   workspace_id?: string | null
+  /**
+   * Lineage a Copy activity declares inline, parsed from the definition.
+   *
+   * A pipeline is not Spark, so there is nothing to execute for one — but a
+   * Copy states its source and sink datasets and, when it has a translator, a
+   * literal column-to-column mapping. Empty for every other activity type.
+   */
+  reads: string[]
+  writes: string[]
+  column_lineage: SandboxColumnFlow[]
 }
 
 export async function fetchFabricPipelineDefinition(
@@ -585,7 +595,16 @@ export interface SandboxTableRef {
 
 export interface SandboxRunResult {
   ok: boolean
-  engine: 'stub' | 'spark'
+  /**
+   * How the lineage was derived.
+   *
+   * `spark` — Catalyst's analyzed plans. `stub` — static analysis plus sqlglot
+   * over the SQL cells. `definition` — nothing ran at all: a pipeline Copy
+   * activity declares its datasets and column mapping inline, so the lineage is
+   * read out of the JSON. Synthesized on the client (see `copyActivityRun`),
+   * which is why this value never comes back from `/sandbox/run`.
+   */
+  engine: 'stub' | 'spark' | 'definition'
   cells: SandboxCellResult[]
   reads: string[]
   writes: string[]
@@ -624,6 +643,29 @@ export function refLabel(ref: string, tables?: Record<string, SandboxTableRef>):
 export function refWorkspace(ref: string, tables?: Record<string, SandboxTableRef>): string {
   const t = tables?.[ref]
   return t?.resolved ? t.workspace : ''
+}
+
+/**
+ * A canonical ref → its parts, mirroring `_refs.parse_ref`/`table_refs`.
+ *
+ * The backend normally sends this side table with a run, so this exists for
+ * lineage that never went through the sandbox — a pipeline Copy activity, whose
+ * refs are built from its definition on the client. Kept in step with the
+ * Python: segments escape only `%` and `/`, and `resolved` means the WORKSPACE
+ * is known, not that all three parts are.
+ */
+export function refParts(ref: string): SandboxTableRef {
+  const unescape = (s: string) => s.replace(/%2F/gi, '/').replace(/%25/g, '%')
+  const parts = ref.split('/')
+  const [workspace, lakehouse, ...rest] =
+    parts.length >= 3 ? parts : ['', ...(parts.length === 2 ? parts : ['', ...parts])]
+  const table = unescape(rest.join('/'))
+  return {
+    workspace: unescape(workspace),
+    lakehouse: unescape(lakehouse),
+    table,
+    resolved: Boolean(workspace && table),
+  }
 }
 
 export async function runSandbox(body: {

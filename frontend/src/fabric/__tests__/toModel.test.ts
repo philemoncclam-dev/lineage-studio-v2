@@ -184,6 +184,114 @@ describe('sequenceToModel', () => {
     )
   })
 
+  // --- pipelines port their notebooks ---------------------------------------
+  // A pipeline used to export as a flat merge of every table it touched, which
+  // left the notebooks — the things actually doing the work — out of the model
+  // entirely.
+
+  /** A pipeline whose two notebooks chain raw → silver → gold. */
+  function pipelineRun() {
+    const p: Step = { key: 'p', kind: 'pipeline', ws: 'ws1', itemId: 'it-p', name: 'PL_nightly' }
+    const results = new Map<string, StepResult>([
+      [
+        p.key,
+        {
+          status: 'ok',
+          runs: [
+            { name: 'build_silver', status: 'ok', result: result({ reads: ['raw'], writes: ['silver'] }) },
+            { name: 'build_gold', status: 'ok', result: result({ reads: ['silver'], writes: ['gold'] }) },
+          ],
+          activities: [
+            {
+              name: 'build_silver',
+              type: 'TridentNotebook',
+              depends_on: [],
+              notebook_id: 'nb1',
+              reads: [],
+              writes: [],
+              column_lineage: [],
+            },
+            {
+              name: 'build_gold',
+              type: 'TridentNotebook',
+              depends_on: ['build_silver'],
+              notebook_id: 'nb2',
+              reads: [],
+              writes: [],
+              column_lineage: [],
+            },
+          ],
+        },
+      ],
+    ])
+    return { p, results }
+  }
+
+  const pipelineObject = (model: ReturnType<typeof sequenceToModel>['model']) =>
+    model.layers.flatMap((l) => l.objects).find((o) => o.name === 'PL_nightly')!
+
+  it('ports a pipeline as its notebooks, with their tables nested inside', () => {
+    const { p, results } = pipelineRun()
+    const { model } = sequenceToModel([p], results, 'M')
+    const pl = pipelineObject(model)
+    expect(pl.children.map((c) => c.name)).toEqual(['build_silver', 'build_gold'])
+    expect(pl.children[0].children.map((c) => c.name)).toEqual(['raw', 'silver'])
+    expect(pl.children[1].children.map((c) => c.name)).toEqual(['silver', 'gold'])
+  })
+
+  it('tags each notebook group, so it badges as one on the card', () => {
+    const { p, results } = pipelineRun()
+    const { model } = sequenceToModel([p], results, 'M')
+    const pl = pipelineObject(model)
+    expect(tagsOf(model, pl.children[0].id)).toEqual(['Notebook'])
+  })
+
+  it('names a non-notebook activity by its own type instead', () => {
+    const { p, results } = pipelineRun()
+    const res = results.get(p.key)!
+    res.activities![0] = { ...res.activities![0], type: 'Copy', notebook_id: null }
+    const { model } = sequenceToModel([p], results, 'M')
+    expect(tagsOf(model, pipelineObject(model).children[0].id)).toEqual(['Copy'])
+  })
+
+  it('keeps the R/W on the nested table rows', () => {
+    const { p, results } = pipelineRun()
+    const { model } = sequenceToModel([p], results, 'M')
+    const [read, write] = pipelineObject(model).children[0].children
+    expect(model.properties[read.id]!.Access).toBe('Read')
+    expect(model.properties[write.id]!.Access).toBe('Write')
+  })
+
+  it('anchors each edge on the activity that made that access', () => {
+    // `silver` is written by the first notebook and read by the second. Two
+    // accesses, two rows — and each edge must land on its own.
+    const { p, results } = pipelineRun()
+    const { model } = sequenceToModel([p], results, 'M')
+    const pl = pipelineObject(model)
+    const writtenSilver = pl.children[0].children[1]
+    const readSilver = pl.children[1].children[0]
+    expect(writtenSilver.id).not.toBe(readSilver.id)
+
+    const silver = model.layers.flatMap((l) => l.objects).find((o) => o.name === 'silver')!
+    expect(model.transitions.some((t) => t.source === writtenSilver.id && t.target === silver.id)).toBe(true)
+    expect(model.transitions.some((t) => t.source === silver.id && t.target === readSilver.id)).toBe(true)
+  })
+
+  it('counts the nested rows in the attribute total', () => {
+    const { p, results } = pipelineRun()
+    const { stats } = sequenceToModel([p], results, 'M')
+    // 2 groups + 4 nested I/O rows on the pipeline; the tables carry no schema.
+    expect(stats.attributes).toBe(6)
+  })
+
+  it('leaves a notebook step flat — it IS the notebook', () => {
+    const { steps, results } = simpleRun()
+    const { model } = sequenceToModel(steps, results, 'M')
+    const nb = model.layers[1].objects[0]
+    expect(nb.children.map((c) => c.name)).toEqual(['raw_orders', 'silver_orders'])
+    expect(nb.children.every((c) => c.children.length === 0)).toBe(true)
+  })
+
   it('chains two steps so a written table feeds the next step', () => {
     const a = step('a', 'build_silver')
     const b = step('b', 'build_gold')

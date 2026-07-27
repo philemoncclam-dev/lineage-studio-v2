@@ -20,6 +20,7 @@ import { TAGS_KEY } from '../model/tags'
 import {
   refLabel,
   refWorkspace,
+  type FabricPipelineActivity,
   type SandboxColumn,
   type SandboxColumnFlow,
   type SandboxTableRef,
@@ -40,7 +41,22 @@ interface Node {
    * came from; with them, an edge also lands on the row it belongs to rather
    * than on the object header.
    */
-  io: { table: string; access: 'Read' | 'Write' }[]
+  io: IoRow[]
+  /**
+   * A pipeline's activities, each with the tables IT touched.
+   *
+   * Present only for a pipeline that actually ran something. When it is, `io`
+   * is empty and these become the object's attributes instead: one Group per
+   * activity, its I/O rows nested inside. A pipeline used to export as a flat
+   * merge of every table it touched, which answered "what did this pipeline
+   * touch" and lost "which notebook touched it" — and left the notebooks out
+   * of the model entirely, even though they are the things doing the work.
+   *
+   * An Attribute with children IS a Group (see model/types.ts), so this needs
+   * no new entity kind — and the viewer gives every group a twisty, so the
+   * notebooks collapse for free.
+   */
+  groups?: IoGroup[]
   /** Step ordinal, for the property bag. Steps only. */
   ordinal?: number
   /** Workspace the node belongs to — a step's own, or a table's. */
@@ -53,16 +69,54 @@ interface Node {
   ref?: string
 }
 
+interface IoRow {
+  table: string
+  access: 'Read' | 'Write'
+}
+
+/** One activity inside a pipeline, and the tables it touched. */
+interface IoGroup {
+  name: string
+  /** What to badge it as — `Notebook` for a notebook activity, else its type. */
+  tag: string
+  io: IoRow[]
+}
+
 interface Link {
   from: string
   to: string
   kind: 'read' | 'write'
   /** The table end of the link — used to find the step's I/O attribute. */
   table: string
+  /**
+   * Which activity group the step-side endpoint lives in; -1 when the step has
+   * no groups. Part of the anchor key because the same table under two
+   * activities is two rows, and an edge has to land on the right one.
+   */
+  group: number
 }
 
 const tableId = (name: string) => `t:${name.toLowerCase()}`
 const stepId = (key: string) => `s:${key}`
+
+/** Where a step's I/O attribute for one access lives. */
+const ioKey = (nodeId: string, group: number, access: 'Read' | 'Write', table: string) =>
+  `${nodeId}|${group}|${access}|${table}`
+
+/**
+ * What to badge one activity of a pipeline as.
+ *
+ * A run entry knows only its name, so the activity list is what says whether it
+ * was a notebook or something declarative like a Copy. Falls back to `Notebook`
+ * when the activity can't be found: every run WAS a notebook before Copy
+ * activities started contributing, so that is the honest default rather than a
+ * blank badge.
+ */
+function activityTag(runName: string, activities?: FabricPipelineActivity[]): string {
+  const activity = activities?.find((a) => a.name === runName)
+  if (!activity) return 'Notebook'
+  return activity.notebook_id ? 'Notebook' : activity.type || 'Notebook'
+}
 
 /**
  * Longest-path layering — a node sits one column right of its deepest input,
@@ -223,17 +277,34 @@ export function sequenceToModel(
   steps.forEach((step, i) => {
     const id = stepId(step.key)
     const res = results.get(step.key)
-    const reads = stepReads(res)
-    const writes = stepWrites(res)
+    // A pipeline groups by activity; a notebook step IS the notebook, so it has
+    // nothing to nest under and keeps the flat merged list.
+    const groups: IoGroup[] | undefined =
+      step.kind === 'pipeline' && res?.runs.length
+        ? res.runs.map((run) => ({
+            name: run.name,
+            tag: activityTag(run.name, res.activities),
+            io: [
+              ...(run.result?.reads ?? []).map((t) => ({ table: t, access: 'Read' as const })),
+              ...(run.result?.writes ?? []).map((t) => ({ table: t, access: 'Write' as const })),
+            ],
+          }))
+        : undefined
+
+    const io: IoRow[] = groups
+      ? []
+      : [
+          ...stepReads(res).map((t) => ({ table: t, access: 'Read' as const })),
+          ...stepWrites(res).map((t) => ({ table: t, access: 'Write' as const })),
+        ]
+
     const n: Node = {
       id,
       kind: step.kind,
       name: step.name,
       columns: [],
-      io: [
-        ...reads.map((t) => ({ table: t, access: 'Read' as const })),
-        ...writes.map((t) => ({ table: t, access: 'Write' as const })),
-      ],
+      io,
+      groups,
       ordinal: i + 1,
       // The run echoes the notebook's own workspace NAME; `step.ws` is the GUID
       // the tree navigates by. The name is what tables carry, so comparing the
@@ -243,8 +314,16 @@ export function sequenceToModel(
     nodes.push(n)
     byId.set(id, n)
 
-    for (const r of reads) links.push({ from: ensureTable(r), to: id, kind: 'read', table: r })
-    for (const w of writes) links.push({ from: id, to: ensureTable(w), kind: 'write', table: w })
+    // One link per ACCESS, not per distinct table: a table written by one
+    // activity and read by the next is two accesses, and merging them would put
+    // both edges on whichever row happened to come first.
+    const emit = (row: IoRow, group: number) => {
+      if (row.access === 'Read')
+        links.push({ from: ensureTable(row.table), to: id, kind: 'read', table: row.table, group })
+      else links.push({ from: id, to: ensureTable(row.table), kind: 'write', table: row.table, group })
+    }
+    if (groups) groups.forEach((g, gi) => g.io.forEach((row) => emit(row, gi)))
+    else io.forEach((row) => emit(row, -1))
   })
 
   // --- build the model --------------------------------------------------
@@ -275,9 +354,9 @@ export function sequenceToModel(
       // A step's I/O rows become ITS attributes, mirroring its canvas card.
       // Without them a step exported as a bare object and the model did not
       // look like the canvas it came from.
-      for (const row of n.io) {
+      const ioAttr = (row: IoRow, group: number): Attribute => {
         const attr: Attribute = { id: crypto.randomUUID(), name: refLabel(row.table, refs), children: [] }
-        ioAttrOf.set(`${n.id}|${row.access}|${row.table}`, attr.id)
+        ioAttrOf.set(ioKey(n.id, group, row.access, row.table), attr.id)
         // Only the Access LABEL is optional. The row itself is structure —
         // dropping it would put the edge back on the object header and the
         // model would stop looking like the canvas.
@@ -290,7 +369,27 @@ export function sequenceToModel(
             ...(options.accessTags ? { Access: row.access } : {}),
             ...(foreign ? { Workspace: foreign } : {}),
           }
-        object.children.push(attr)
+        return attr
+      }
+
+      if (n.groups) {
+        // One Group per activity, its tables inside. The notebooks are now IN
+        // the model rather than merged away, and because an Attribute with
+        // children is a Group, the viewer collapses them with no new machinery.
+        n.groups.forEach((g, gi) => {
+          const group: Attribute = {
+            id: crypto.randomUUID(),
+            name: g.name,
+            children: g.io.map((row) => ioAttr(row, gi)),
+          }
+          // Tagged, not just propertied: a tag is what the viewer badges on the
+          // row, so a notebook reads as one at a glance — the same reasoning as
+          // the object kind tags below.
+          if (options.kindTags) props[group.id] = { [TAGS_KEY]: g.tag }
+          object.children.push(group)
+        })
+      } else {
+        for (const row of n.io) object.children.push(ioAttr(row, -1))
       }
       if (options.columns)
         for (const column of n.columns) {
@@ -350,7 +449,7 @@ export function sequenceToModel(
       // arrow. The Flow view keeps true edge direction.
       const stepNode = l.kind === 'read' ? l.to : l.from
       const tableNode = l.kind === 'read' ? l.from : l.to
-      const source = ioAttrOf.get(`${stepNode}|${access}|${l.table}`) ?? objIdOf.get(stepNode)
+      const source = ioAttrOf.get(ioKey(stepNode, l.group, access, l.table)) ?? objIdOf.get(stepNode)
       const target = objIdOf.get(tableNode)
       if (source && target) addTransition(source, target, bag)
       continue
@@ -358,7 +457,7 @@ export function sequenceToModel(
 
     // Flow view: true direction, anchored on the step's own I/O row.
     const stepNode = l.kind === 'read' ? l.to : l.from
-    const io = ioAttrOf.get(`${stepNode}|${access}|${l.table}`)
+    const io = ioAttrOf.get(ioKey(stepNode, l.group, access, l.table))
     const source = l.kind === 'read' ? objIdOf.get(l.from) : (io ?? objIdOf.get(l.from))
     const target = l.kind === 'read' ? (io ?? objIdOf.get(l.to)) : objIdOf.get(l.to)
     if (source && target) addTransition(source, target, bag)
@@ -388,8 +487,13 @@ export function sequenceToModel(
     }
   }
 
+  // Counted through the nesting, not just the top level: a pipeline's tables
+  // now sit inside its activity groups, and counting only direct children would
+  // report a model with fewer attributes than it has.
+  const countAttrs = (list: Attribute[]): number =>
+    list.reduce((n, a) => n + 1 + countAttrs(a.children), 0)
   const attributes = layers.reduce(
-    (n, l) => n + l.objects.reduce((m, o) => m + o.children.length, 0),
+    (n, l) => n + l.objects.reduce((m, o) => m + countAttrs(o.children), 0),
     0,
   )
   const objects = layers.reduce((n, l) => n + l.objects.length, 0)

@@ -73,6 +73,11 @@ const ICONS: Record<RailIconName, ReactNode> = {
   mapping: (
     <svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="6" height="16" rx="1.5" /><rect x="15.5" y="4" width="6" height="16" rx="1.5" /><path d="M8.5 8.5h7M8.5 15.5h7" /><path d="m13.5 6.5 2 2-2 2M13.5 13.5l2 2-2 2" /></svg>
   ),
+  // A luggage tag with its eyelet — the one shape that reads as "label" without
+  // borrowing `filter`'s lines or `definitions`' page.
+  tag: (
+    <svg viewBox="0 0 24 24"><path d="M11 3H3.5v7.5l10 10 7.5-7.5-10-10z" /><circle cx="7.5" cy="7.5" r="1.4" /></svg>
+  ),
 }
 
 export default function Rail({ items }: { items: RailItem[] }) {

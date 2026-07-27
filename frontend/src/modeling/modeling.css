@@ -1515,3 +1515,388 @@
 .mv-host[data-mapper] .mv-status {
   right: 382px;
 }
+
+/* ===== Tag surfaces (TagPanel.tsx) =====
+   The viewer's own skin for tagging. These deliberately do NOT reuse the Model
+   Browser's `.mb-*` dialog classes: those live in modelBrowser.css, which the
+   viewer never imports, so the shared TagDialog rendered here as unstyled
+   markup. Anything the canvas shows is styled from this file. */
+.tg-panel {
+  width: min(560px, calc(100vw - 32px));
+}
+.tg-subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #7b8496;
+  font-size: 12px;
+}
+.tg-x {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #7b8496;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.tg-x:hover {
+  background: #eef2f7;
+  color: #1c2333;
+}
+.tg-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tg-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid rgb(28 35 51 / 0.12);
+}
+.tg-foot-note {
+  flex: 1 1 auto;
+  color: #7b8496;
+  font-size: 11px;
+}
+.tg-warn {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 5px;
+  background: #fff7e6;
+  color: #6b4a00;
+  font-size: 12px;
+}
+.tg-label {
+  margin: 2px 0 0;
+  color: #7b8496;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tg-hint {
+  display: block;
+  margin-top: 2px;
+  color: #7b8496;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.35;
+}
+.tg-empty {
+  margin: 0;
+  padding: 10px 2px;
+  color: #7b8496;
+  font-size: 12px;
+}
+
+/* The chip input: a bordered well the chips live inside, with the text entry
+   growing to fill whatever is left on the last line. */
+.tg-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 7px;
+  min-height: 40px;
+  border: 1px solid rgb(28 35 51 / 0.2);
+  border-radius: 6px;
+  background: #fff;
+  cursor: text;
+}
+.tg-input:focus-within {
+  border-color: #1f6feb;
+  box-shadow: 0 0 0 3px rgb(31 111 235 / 0.14);
+}
+.tg-entry {
+  flex: 1 1 90px;
+  min-width: 90px;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 13px;
+  background: transparent;
+}
+.tg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eaf0fb;
+  color: #1c447f;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+/* The kinds the sandbox import writes carry their badge colours through, so a
+   tag looks the same here as it does on the card. */
+.tg-chip[data-kind='notebook'] { background: #e2ebfa; color: #1c447f; }
+.tg-chip[data-kind='pipeline'] { background: #ede4fb; color: #452a7a; }
+.tg-chip[data-kind='table'] { background: #e4f0e9; color: #14532d; }
+.tg-chip.ghost {
+  background: transparent;
+  border: 1px solid rgb(28 35 51 / 0.22);
+  color: #4a5468;
+  cursor: pointer;
+}
+.tg-chip.ghost:hover {
+  border-color: #1f6feb;
+  color: #1f6feb;
+}
+.tg-chip-x {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.tg-chip-x:hover { opacity: 1; }
+.tg-count {
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgb(28 35 51 / 0.09);
+  color: inherit;
+  font-size: 10px;
+  font-weight: 600;
+}
+.tg-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tg-field {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid rgb(28 35 51 / 0.2);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+}
+.tg-field:focus {
+  outline: none;
+  border-color: #1f6feb;
+  box-shadow: 0 0 0 3px rgb(31 111 235 / 0.14);
+}
+.tg-field:disabled {
+  background: #f6f8fb;
+  color: #98a0b0;
+}
+.tg-add {
+  display: flex;
+  gap: 8px;
+}
+.tg-search { margin-top: 2px; }
+
+.tg-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgb(28 35 51 / 0.12);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.tg-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-bottom: 1px solid rgb(28 35 51 / 0.08);
+}
+.tg-row:last-child { border-bottom: 0; }
+.tg-row:hover { background: #f6f8fb; }
+.tg-row-count {
+  flex: 1 1 auto;
+  color: #7b8496;
+  font-size: 11px;
+}
+.tg-row-acts {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  /* Actions stay hidden until the row is under the pointer: with three buttons
+     on every row, a long vocabulary reads as a wall of links otherwise. */
+  opacity: 0;
+}
+.tg-row:hover .tg-row-acts,
+.tg-row:focus-within .tg-row-acts {
+  opacity: 1;
+}
+.tg-act {
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #4a5468;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.tg-act:hover {
+  border-color: rgb(28 35 51 / 0.2);
+  background: #fff;
+  color: #1c2333;
+}
+.tg-act.danger:hover {
+  border-color: #d92d20;
+  color: #d92d20;
+}
+.tg-rename { max-width: 240px; }
+
+/* ===== Views panel (ViewsPanel.tsx) =====
+   Docked to the right of the canvas, not modal: filtering is iterative, and a
+   modal would cover the thing being filtered. */
+.vw-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid rgb(28 35 51 / 0.14);
+  background: #fff;
+  box-shadow: -8px 0 24px rgb(16 20 30 / 0.08);
+}
+.vw-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgb(28 35 51 / 0.12);
+}
+.vw-title {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1c2333;
+}
+.vw-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #1f6feb;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+}
+.vw-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.vw-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.vw-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid rgb(28 35 51 / 0.2);
+  border-radius: 999px;
+  background: #fff;
+  color: #4a5468;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.vw-toggle:hover { border-color: #1f6feb; }
+.vw-toggle[data-on] {
+  border-color: transparent;
+  background: #1f6feb;
+  color: #fff;
+  font-weight: 500;
+}
+.vw-toggle[data-on] .tg-count {
+  background: rgb(255 255 255 / 0.26);
+}
+/* R and W keep the access colourway when off, so the control matches the badge
+   it filters on. Selected still goes accent: "on" has to read the same across
+   every chip in the panel. */
+.vw-toggle[data-tone='read']:not([data-on]) {
+  background: #e2ebfa;
+  color: #1c447f;
+  border-color: transparent;
+}
+.vw-toggle[data-tone='write']:not([data-on]) {
+  background: #d3f0e0;
+  color: #114a2b;
+  border-color: transparent;
+}
+.vw-prop {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 5px;
+  align-items: center;
+}
+.vw-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  cursor: pointer;
+}
+.vw-check input {
+  margin-top: 2px;
+  accent-color: #1f6feb;
+}
+.vw-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid rgb(28 35 51 / 0.12);
+}
+.vw-result {
+  flex: 1 1 auto;
+  color: #7b8496;
+  font-size: 12px;
+}
+
+/* ===== Filtered-out entities =====
+   Dimmed, not removed. Pointer events stay on: a dimmed row is still a real
+   entity you can select, inspect and retag. The filter narrows attention, it
+   does not disable the canvas. */
+.mv-card[data-dimmed],
+.mv-row[data-dimmed] {
+  opacity: 0.26;
+}
+.mv-card[data-dimmed]:hover,
+.mv-row[data-dimmed]:hover {
+  opacity: 0.75;
+}

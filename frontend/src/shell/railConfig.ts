@@ -33,6 +33,7 @@ export type RailIconName =
   | 'overview'
   | 'mapping'
   | 'browser'
+  | 'tag'
 
 export interface RailItem {
   key: string
@@ -47,10 +48,11 @@ export interface RailItem {
 
 export const railConfig: Record<ModeKey, RailItem[]> = {
   model: [
-    // The old 'layers' -> /model entry is gone: /model now needs a model id, so
-    // there is no generic destination for it. All models is where you go to
-    // pick one, which is what that button was really for.
-    { key: 'browser', label: 'All models', icon: 'browser', to: '/models' },
+    // No 'All models' entry: the logo's mode menu already lands the mode on
+    // /models, so a rail button for it was a second door to the same room and
+    // the only NAVIGATION item among commands — it read as the odd one out.
+    { key: 'views', label: 'Views', icon: 'filter', action: 'views' },
+    { key: 'tags', label: 'Tags', icon: 'tag', action: 'tags' },
     { key: 'mapping', label: 'Auto-Mapper', icon: 'mapping', action: 'mapping' },
     { key: 'import', label: 'Import', icon: 'import', action: 'import' },
     { key: 'export', label: 'Export', icon: 'export', action: 'export' },

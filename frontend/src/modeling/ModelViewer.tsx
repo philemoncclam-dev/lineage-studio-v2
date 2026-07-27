@@ -40,8 +40,15 @@ import {
 } from '../model/edit'
 import { copyEntities, paste, type Clipboard, type PasteTarget } from '../model/clipboard'
 import ContextMenu, { type MenuItem } from './ContextMenu'
-import { TagDialog } from './ModelDialogs'
-import { TAGS_KEY, allTags, parseTags, setTags, tagsOf } from '../model/tags'
+import { EntityTagDialog, TagManager } from './TagPanel'
+import { ViewsPanel } from './ViewsPanel'
+import {
+  activeFilterCount,
+  applyFilter,
+  EMPTY_FILTER,
+  type ViewFilter,
+} from '../model/filter'
+import { TAGS_KEY, parseTags, setTags } from '../model/tags'
 import { hitTestTransitions } from './edgeGeometry'
 import {
   CARD_HEADER_HEIGHT,
@@ -126,6 +133,18 @@ export default function ModelViewer({
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   /** Entities whose tags the dialog is editing; null when it's closed. */
   const [tagging, setTagging] = useState<EntityId[] | null>(null)
+  const [tagManagerOpen, setTagManagerOpen] = useState(false)
+  const [viewsOpen, setViewsOpen] = useState(false)
+  const [filter, setFilter] = useState<ViewFilter>(EMPTY_FILTER)
+  /**
+   * The last entity clicked WITHOUT a modifier — where a shift-range starts.
+   *
+   * Held separately from the selection because a range has a direction: after
+   * shift-clicking, the anchor must stay put so widening or narrowing the range
+   * from the same origin keeps working. Deriving it from the selection instead
+   * would move it on every shift-click and make the second one unpredictable.
+   */
+  const [anchor, setAnchor] = useState<EntityId | null>(null)
   // Local, not the system clipboard: the payload is a model subtree with
   // transition bookkeeping, which has no sensible text/plain representation.
   const clipboard = useRef<Clipboard | null>(null)
@@ -138,6 +157,33 @@ export default function ModelViewer({
     (id: EntityId) => index.entries.get(id)?.parentId ?? null,
     [index],
   )
+
+  /**
+   * Every selectable entity in READING order — layer, then each of its cards,
+   * then that card's rows — which is what a shift-range runs along.
+   *
+   * Built from the LAYOUT rather than the model so it follows what is on screen:
+   * a collapsed card contributes no rows, and shift-clicking across one must not
+   * silently select the rows it is hiding. The layout already knows which rows
+   * are rendered, so ordering off it keeps "everything between these two" and
+   * "everything I can see between these two" the same statement.
+   */
+  const visualOrder = useMemo(() => {
+    const out: EntityId[] = []
+    for (const layer of layout.layers) {
+      out.push(layer.id)
+      for (const card of layout.cards) {
+        if (card.layerId !== layer.id) continue
+        out.push(card.id)
+        for (const row of card.rows) out.push(row.id)
+      }
+    }
+    return out
+  }, [layout])
+
+  /** Entities the Views filter matches; empty set means "no filter running". */
+  const matched = useMemo(() => applyFilter(model, filter), [model, filter])
+  const filtering = activeFilterCount(filter) > 0
 
   // The trace: everything one hop from any selected entity. Highlighting both
   // endpoints is what makes a selected row's lineage legible inside a bundle.
@@ -174,6 +220,10 @@ export default function ModelViewer({
   useEffect(() => registerRailAction('import', () => setImportOpen(true)), [])
   useEffect(() => registerRailAction('export', () => setExportOpen(true)), [])
   useEffect(() => registerRailAction('mapping', () => setMapperOpen(true)), [])
+  useEffect(() => registerRailAction('tags', () => setTagManagerOpen(true)), [])
+  // Views toggles rather than opens: it is a docked panel, so a second click on
+  // the rail button is the obvious way to put it away again.
+  useEffect(() => registerRailAction('views', () => setViewsOpen((v) => !v)), [])
 
   /**
    * Selects every entity carrying the picked name and brings the first into
@@ -222,8 +272,15 @@ export default function ModelViewer({
     })
   }
 
-  /** Click semantics: plain replaces, ctrl/cmd toggles, so multi-select is additive. */
-  const select = (id: EntityId, additive: boolean) => {
+  /**
+   * Click semantics: plain replaces, ctrl/cmd toggles one, shift takes the
+   * range from the anchor.
+   *
+   * Shift ADDS its range to what is already selected rather than replacing it,
+   * so ctrl-picking a few rows and then shift-extending reads as one continuing
+   * gesture. That also makes shift+ctrl unnecessary as a separate combination.
+   */
+  const select = (id: EntityId, mods: { additive: boolean; range: boolean }) => {
     // Scope-picking outranks everything: the user asked for the next click to
     // mean "this one", so it cannot also change the selection.
     if (picking) {
@@ -236,9 +293,28 @@ export default function ModelViewer({
       completeConnect(id)
       return
     }
-    if (!additive) setSelectedEdges(new Set())
+
+    if (mods.range && anchor && anchor !== id) {
+      const from = visualOrder.indexOf(anchor)
+      const to = visualOrder.indexOf(id)
+      // A stale anchor — its card collapsed, or its entity deleted — has no
+      // position to run a range from. Fall back to a plain click rather than
+      // selecting from the start of the model, which is what indexOf's -1 would
+      // otherwise quietly mean.
+      if (from !== -1 && to !== -1) {
+        const [lo, hi] = from < to ? [from, to] : [to, from]
+        setSelectedEdges(new Set())
+        setSelection((prev) => new Set([...prev, ...visualOrder.slice(lo, hi + 1)]))
+        return
+      }
+    }
+
+    if (!mods.additive) setSelectedEdges(new Set())
+    // Both a plain and a ctrl click move the anchor: the next shift-range runs
+    // from the last thing actually pointed at.
+    setAnchor(id)
     setSelection((prev) => {
-      if (!additive) return new Set([id])
+      if (!mods.additive) return new Set([id])
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -790,22 +866,39 @@ export default function ModelViewer({
         />
       )}
       {tagging && (
-        <TagDialog
-          // A single entity pre-fills its tags; a multi-entity edit starts
-          // empty and REPLACES, which is what `bulk` tells the user.
-          initialTags={tagging.length === 1 ? tagsOf(model, tagging[0]) : []}
-          subject={
-            tagging.length === 1
-              ? (index.entries.get(tagging[0])?.name ?? 'Entity')
-              : `${tagging.length} entities`
-          }
-          suggestions={allTags(model)}
-          bulk={tagging.length > 1}
+        <EntityTagDialog
+          model={model}
+          ids={tagging}
           onSubmit={(tags) => {
             onChange(setTags(model, tagging, tags))
             setTagging(null)
           }}
           onClose={() => setTagging(null)}
+        />
+      )}
+      {tagManagerOpen && (
+        <TagManager
+          model={model}
+          selection={selection}
+          onChange={onChange}
+          onSelect={(ids) => {
+            setSelection(new Set(ids))
+            setSelectedEdges(new Set())
+            // Close on Select: the point of selecting from here is to go and do
+            // something with them on the canvas, which the panel is covering.
+            setTagManagerOpen(false)
+            if (ids.length) setReveal(ids[0])
+          }}
+          onClose={() => setTagManagerOpen(false)}
+        />
+      )}
+      {viewsOpen && (
+        <ViewsPanel
+          model={model}
+          filter={filter}
+          onChange={setFilter}
+          matchCount={matched.size}
+          onClose={() => setViewsOpen(false)}
         />
       )}
       {menu && (
@@ -848,7 +941,7 @@ export default function ModelViewer({
               data-selected={selection.has(layer.id) || undefined}
               onClick={(e) => {
                 if (layer.collapsed) toggle(layer.id)
-                else select(layer.id, e.ctrlKey || e.metaKey)
+                else select(layer.id, { additive: e.ctrlKey || e.metaKey, range: e.shiftKey })
               }}
               onDoubleClick={() => !layer.collapsed && setEditing(layer.id)}
               onContextMenu={(e) => openMenu(e, layer.id)}
@@ -920,12 +1013,20 @@ export default function ModelViewer({
             selected={selectedEdges}
           />
 
-          {visibleCards.map((card) => (
+          {visibleCards
+            // "Hide non-matching" drops whole cards here rather than styling
+            // them away, so the layout keeps their space but nothing paints —
+            // a display:none card would still cost a mount per card.
+            .filter((card) => !(filtering && filter.hide) || matched.has(card.id))
+            .map((card) => (
             <Card
               key={card.id}
               card={card}
               view={view}
               selection={selection}
+              filtering={filtering}
+              matched={matched}
+              hideUnmatched={filter.hide}
               highlighted={highlighted}
               pending={pending}
               pendingLayer={pendingLayer}
@@ -1024,7 +1125,11 @@ interface CardProps {
   editing: EntityId | null
   properties: LineageModel['properties']
   onToggle: (id: EntityId) => void
-  onSelect: (id: EntityId, additive: boolean) => void
+  /** True while a Views filter is narrowing; without it `matched` means nothing. */
+  filtering: boolean
+  matched: ReadonlySet<EntityId>
+  hideUnmatched: boolean
+  onSelect: (id: EntityId, mods: { additive: boolean; range: boolean }) => void
   onConnectFrom: (id: EntityId) => void
   onConnectTo: (id: EntityId) => void
   onEdit: (id: EntityId) => void
@@ -1036,6 +1141,9 @@ function Card({
   card,
   view,
   selection,
+  filtering,
+  matched,
+  hideUnmatched,
   highlighted,
   pending,
   pendingLayer,
@@ -1074,13 +1182,17 @@ function Card({
       // gutter itself is permanent now (see INBOUND_GUTTER) — it no longer
       // opens on connect, so nothing reflows mid-gesture.
       data-inbound={showInbound || undefined}
+      // Dimmed rather than removed: a filtered card keeps its place so the
+      // shape of the model — which column things sit in, what is next to what —
+      // survives the filter. Removal is opt-in via "Hide non-matching".
+      data-dimmed={(filtering && !matched.has(card.id)) || undefined}
       data-selected={selection.has(card.id) || undefined}
       data-traced={highlighted.has(card.id) || undefined}
     >
       <div
         className="mv-card-header"
         style={{ height: CARD_HEADER_HEIGHT }}
-        onClick={(e) => onSelect(card.id, e.ctrlKey || e.metaKey)}
+        onClick={(e) => onSelect(card.id, { additive: e.ctrlKey || e.metaKey, range: e.shiftKey })}
         onDoubleClick={() => onEdit(card.id)}
         onContextMenu={(e) => onContextMenu(e, card.id)}
       >
@@ -1125,7 +1237,12 @@ function Card({
 
       {slice.length > 0 && (
         <div style={{ paddingTop: firstVisible * ROW_HEIGHT }}>
-          {slice.map((row) => (
+          {slice
+            // Rows are the one place hiding is safe without reflowing the
+            // world: a card's height is fixed by the layout, so dropping rows
+            // leaves a gap rather than moving anything else on the canvas.
+            .filter((row) => !(filtering && hideUnmatched) || matched.has(row.id))
+            .map((row) => (
             <div
               key={row.id}
               className="mv-row"
@@ -1135,9 +1252,10 @@ function Card({
                 height: ROW_HEIGHT,
                 paddingLeft: INBOUND_GUTTER + row.depth * INDENT,
               }}
+              data-dimmed={(filtering && !matched.has(row.id)) || undefined}
               data-selected={selection.has(row.id) || undefined}
               data-traced={highlighted.has(row.id) || undefined}
-              onClick={(e) => onSelect(row.id, e.ctrlKey || e.metaKey)}
+              onClick={(e) => onSelect(row.id, { additive: e.ctrlKey || e.metaKey, range: e.shiftKey })}
               onDoubleClick={() => onEdit(row.id)}
               onContextMenu={(e) => onContextMenu(e, row.id)}
             >

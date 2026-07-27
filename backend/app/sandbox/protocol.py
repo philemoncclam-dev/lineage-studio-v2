@@ -41,10 +41,11 @@ class TableRef(BaseModel):
 class RunRequest(BaseModel):
     """Backend → executor: what to run and the schemas to stand up.
 
-    `schemas` maps a canonical table ref to its columns; the executor registers
-    each as an *empty* temp view so the notebook's reads resolve without any
-    real data moving. It is unused by the stub engine and populated for real in
-    M2b.
+    `schemas` maps a canonical table ref to its columns. The Spark executor
+    registers each as an *empty* temp view so the notebook's reads resolve
+    without any real data moving; the stub executor carries them straight back
+    out as `table_schemas` (it has no session to register them in, but the
+    columns are just as real).
 
     `workspace`/`lakehouse` are the notebook's own — the defaults an unqualified
     table name resolves against, exactly as inside Fabric. `name_map` resolves
@@ -101,8 +102,10 @@ class RunResult(BaseModel):
     reads: list[str] = Field(default_factory=list)
     writes: list[str] = Field(default_factory=list)
     #: Schema per table the run touched — written tables as Spark's analyzer
-    #: resolved them, read tables as their input views were registered. Empty
-    #: for the stub engine. Feeds attribute-level model creation.
+    #: resolved them, read tables as their input views were registered. The stub
+    #: engine fills the read side by echoing the schemas it was given; only
+    #: WRITTEN tables need an analyzer, so only those are missing there. Feeds
+    #: attribute-level model creation.
     table_schemas: dict[str, list[ColumnSchema]] = Field(default_factory=dict)
     #: Column-level lineage from the analyzed plans (spark engine only).
     column_lineage: list[ColumnFlow] = Field(default_factory=list)

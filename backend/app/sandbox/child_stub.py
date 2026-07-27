@@ -13,6 +13,11 @@ stdout. Both shapes are defined in protocol.py, but this file does not import it
 The stub "runs" nothing: it derives reads/writes by the same static heuristics
 as app/parser.py (duplicated here on purpose — the real executor derives them
 from Spark's logical plans, sharing no code with this analog).
+
+It is NOT a degraded engine that only matters in CI. It is what production runs
+— the deployed backend has no JVM — so anything it cannot produce is missing
+from the deployed app, however good the Spark path is locally. The schemas below
+are the first consequence of taking that seriously.
 """
 
 from __future__ import annotations
@@ -77,6 +82,7 @@ def _saw_credentials() -> bool:
 def main() -> None:
     req = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     cells = req.get("cells", [])
+    schemas: dict = req.get("schemas", {})
     creds = _saw_credentials()
     # The notebook's own workspace/lakehouse — what a bare table name means.
     ctx = {
@@ -88,6 +94,24 @@ def main() -> None:
     log = ["[stub] engine=stub — static analysis only, no Spark session started."]
     if creds:
         log.append("[stub] WARNING: credential env visible to child — isolation breach.")
+
+    # The schemas the backend already fetched from OneLake, echoed back.
+    #
+    # The stub used to read `cells` and drop this entirely, so `table_schemas`
+    # came back empty and EVERY table card in production rendered bare — the
+    # columns were fetched, sent to the child, and thrown away one step from
+    # being displayed. Nothing is inferred here: these are the real column names
+    # and types, and the stub is simply no longer the place they die.
+    #
+    # Keys are re-qualified through `as_ref` (a no-op for the canonical refs the
+    # backend sends) so a hand-written request using dotted names lands on the
+    # same identity as the reads scraped out of the source.
+    table_schemas: dict[str, list[dict]] = {
+        _refs.as_ref(t, **ctx): [{"name": c.get("name"), "type": c.get("type")} for c in cols]
+        for t, cols in schemas.items()
+    }
+    if table_schemas:
+        log.append(f"[stub] carried {len(table_schemas)} table schema(s) through.")
 
     cell_results = []
     all_reads: set[str] = set()
@@ -113,7 +137,11 @@ def main() -> None:
         "cells": cell_results,
         "reads": sorted(all_reads - all_writes),
         "writes": sorted(all_writes),
-        "tables": _table_refs(all_reads | all_writes),
+        "table_schemas": table_schemas,
+        # Schema refs join the side table too, exactly as the Spark path does:
+        # a table the run was given columns for is a table the UI may draw, and
+        # without its parts here it would render as workspace-unknown.
+        "tables": _table_refs(all_reads | all_writes | set(table_schemas)),
         "log": log,
         "saw_credentials": creds,
         "error": None,

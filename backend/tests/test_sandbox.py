@@ -117,6 +117,48 @@ def test_run_endpoint_accepts_direct_cells(client):
     assert body["writes"] == [make_ref("vw_sales", "Bronze", "Analytics")]
 
 
+# --- schemas the stub carries through --------------------------------------
+# It used to drop `schemas` on the floor, so `table_schemas` came back empty and
+# every table card in PRODUCTION (which runs the stub — there is no JVM there)
+# rendered bare. The columns were fetched, sent, and discarded one step from
+# being shown.
+
+def test_stub_carries_the_schemas_it_was_given():
+    ref = make_ref("raw_orders", "Bronze", "Analytics")
+    result = run_sandbox(
+        RunRequest(
+            notebook_name="nb",
+            cells=CELLS,
+            schemas={ref: [{"name": "order_id", "type": "long"}, {"name": "total", "type": "double"}]},
+            workspace="Analytics",
+            lakehouse="Bronze",
+        ),
+        engine="stub",
+    )
+    assert [c.name for c in result.table_schemas[ref]] == ["order_id", "total"]
+    assert result.table_schemas[ref][1].type == "double"
+
+
+def test_a_table_known_only_by_its_schema_still_gets_its_parts():
+    """Otherwise it renders as workspace-unknown despite a fully qualified ref."""
+    ref = make_ref("reference_data", "Gold", "Finance")
+    result = run_sandbox(
+        RunRequest(
+            notebook_name="nb",
+            cells=["x = 1"],
+            schemas={ref: [{"name": "id", "type": "long"}]},
+        ),
+        engine="stub",
+    )
+    assert result.tables[ref].workspace == "Finance"
+    assert result.tables[ref].resolved is True
+
+
+def test_no_schemas_means_no_table_schemas_rather_than_an_error():
+    result = run_sandbox(RunRequest(notebook_name="nb", cells=CELLS), engine="stub")
+    assert result.table_schemas == {}
+
+
 def test_run_endpoint_requires_cells_or_ids(client):
     resp = client.post("/fabric/sandbox/run", json={"name": "nb"})
     assert resp.status_code == 400

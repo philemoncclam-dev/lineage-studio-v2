@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { sequenceToModel, defaultModelName } from '../toModel'
+import { tagsOf } from '../../model/tags'
 import type { Step, StepResult } from '../sequence'
 import type { SandboxRunResult } from '../../api'
 
@@ -158,10 +159,26 @@ describe('sequenceToModel', () => {
     const { model } = sequenceToModel(steps, results, 'M')
     expect(model.properties[model.layers[1].objects[0].id]).toMatchObject({
       Source: 'Fabric sandbox',
-      Kind: 'Notebook',
       Step: '1',
       Workspace: 'ws1',
     })
+  })
+
+  it('tags each object with its kind, so the card badges it', () => {
+    const { steps, results } = simpleRun()
+    const { model } = sequenceToModel(steps, results, 'M')
+    expect(tagsOf(model, model.layers[1].objects[0].id)).toEqual(['Notebook'])
+    expect(tagsOf(model, model.layers[0].objects[0].id)).toEqual(['Table'])
+    // Attributes are left untagged — tagging a column is the user's call.
+    expect(tagsOf(model, model.layers[0].objects[0].children[0].id)).toEqual([])
+  })
+
+  it('tags a pipeline step as a Pipeline', () => {
+    const p: Step = { key: 'p', kind: 'pipeline', ws: 'ws1', itemId: 'pl-1', name: 'nightly' }
+    const results = new Map([[p.key, ran('nightly', result({ writes: ['out'] }))]])
+    const { model } = sequenceToModel([p], results, 'M')
+    const obj = model.layers.flatMap((l) => l.objects).find((o) => o.name === 'nightly')!
+    expect(tagsOf(model, obj.id)).toEqual(['Pipeline'])
   })
 })
 

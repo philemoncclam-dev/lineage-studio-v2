@@ -40,6 +40,8 @@ import {
 } from '../model/edit'
 import { copyEntities, paste, type Clipboard, type PasteTarget } from '../model/clipboard'
 import ContextMenu, { type MenuItem } from './ContextMenu'
+import { TagDialog } from './ModelDialogs'
+import { TAGS_KEY, allTags, parseTags, setTags, tagsOf } from '../model/tags'
 import { hitTestTransitions } from './edgeGeometry'
 import {
   CARD_HEADER_HEIGHT,
@@ -107,6 +109,8 @@ export default function ModelViewer({
   /** Non-null while the next entity click means "use this as the scope root". */
   const [picking, setPicking] = useState<PickSlot | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
+  /** Entities whose tags the dialog is editing; null when it's closed. */
+  const [tagging, setTagging] = useState<EntityId[] | null>(null)
   // Local, not the system clipboard: the payload is a model subtree with
   // transition bookkeeping, which has no sensible text/plain representation.
   const clipboard = useRef<Clipboard | null>(null)
@@ -375,7 +379,12 @@ export default function ModelViewer({
 
     if (multi) {
       items.push(
-        { key: 'copy', label: `Copy ${selection.size} entities`, onSelect: () => doCopy(acting) },
+        {
+          key: 'tags',
+          label: `Tag ${selection.size} entities…`,
+          onSelect: () => setTagging([...acting]),
+        },
+        { key: 'copy', label: `Copy ${selection.size} entities`, separated: true, onSelect: () => doCopy(acting) },
         {
           key: 'cut',
           label: `Cut ${selection.size} entities`,
@@ -522,7 +531,8 @@ export default function ModelViewer({
     }
 
     items.push(
-      { key: 'rename', label: 'Rename', separated: true, onSelect: () => setEditing(targetId) },
+      { key: 'tags', label: 'Tags…', separated: true, onSelect: () => setTagging([targetId]) },
+      { key: 'rename', label: 'Rename', onSelect: () => setEditing(targetId) },
       {
         key: 'delete',
         label: 'Delete',
@@ -764,6 +774,25 @@ export default function ModelViewer({
             setPicking(null)
             setMapperOpen(false)
           }}
+        />
+      )}
+      {tagging && (
+        <TagDialog
+          // A single entity pre-fills its tags; a multi-entity edit starts
+          // empty and REPLACES, which is what `bulk` tells the user.
+          initialTags={tagging.length === 1 ? tagsOf(model, tagging[0]) : []}
+          subject={
+            tagging.length === 1
+              ? (index.entries.get(tagging[0])?.name ?? 'Entity')
+              : `${tagging.length} entities`
+          }
+          suggestions={allTags(model)}
+          bulk={tagging.length > 1}
+          onSubmit={(tags) => {
+            onChange(setTags(model, tagging, tags))
+            setTagging(null)
+          }}
+          onClose={() => setTagging(null)}
         />
       )}
       {menu && (
@@ -1057,6 +1086,7 @@ function Card({
             {card.name}
           </span>
         )}
+        <Badges bag={properties[card.id]} />
         <span className="mv-count">
           {card.direct}
           <span className="mv-count-total">({card.total})</span>
@@ -1191,5 +1221,14 @@ function Badges({ bag }: { bag: Record<string, string> | undefined }) {
   if (bag.CDE === 'true') out.push(<span key="cde" className="mv-badge" data-kind="cde">CDE</span>)
   const cls = bag.Classification
   if (cls) out.push(<span key="cls" className="mv-badge" data-kind={cls.toLowerCase()}>{cls}</span>)
+  // Tags last, so the fixed vocabularies above keep their position as a tag
+  // list grows. `data-kind` is the lower-cased tag, which is what lets a known
+  // tag like `notebook` carry its own colour without a second mechanism.
+  for (const tag of parseTags(bag[TAGS_KEY]))
+    out.push(
+      <span key={`t:${tag}`} className="mv-badge" data-kind={tag.toLowerCase()} data-tag>
+        {tag}
+      </span>,
+    )
   return out.length ? <span className="mv-badges">{out}</span> : null
 }

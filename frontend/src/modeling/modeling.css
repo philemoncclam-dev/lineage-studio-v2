@@ -415,6 +415,42 @@
   color: #114a2b;
 }
 
+/* ===== Tag badges =====
+   Free-form tags on any entity (see model/tags.ts). The default is a neutral
+   outline so an arbitrary tag never competes with the classification
+   vocabulary above; the kinds the sandbox import writes get their own tint so
+   a card reads as a notebook, pipeline or table at a glance. */
+.mv-badge[data-tag] {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid rgb(28 35 51 / 0.28);
+  color: #4a5468;
+}
+.mv-badge[data-tag][data-kind='notebook'] {
+  background: #e2ebfa;
+  border-color: transparent;
+  color: #1c447f;
+}
+.mv-badge[data-tag][data-kind='pipeline'] {
+  background: #ede4fb;
+  border-color: transparent;
+  color: #452a7a;
+}
+.mv-badge[data-tag][data-kind='table'] {
+  background: #e9edf3;
+  border-color: transparent;
+  color: #33405a;
+}
+/* The card header is a tighter, bolder row than an attribute row — keep the
+   badge from crowding the name and the count. */
+.mv-card-header .mv-badges {
+  margin-left: 4px;
+  margin-right: 2px;
+}
+
 /* ===== Connect port =====
    Solidatus' small square on the entity edge. Hidden until the row is hovered
    so a dense card isn't a wall of handles. */

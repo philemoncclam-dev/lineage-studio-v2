@@ -613,6 +613,21 @@
 /* --- notebook sandbox (sequence builder) -------------------------------- */
 /* The sandbox has no page of its own: the builder is Explore's third column
    and this canvas body renders in its detail column's Sandbox tab. */
+/* Toolbar above the lineage: what this is, and the handover to Modeling. */
+.sbx-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.sbx-bar-title {
+  flex: 1 1 auto;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
 .sbx-canvas-body {
   display: flex;
   flex-direction: column;

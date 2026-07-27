@@ -6,9 +6,12 @@
 // card, so a table's line lands on the exact row that reads or writes it —
 // same reading as `modeling/ModelViewer`.
 import { useMemo, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import type { SandboxColumn, SandboxRunResult } from '../api'
 import { StepIcon } from './SequencePanel'
 import { stepReads, stepWrites, type Step, type StepResult } from './sequence'
+import { sequenceToModel, defaultModelName } from './toModel'
+import { localStore } from '../model/store'
 
 type FlowKind = 'notebook' | 'pipeline' | 'table'
 /** `read`/`write` are a notebook's I/O rows; `col` is a table's own column. */
@@ -398,6 +401,58 @@ function IoColumn({
   )
 }
 
+/**
+ * Hands the observed lineage over to Modeling as a new, editable model, then
+ * opens it. A one-way snapshot — see the note in `toModel.ts`. Needs a run:
+ * before one there are no tables and no columns, so the model would be a row of
+ * disconnected notebook cards.
+ */
+function ToModelBar({
+  steps,
+  results,
+  ran,
+}: {
+  steps: Step[]
+  results: Map<string, StepResult>
+  ran: boolean
+}) {
+  const navigate = useNavigate()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const create = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const { model } = sequenceToModel(steps, results, defaultModelName(steps))
+      await localStore.save(model)
+      await navigate({ to: '/model/$modelId', params: { modelId: model.id } })
+    } catch (e) {
+      setBusy(false)
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return (
+    <div className="sbx-bar">
+      <span className="sbx-bar-title">Sequence lineage</span>
+      {error && (
+        <span className="fx-note" data-error="true">
+          {error}
+        </span>
+      )}
+      <button
+        className="fx-btn"
+        onClick={create}
+        disabled={!ran || busy}
+        title={ran ? 'Create an editable model from this run' : 'Run the sequence first'}
+      >
+        {busy ? 'Creating…' : 'Create model'}
+      </button>
+    </div>
+  )
+}
+
 export function SequenceCanvas({ steps, results }: { steps: Step[]; results: Map<string, StepResult> }) {
   const flow = useMemo(() => buildFlow(steps, results), [steps, results])
   const ran = results.size > 0
@@ -427,6 +482,7 @@ export function SequenceCanvas({ steps, results }: { steps: Step[]; results: Map
 
   return (
     <div className="sbx-canvas-body">
+      <ToModelBar steps={steps} results={results} ran={ran} />
       <FlowCanvas nodes={flow.nodes} edges={flow.edges} />
 
       {ran && (

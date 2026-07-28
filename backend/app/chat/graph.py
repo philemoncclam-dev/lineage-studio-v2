@@ -241,6 +241,16 @@ def _ref(index: _Index, entity_id: str) -> EntityRef:
     )
 
 
+def ref_of(index: _Index, entity_id: str) -> EntityRef:
+    """Public seam over `_ref`, for `analysis.py`.
+
+    The scans in that module walk the same index and must name entities the
+    same way — a coverage report that spelled a path differently from a trace
+    would read as two different entities.
+    """
+    return _ref(index, entity_id)
+
+
 def _hop(model: LineageModel, index: _Index, transition_id: str, reverse: bool) -> Hop:
     src, tgt = index.edges[transition_id]
     props = model.properties.get(transition_id, {})

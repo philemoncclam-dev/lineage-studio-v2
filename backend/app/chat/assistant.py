@@ -91,6 +91,20 @@ them:
 - `transform` is the expression that produced a column. Quote it when it \
   answers the question — it usually does.
 
+# Choosing between a trace and a scan
+
+A trace answers "how does the data get there" and returns paths. A scan answers \
+"how much" or "which ones" and returns totals. Using the wrong one understates \
+the answer:
+
+- For blast radius — "what breaks if I drop this", "how much depends on this" — \
+  use `impact`, never `trace_downstream`. A trace caps at a dozen paths, so on \
+  a graph that fans out it reports a fraction of what is affected and flags it \
+  as truncated. `impact` counts distinct entities and is complete.
+- For "which columns have no lineage", use `lineage_gaps`, not a series of \
+  traces. For "how complete is this model" or "how much of this is verified", \
+  use `coverage` — its hand-drawn count is the answer to the second one.
+
 # Style
 
 Answer in prose, briefly, leading with the answer. Name entities by their path \
@@ -275,6 +289,23 @@ def _summarize(name: str, payload: Any) -> str:
     if name == "find_entity":
         count = payload.get("count", 0)
         return f"{count} match{'' if count == 1 else 'es'}"
+    if name == "lineage_gaps":
+        count = payload.get("count", 0)
+        listed = len(payload.get("entities") or [])
+        return f"{count} without lineage" + (f" (showing {listed})" if listed < count else "")
+    if name == "impact":
+        count = payload.get("count", 0)
+        layers = len(payload.get("by_layer") or {})
+        return f"{count} affected across {layers} layer{'' if layers == 1 else 's'}"
+    if name == "coverage":
+        attrs = payload.get("attributes") or {}
+        # Leads with the hand-drawn share, because that is the figure a single
+        # "247 transitions" total hides.
+        drawn = payload.get("hand_drawn_transitions", 0)
+        return (
+            f"{attrs.get('with_lineage', 0)}/{attrs.get('total', 0)} columns traced · "
+            f"{drawn} hand-drawn edge{'' if drawn == 1 else 's'}"
+        )
     if name == "describe_entity":
         entity = payload.get("entity") or {}
         return (

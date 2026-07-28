@@ -272,6 +272,48 @@ def test_describing_an_unknown_id_says_so_instead_of_returning_null():
     assert "error" in result
 
 
+def test_the_scans_are_reachable_as_tools_and_return_real_numbers():
+    """The panel's own example chip asks 'which columns have no lineage' — with
+    only the four walk tools that question had no answer and the model had to
+    guess or give up."""
+    gaps = run_tool(_model(), "lineage_gaps", {"kind": "attribute"})
+    assert gaps["count"] == 0  # every column in this fixture is wired up
+
+    blast = run_tool(_model(), "impact", {"entity_id": "a_b_amount"})
+    assert blast["count"] == 1
+    assert blast["by_layer"] == {"Gold": 1}
+
+    cover = run_tool(_model(), "coverage", {})
+    assert cover["transitions"] == 2
+
+
+def test_the_gap_count_survives_serialisation():
+    """`without_lineage` is computed. A plain property is dropped by
+    model_dump(), and the assistant would get a report with the answer
+    missing — then subtract two figures itself, or not."""
+    cover = run_tool(_model(), "coverage", {})
+    assert "without_lineage" in cover["attributes"]
+    assert cover["attributes"]["without_lineage"] == 0
+
+
+def test_impact_defaults_to_downstream_when_no_direction_is_given():
+    assert run_tool(_model(), "impact", {"entity_id": "a_b_amount"})["direction"] == "downstream"
+
+
+def test_a_scan_result_is_summarised_as_a_total_not_as_paths():
+    """The path summariser would render every scan as 'no paths found'."""
+    client = _FakeClient(
+        [
+            _Response([_use("c1", "coverage")]),
+            _Response([_use("c2", "impact", entity_id="a_b_amount")]),
+            _Response([_text("done")]),
+        ]
+    )
+    answer = ask(_model(), [Message(role="user", content="q")], client=client)
+    assert answer.trace[0].result == "2/2 columns traced · 1 hand-drawn edge"
+    assert answer.trace[1].result == "1 affected across 1 layer"
+
+
 def test_an_unknown_tool_name_is_rejected():
     with pytest.raises(KeyError):
         run_tool(_model(), "delete_everything", {})

@@ -31,10 +31,15 @@ interface Turn extends ChatMessage {
   stopReason?: AssistantAnswer['stop_reason']
 }
 
+// Each of these maps onto an operation the engine can actually compute. The
+// third and fourth are scans rather than walks — they were unanswerable until
+// lineage_gaps and coverage existed, and a chip promising something the engine
+// cannot do just teaches the model to improvise.
 const EXAMPLES = [
-  'What feeds this model’s gold layer?',
   'Where does this column end up?',
+  'What breaks if I drop this table?',
   'Which columns have no lineage recorded?',
+  'How much of this model is verified?',
 ]
 
 export function AssistantPanel({
@@ -252,6 +257,9 @@ const VERB: Record<string, string> = {
   trace_downstream: 'downstream of',
   trace_upstream: 'upstream of',
   describe_entity: 'described',
+  lineage_gaps: 'scanned for gaps',
+  impact: 'impact of',
+  coverage: 'measured coverage',
 }
 
 function argLabel(input: Record<string, unknown>): string {

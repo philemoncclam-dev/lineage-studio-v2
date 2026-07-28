@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import graph
+from . import analysis, graph
 from .model import LineageModel
 
 #: How much of the model's shape is inlined in the system prompt before it is
@@ -135,6 +135,68 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["entity_id"],
         },
     },
+    {
+        "name": "lineage_gaps",
+        "description": (
+            "List entities with NO transition at either end — the actual gaps "
+            "in this model's lineage. A column with an inbound edge and none "
+            "outbound is a leaf, not a gap, and is excluded; so are layers and "
+            "groups, which are containers rather than data. Use this for "
+            "'which columns have no lineage', not a trace."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": ["layer", "object", "attribute"],
+                    "description": "Restrict to one level. 'attribute' means columns.",
+                },
+                "layer": {"type": "string", "description": "Restrict to one layer."},
+            },
+        },
+    },
+    {
+        "name": "impact",
+        "description": (
+            "EVERYTHING reachable from an entity, as a complete set — use this "
+            "for 'what breaks if I drop this' or 'how much depends on this'. "
+            "Prefer it over trace_downstream whenever the question is about "
+            "how MUCH is affected rather than how the data gets there: a trace "
+            "enumerates paths and caps at a dozen, so it understates the blast "
+            "radius on any graph that fans out. The per-layer counts here are "
+            "complete even when the listed entities are capped."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "entity_id": {
+                    "type": "string",
+                    "description": "An id from find_entity. Never guess one.",
+                },
+                "direction": {
+                    "type": "string",
+                    "enum": ["downstream", "upstream"],
+                    "description": (
+                        "'downstream' is what depends on it (the default); "
+                        "'upstream' is everything that feeds it."
+                    ),
+                },
+            },
+            "required": ["entity_id"],
+        },
+    },
+    {
+        "name": "coverage",
+        "description": (
+            "How much of this model is traced, per layer and overall, plus how "
+            "many transitions were DERIVED by the sandbox versus drawn by hand. "
+            "Answers 'how complete is this model' and 'how much of this is "
+            "verified'. Also reports dangling transitions — edges whose "
+            "endpoints no longer exist, which every trace silently skips."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
 ]
 
 TOOL_NAMES = {t["name"] for t in TOOLS}
@@ -171,6 +233,23 @@ def run_tool(model: LineageModel, name: str, args: dict[str, Any]) -> Any:
             entity_id=_str(args, "entity_id", required=True),
             to_layer=_str(args, "to_layer"),
         ).model_dump()
+
+    if name == "lineage_gaps":
+        return analysis.unconnected(
+            model,
+            kind=_str(args, "kind"),  # type: ignore[arg-type]
+            layer=_str(args, "layer"),
+        ).model_dump()
+
+    if name == "impact":
+        return analysis.impact(
+            model,
+            entity_id=_str(args, "entity_id", required=True),
+            direction=_str(args, "direction") or "downstream",  # type: ignore[arg-type]
+        ).model_dump()
+
+    if name == "coverage":
+        return analysis.coverage(model).model_dump()
 
     detail = graph.describe_entity(model, _str(args, "entity_id", required=True))
     if detail is None:

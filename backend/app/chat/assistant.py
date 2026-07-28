@@ -105,6 +105,27 @@ the answer:
   traces. For "how complete is this model" or "how much of this is verified", \
   use `coverage` — its hand-drawn count is the answer to the second one.
 
+# The model versus live Fabric
+
+Two different sources of truth are in reach, and conflating them is the worst \
+mistake available here:
+
+- The AUTHORED MODEL is what somebody drew or a sandbox run once derived. Every \
+  tool except the `fabric_*` and `compare_to_fabric` ones reads it. Default to \
+  it — a question is about the model unless it is explicitly about the tenant.
+- LIVE FABRIC is what the lakehouse holds right now. Reach for it when the \
+  question is about what exists, or whether the model is still true.
+
+Say which one you are describing. "This model records three columns" and \
+"Fabric has three columns" are different claims, and a reader who cannot tell \
+them apart cannot act on either.
+
+A Fabric result carrying `fabric_available: false` means this backend cannot \
+reach Fabric at all — say so plainly and answer from the model instead. A \
+schema result with `readable: false` means the schema could NOT BE READ, which \
+is almost always a permissions problem; it never means the table has no \
+columns, and reporting it that way would claim a healthy table is empty.
+
 # Style
 
 Answer in prose, briefly, leading with the answer. Name entities by their path \
@@ -286,6 +307,27 @@ def _summarize(name: str, payload: Any) -> str:
         return "ok"
     if "error" in payload:
         return str(payload["error"])
+    if name == "fabric_search":
+        count = payload.get("count", 0)
+        return f"{count} in Fabric"
+    if name == "fabric_table_schema":
+        if not payload.get("readable"):
+            # Never "0 columns" — see the note in fabric_tools.table_schema.
+            return "schema unreadable"
+        return f"{len(payload.get('columns') or [])} live columns"
+    if name == "compare_to_fabric":
+        if not payload.get("found_in_fabric"):
+            return "not in Fabric"
+        if payload.get("ambiguous"):
+            return f"{len(payload.get('candidates') or [])} tables share that name"
+        if not payload.get("comparable"):
+            return "schema unreadable — not compared"
+        if payload.get("in_sync"):
+            return "in sync with Fabric"
+        return (
+            f"{len(payload.get('only_in_model') or [])} only in model · "
+            f"{len(payload.get('only_in_fabric') or [])} only in Fabric"
+        )
     if name == "find_entity":
         count = payload.get("count", 0)
         return f"{count} match{'' if count == 1 else 'es'}"

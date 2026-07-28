@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import analysis, graph
+from . import analysis, fabric_tools, graph
 from .model import LineageModel
 
 #: How much of the model's shape is inlined in the system prompt before it is
@@ -199,6 +199,12 @@ TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+# Fabric tools are appended rather than interleaved so the model-reading tools
+# stay first in the list and first in the prompt. They are also the ones it
+# should reach for by default: a question is about the authored model unless it
+# is explicitly about the live tenant.
+TOOLS += fabric_tools.TOOLS
+
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
 
@@ -211,6 +217,9 @@ def run_tool(model: LineageModel, name: str, args: dict[str, Any]) -> Any:
     """
     if name not in TOOL_NAMES:
         raise KeyError(name)
+
+    if name in fabric_tools.TOOL_NAMES:
+        return fabric_tools.run_tool(model, name, args)
 
     if name == "find_entity":
         results = graph.find_entity(

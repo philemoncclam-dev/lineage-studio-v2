@@ -40,6 +40,7 @@ const EXAMPLES = [
   'What breaks if I drop this table?',
   'Which columns have no lineage recorded?',
   'How much of this model is verified?',
+  'Has this table drifted from Fabric?',
 ]
 
 export function AssistantPanel({
@@ -260,6 +261,12 @@ const VERB: Record<string, string> = {
   lineage_gaps: 'scanned for gaps',
   impact: 'impact of',
   coverage: 'measured coverage',
+  // Named for the source they read, not the action: a step that says "Fabric"
+  // is the reader's signal that this claim is about the live tenant and not
+  // about the authored model.
+  fabric_search: 'searched Fabric for',
+  fabric_table_schema: 'read Fabric schema',
+  compare_to_fabric: 'compared to Fabric',
 }
 
 function argLabel(input: Record<string, unknown>): string {

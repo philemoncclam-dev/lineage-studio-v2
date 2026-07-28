@@ -33,8 +33,30 @@ from tests.test_chat_assistant import _FakeClient, _Response, _model, _text, _us
 
 
 class _Obj:
+    """Stands in for an SDK response object.
+
+    Carries `model_dump` because the real ones are pydantic models, and the
+    adapter uses exactly that to echo an assistant turn back verbatim. A double
+    without it would exercise the rebuild fallback instead of the path
+    production takes — and would have hidden the thought_signature bug.
+    """
+
     def __init__(self, **kw: Any) -> None:
         self.__dict__.update(kw)
+
+    def model_dump(self, exclude_none: bool = False) -> dict[str, Any]:
+        def unwrap(value: Any) -> Any:
+            if isinstance(value, _Obj):
+                return value.model_dump(exclude_none=exclude_none)
+            if isinstance(value, list):
+                return [unwrap(v) for v in value]
+            return value
+
+        return {
+            k: unwrap(v)
+            for k, v in self.__dict__.items()
+            if not (exclude_none and v is None)
+        }
 
 
 def _oai_call(call_id: str, tool: str, **args: Any) -> _Obj:
@@ -162,6 +184,37 @@ def test_the_assistant_turn_is_echoed_with_its_tool_call_ids():
     assert echoed["tool_calls"][0]["function"]["name"] == "find_entity"
 
 
+def test_opaque_provider_state_on_a_tool_call_survives_the_round_trip():
+    """Found against live Gemini 3.6, which attaches a `thought_signature` to
+    every tool call and REJECTS the next request if it does not come back:
+    "Function call is missing a thought_signature in functionCall parts".
+
+    An assistant turn rebuilt from id, name and arguments drops it silently. The
+    specific field matters less than the rule — providers hang state on a tool
+    call that is opaque to us and load-bearing to them, so the only safe move is
+    to hand back exactly what we were given.
+    """
+    signed = _oai_call("c1", "find_entity", name="amount")
+    signed.extra_content = {"google": {"thought_signature": "OPAQUE"}}
+    provider, client = _openai_provider(
+        [_oai_reply(calls=[signed]), _oai_reply(text="done")]
+    )
+    ask(_model(), [Message(role="user", content="q")], provider=provider)
+
+    assert "OPAQUE" in json.dumps(client.requests[1]["messages"], default=str)
+
+
+def test_a_reply_with_no_raw_message_still_round_trips():
+    """The rebuild is the fallback, not the norm — but it has to work."""
+    from app.chat.providers import Reply, ToolCall, _assistant_turn
+
+    turn = _assistant_turn(
+        Reply(text="hi", tool_calls=[ToolCall(id="c1", name="find_entity", input={"name": "x"})])
+    )
+    assert turn["tool_calls"][0]["id"] == "c1"
+    assert json.loads(turn["tool_calls"][0]["function"]["arguments"]) == {"name": "x"}
+
+
 def test_proposals_survive_the_openai_dialect():
     provider, _ = _openai_provider(
         [
@@ -255,26 +308,34 @@ def test_an_upstream_failure_is_a_provider_error_in_either_dialect():
 # --- selection --------------------------------------------------------------
 
 
-def test_an_unconfigured_openai_provider_says_which_variable_is_missing():
+def _settings(**kw: Any):
+    """Settings from the arguments alone.
+
+    `_env_file=None` is load-bearing: without it these read the developer's real
+    .env, so an assertion about an unset key passes or fails depending on whose
+    machine it runs on. Every field a test asserts about is passed explicitly.
+    """
     from app.config import Settings
+
+    defaults = {"anthropic_api_key": None, "chat_api_key": None, "chat_model_name": ""}
+    return Settings(_env_file=None, **{**defaults, **kw})
+
+
+def test_an_unconfigured_openai_provider_says_which_variable_is_missing():
     from app.chat.providers import build
 
     with pytest.raises(ProviderError, match="CHAT_API_KEY"):
-        build(Settings(chat_provider="openai_compatible", chat_api_key=None))
+        build(_settings(chat_provider="openai_compatible"))
 
 
 def test_the_model_name_falls_back_so_an_existing_env_keeps_working():
-    from app.config import Settings
-
-    assert Settings(anthropic_model="claude-opus-5").chat_model == "claude-opus-5"
-    assert Settings(chat_model_name="gemini-2.5-flash").chat_model == "gemini-2.5-flash"
+    assert _settings(anthropic_model="claude-opus-5").chat_model == "claude-opus-5"
+    assert _settings(chat_model_name="gemini-3.6-flash").chat_model == "gemini-3.6-flash"
 
 
 def test_configured_reads_the_key_belonging_to_the_selected_provider():
-    from app.config import Settings
-
-    gemini = Settings(chat_provider="openai_compatible", chat_api_key="k")
+    gemini = _settings(chat_provider="openai_compatible", chat_api_key="k")
     assert gemini.chat_configured is True
     # An Anthropic key does not configure a Gemini deployment.
-    stale = Settings(chat_provider="openai_compatible", anthropic_api_key="k")
+    stale = _settings(chat_provider="openai_compatible", anthropic_api_key="k")
     assert stale.chat_configured is False

@@ -227,21 +227,7 @@ def _to_openai(convo: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if entry["role"] == "user":
             out.append({"role": "user", "content": entry["content"]})
         elif entry["role"] == "assistant":
-            reply: Reply = entry["reply"]
-            out.append(
-                {
-                    "role": "assistant",
-                    "content": reply.text or None,
-                    "tool_calls": [
-                        {
-                            "id": c.id,
-                            "type": "function",
-                            "function": {"name": c.name, "arguments": json.dumps(c.input)},
-                        }
-                        for c in reply.tool_calls
-                    ],
-                }
-            )
+            out.append(_assistant_turn(entry["reply"]))
         else:
             # One message PER RESULT here, unlike Anthropic's single user turn
             # carrying every block. Both mean "all results for that turn"; the
@@ -255,6 +241,45 @@ def _to_openai(convo: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     }
                 )
     return out
+
+
+def _assistant_turn(reply: Reply) -> dict[str, Any]:
+    """Echo the provider's own assistant message, not a rebuild of it.
+
+    This is the same rule the Anthropic adapter follows, and skipping it here
+    was a real bug: **Gemini 3.x attaches a `thought_signature` to every tool
+    call and rejects the next request if it does not come back.** It rides in
+    `extra_content.google`, which a message reconstructed from id, name and
+    arguments silently drops — the request then fails with "Function call is
+    missing a thought_signature", naming a field nothing in this codebase had
+    ever heard of.
+
+    The general principle is worth more than the specific field: providers hang
+    state on a tool call that is opaque to us and load-bearing to them, and the
+    only safe move is to hand back exactly what we were given. The rebuild below
+    is the fallback for a reply that carries no raw message at all.
+    """
+    raw = reply.raw
+    dump = getattr(raw, "model_dump", None)
+    if callable(dump):
+        message = dump(exclude_none=True)
+        message["role"] = "assistant"
+        return message
+    if isinstance(raw, dict):
+        return {**raw, "role": "assistant"}
+
+    return {
+        "role": "assistant",
+        "content": reply.text or None,
+        "tool_calls": [
+            {
+                "id": c.id,
+                "type": "function",
+                "function": {"name": c.name, "arguments": json.dumps(c.input)},
+            }
+            for c in reply.tool_calls
+        ],
+    }
 
 
 def _tool_to_openai(tool: dict[str, Any]) -> dict[str, Any]:

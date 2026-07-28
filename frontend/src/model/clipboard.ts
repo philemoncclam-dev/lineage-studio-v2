@@ -305,6 +305,13 @@ export function paste(
 
   // Transitions. Internal edges are duplicated between the clones; boundary
   // edges re-attach to the outside entity, but only if it still exists.
+  //
+  // This applies at every level, ATTRIBUTES INCLUDED: a copied column arrives
+  // wired like the one it came from, and a cut column (copy + delete + paste)
+  // keeps the column-level lineage it had before it moved. Cut is the reason
+  // the rule has to be uniform — deleting an attribute takes its edges with
+  // it, so if paste declined to restore them a move would silently destroy
+  // lineage the user never asked to drop.
   const alive = buildIndex(next).entries
   const transitions = [...next.transitions]
   const add = (source: EntityId, target_: EntityId) => {

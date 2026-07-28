@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { copyEntities, paste } from '../clipboard'
+import { deleteEntities } from '../edit'
 import { buildIndex, countEntities } from '../index'
 import { sampleModel } from '../sample'
 import type { LineageModel } from '../types'
@@ -118,6 +119,32 @@ describe('paste', () => {
     expect(next.transitions.length).toBe(
       model.transitions.length + clip.inbound.length + clip.outbound.length,
     )
+  })
+
+  it('carries an attribute\'s transitions onto the pasted copy', () => {
+    const model = sampleModel()
+    // A column-level edge: OUTPUT1.name feeds tft_applicant.m_customer_name.
+    const source = idOf(model, 'm_customer_name')
+    const clip = copyEntities(model, [source])!
+    expect(clip.inbound.length + clip.outbound.length).toBeGreaterThan(0)
+
+    const next = paste(model, clip, { mode: 'after', id: source })
+    expect(next.transitions.length).toBe(
+      model.transitions.length + clip.inbound.length + clip.outbound.length,
+    )
+  })
+
+  it('preserves an attribute\'s transitions across a cut and paste', () => {
+    const model = sampleModel()
+    const source = idOf(model, 'm_customer_name')
+    // Cut is copy + delete; deleting takes the edges with it, so paste has to
+    // put them back or a move would silently destroy lineage.
+    const clip = copyEntities(model, [source])!
+    const afterCut = deleteEntities(model, [source])
+    expect(afterCut.transitions.length).toBeLessThan(model.transitions.length)
+
+    const next = paste(afterCut, clip, { mode: 'into', id: idOf(model, 'tft_applicant') })
+    expect(next.transitions.length).toBe(model.transitions.length)
   })
 
   it('does not mutate the source model', () => {

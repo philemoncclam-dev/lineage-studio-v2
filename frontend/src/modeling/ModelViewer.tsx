@@ -41,6 +41,7 @@ import {
 import { copyEntities, paste, type Clipboard, type PasteTarget } from '../model/clipboard'
 import ContextMenu, { type MenuItem } from './ContextMenu'
 import { EntityTagDialog, TagManager } from './TagPanel'
+import { AssistantPanel } from './AssistantPanel'
 import { ViewsPanel } from './ViewsPanel'
 import { PropertiesPanel } from './PropertiesPanel'
 import {
@@ -147,7 +148,7 @@ export default function ModelViewer({
    * rail buttons toggle between panels in one click instead of needing the
    * other one closed first.
    */
-  const [dock, setDock] = useState<'views' | 'properties' | null>(null)
+  const [dock, setDock] = useState<'views' | 'properties' | 'assistant' | null>(null)
   /**
    * The last entity clicked WITHOUT a modifier — where a shift-range starts.
    *
@@ -257,6 +258,13 @@ export default function ModelViewer({
     () =>
       registerRailAction('properties', () =>
         setDock((d) => (d === 'properties' ? null : 'properties')),
+      ),
+    [],
+  )
+  useEffect(
+    () =>
+      registerRailAction('assistant', () =>
+        setDock((d) => (d === 'assistant' ? null : 'assistant')),
       ),
     [],
   )
@@ -973,6 +981,28 @@ export default function ModelViewer({
           onSaveView={(name) => onChange(saveView(model, name, filter))}
           onDeleteView={(id) => onChange(deleteView(model, id))}
           onApplyView={(id) => setFilter(toggleView(model, filter, id))}
+          onClose={() => setDock(null)}
+        />
+      )}
+      {dock === 'assistant' && (
+        <AssistantPanel
+          model={model}
+          // Selecting from a trace does NOT close the panel, unlike the Tag
+          // manager: the answer and the entity it names are meant to be read
+          // together, and the next question usually follows from the first.
+          onSelect={(id) => {
+            setSelection(new Set([id]))
+            setSelectedEdges(new Set())
+            setCollapsed((prev) => {
+              // Revealing a buried entity is pointless if an ancestor is
+              // collapsed over it — open the path, as search and Properties do.
+              const next = new Set(prev)
+              next.delete(id)
+              for (const ancestor of ancestorsOf(index, id)) next.delete(ancestor.id)
+              return next
+            })
+            setReveal(id)
+          }}
           onClose={() => setDock(null)}
         />
       )}

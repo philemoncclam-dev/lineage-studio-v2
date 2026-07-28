@@ -35,6 +35,7 @@ export type RailIconName =
   | 'browser'
   | 'tag'
   | 'properties'
+  | 'assistant'
 
 export interface RailItem {
   key: string
@@ -54,6 +55,7 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
     // the only NAVIGATION item among commands — it read as the odd one out.
     { key: 'properties', label: 'Properties', icon: 'properties', action: 'properties' },
     { key: 'views', label: 'Views', icon: 'filter', action: 'views' },
+    { key: 'assistant', label: 'Assistant', icon: 'assistant', action: 'assistant' },
     { key: 'tags', label: 'Tags', icon: 'tag', action: 'tags' },
     { key: 'mapping', label: 'Auto-Mapper', icon: 'mapping', action: 'mapping' },
     { key: 'import', label: 'Import', icon: 'import', action: 'import' },

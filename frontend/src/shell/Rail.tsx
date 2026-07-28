@@ -83,6 +83,12 @@ const ICONS: Record<RailIconName, ReactNode> = {
   properties: (
     <svg viewBox="0 0 24 24"><path d="M4 7.5h16M4 12h16M4 16.5h16" /><circle cx="9" cy="7.5" r="1.9" /><circle cx="15" cy="12" r="1.9" /><circle cx="8" cy="16.5" r="1.9" /></svg>
   ),
+  // A speech bubble with a node-and-edge inside it: this is a conversation
+  // ABOUT the graph. A bare bubble would read as comments or chat with a
+  // person, and a bare sparkle would say "AI" without saying what it does.
+  assistant: (
+    <svg viewBox="0 0 24 24"><path d="M20.5 15.5a2 2 0 0 1-2 2H9l-4.5 3.5v-3.5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><circle cx="8.5" cy="9" r="1.3" /><circle cx="15" cy="12.5" r="1.3" /><path d="m9.6 9.9 4.3 1.9" /></svg>
+  ),
 }
 
 export default function Rail({ items }: { items: RailItem[] }) {

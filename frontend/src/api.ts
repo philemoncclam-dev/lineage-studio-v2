@@ -714,6 +714,59 @@ export function refParts(ref: string): SandboxTableRef {
   }
 }
 
+// --- the model assistant (backend/app/chat) -------------------------------
+// Phase 1 is a deterministic graph walk in Python; phase 2 is the LLM that
+// picks which walk answers the question and says the result in a sentence.
+//
+// The MODEL TRAVELS IN THE REQUEST. It lives in this browser's localStorage and
+// the backend has no store for it, so `/chat/ask` is a pure function of what it
+// is sent — which is also why there is no session: the conversation is held
+// here and replayed each turn.
+
+/** One turn as this browser holds it. Assistant turns are prose, not tool blocks. */
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+/** One traversal the assistant ran, so the prose can be checked against it. */
+export interface AssistantToolCall {
+  name: string
+  input: Record<string, unknown>
+  /** A one-line summary — carries the walk's own caveats ("object level", "truncated"). */
+  result: string
+}
+
+export interface AssistantAnswer {
+  text: string
+  /**
+   * In call order. EMPTY ON A SUBSTANTIVE ANSWER IS A RED FLAG: it means the
+   * model replied without reading the graph, and the UI marks it as such rather
+   * than presenting it with the same authority as a traced one.
+   */
+  trace: AssistantToolCall[]
+  stop_reason: 'end_turn' | 'max_rounds' | 'refusal'
+}
+
+export async function fetchChatStatus(): Promise<{ configured: boolean; model: string }> {
+  const res = await fetch(`${BASE}/chat/status`)
+  if (!res.ok) return detail(res, 'assistant status')
+  return res.json()
+}
+
+export async function askAssistant(
+  model: unknown,
+  messages: ChatMessage[],
+): Promise<AssistantAnswer> {
+  const res = await fetch(`${BASE}/chat/ask`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, messages }),
+  })
+  if (!res.ok) return detail(res, 'assistant')
+  return res.json()
+}
+
 export async function runSandbox(body: {
   name?: string
   workspace_id?: string

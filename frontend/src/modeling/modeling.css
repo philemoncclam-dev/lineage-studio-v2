@@ -2068,3 +2068,218 @@
   grid-template-columns: 92px 1fr;
   gap: 6px;
 }
+
+/* --- Assistant panel ------------------------------------------------------
+   Same dock geometry as .vw-panel, but wider and a three-row grid rather than
+   a scrolling body: the composer must stay pinned while the transcript
+   scrolls, which a single overflowing column cannot do. Wider because prose
+   at 300px wraps every four words. */
+.as-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid rgb(28 35 51 / 0.14);
+  background: #fff;
+  box-shadow: -8px 0 24px rgb(16 20 30 / 0.08);
+}
+.as-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.as-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.as-empty-lead {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b7280;
+}
+.as-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.as-example {
+  text-align: left;
+  padding: 7px 10px;
+  border: 1px solid rgb(28 35 51 / 0.16);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  color: #1c2333;
+  cursor: pointer;
+}
+.as-example:hover {
+  border-color: #1f6feb;
+  color: #1f6feb;
+}
+
+.as-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+/* The user's own words are right-aligned and tinted; the assistant's are flush
+   left and plain. Whose turn it is has to be readable at a glance without
+   labels eating a line each. */
+.as-turn[data-role='user'] {
+  align-items: flex-end;
+}
+.as-bubble {
+  max-width: 92%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  color: #1c2333;
+}
+.as-turn[data-role='user'] .as-bubble {
+  background: #eef3fd;
+}
+.as-turn[data-role='assistant'] .as-bubble {
+  background: #f6f7f9;
+}
+.as-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #6b7280;
+}
+
+/* An answer nothing was traced for. Deliberately the loudest thing in the
+   panel — it is the one case where a wrong answer reads exactly like a right
+   one, so it must not be a subtle grey footnote. */
+.as-untraced {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fdf0e6;
+  border: 1px solid #f0c39a;
+  color: #9a5b1c;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.as-trace-toggle {
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: #6b7280;
+  cursor: pointer;
+}
+.as-trace-toggle:hover {
+  color: #1f6feb;
+}
+.as-steps {
+  margin: 2px 0 0;
+  padding: 0 0 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  border-left: 2px solid rgb(28 35 51 / 0.1);
+}
+.as-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 11px;
+  color: #6b7280;
+}
+.as-step-name {
+  font-weight: 600;
+  color: #4b5563;
+}
+.as-step-entity {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: #1f6feb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.as-step-result {
+  font-variant-numeric: tabular-nums;
+}
+
+.as-error {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fdecec;
+  color: #992222;
+  font-size: 12px;
+}
+.as-off {
+  flex: none;
+  padding: 12px;
+  border-top: 1px solid rgb(28 35 51 / 0.12);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b7280;
+}
+.as-off code {
+  font-size: 11px;
+}
+
+.as-composer {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px 12px;
+  border-top: 1px solid rgb(28 35 51 / 0.12);
+}
+.as-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: none;
+  padding: 7px 9px;
+  border: 1px solid rgb(28 35 51 / 0.2);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.as-input:focus {
+  outline: none;
+  border-color: #1f6feb;
+}
+.as-send {
+  flex: none;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #1f6feb;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.as-send:disabled {
+  background: #c3cad6;
+  cursor: default;
+}

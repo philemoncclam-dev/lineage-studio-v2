@@ -12,6 +12,7 @@ export type RailActionKey =
   | 'tags'
   | 'views'
   | 'properties'
+  | 'assistant'
 
 type Handler = () => void
 

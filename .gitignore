@@ -30,3 +30,6 @@ backend/data/
 
 # Local-only design reference material. Never published.
 /Inspo/
+
+# Eval transcripts — a paid run's output, per-machine and not worth versioning.
+backend/*.json

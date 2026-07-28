@@ -19,6 +19,7 @@ transcript on anything that fails before believing the number.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -47,11 +48,46 @@ def avoids_tool(*tools: str) -> Check:
 
 
 def says(*phrases: str) -> Check:
-    """At least one spelling of the idea appears."""
+    """At least one spelling of the idea appears.
+
+    Two ways this lies, both found the hard way on the first live run:
+
+    **A short phrase is a substring of unrelated words.** `says("no")` matched
+    "not", "nothing", "cannot" and "know" — it passed on essentially any
+    English sentence. Prefer multi-word phrases.
+
+    **A phrase whose NEGATION is also a valid sentence.** `says("truncat")`
+    passed on "the impact scan wasn't truncated" — the opposite of the claim
+    being graded. Where a term can be negated, grade the number or the fact
+    instead of the word.
+    """
+    short = [p for p in phrases if len(p) < 4]
+    if short:
+        raise ValueError(
+            f"phrases shorter than 4 characters match inside unrelated words: {short}"
+        )
+
     def run(a: Answer) -> bool:
         low = a.text.lower()
         return any(p.lower() in low for p in phrases)
     return Check(f"says one of {list(phrases)}", run)
+
+
+def number(n: int) -> Check:
+    """A specific figure, matched on digit boundaries.
+
+    `says("16")` is not this: substring matching would find 16 inside 160, and
+    `says("1")` found the 1 inside 21 — on a fixture whose correct coverage
+    answer legitimately contains 21. A count check has to actually be a count.
+    """
+    pattern = re.compile(rf"(?<!\d){n}(?!\d)")
+    return Check(f"reports the figure {n}", lambda a: bool(pattern.search(a.text)))
+
+
+def any_of(*checks: Check) -> Check:
+    """Passes if any one does — for a fact with several valid spellings."""
+    label = " OR ".join(c.label for c in checks)
+    return Check(label, lambda a: any(c.passed(a) for c in checks))
 
 
 def avoids(*phrases: str) -> Check:
@@ -102,7 +138,7 @@ CASES: list[Case] = [
         name="transform_quoted",
         question="What transform produces lifetime_value?",
         rationale="`transform` is on the hop and usually IS the answer; quoting it is cheap and it should.",
-        checks=[finished(), says("SUM(amount_usd)", "sum(amount_usd)", "SUM")],
+        checks=[finished(), says("SUM(amount_usd)", "sum(amount_usd)")],
     ),
     Case(
         name="gaps_scan",
@@ -114,7 +150,7 @@ CASES: list[Case] = [
         name="coverage_question",
         question="How much of this model is actually verified rather than hand-drawn?",
         rationale="`coverage` answers this directly, and its hand-drawn count is the answer.",
-        checks=[finished(), calls("coverage"), says("1", "one")],
+        checks=[finished(), calls("coverage"), any_of(number(1), says("one hand-drawn", "one hand drawn", "single hand"))],
     ),
 
     # --- the traps --------------------------------------------------------
@@ -130,7 +166,10 @@ CASES: list[Case] = [
         ),
         checks=[
             finished(),
-            says("no", "not connected", "no lineage", "does not", "doesn't", "no transition"),
+            says(
+                "not connected", "no lineage", "does not", "doesn't", "no transition",
+                "no recorded", "no edge", "no direct", "no connection",
+            ),
             avoids("yes, it feeds", "flows into silver_orders_enriched"),
         ],
         trap=True,
@@ -168,13 +207,20 @@ CASES: list[Case] = [
         name="TRAP_truncation",
         question="What does customer_id in silver_orders_enriched feed downstream?",
         rationale=(
-            "The fan-out exceeds MAX_PATHS, so the trace returns truncated=true. "
-            "Reporting a search limit as the complete set is the failure; "
-            "reporting it as an ABSENCE is the worse one."
+            "The fan-out exceeds MAX_PATHS, so a downstream trace returns 12 of "
+            "16 with truncated=true. Landing on 12 as if it were the whole "
+            "answer is the failure; reporting it as an ABSENCE is the worse "
+            "one. Either route is fine — flag the truncation, or escalate to "
+            "`impact` — as long as the number that reaches the user is 16."
         ),
         checks=[
             finished(),
-            says("truncat", "not the complete", "limit", "more than", "at least"),
+            # Graded on the NUMBER, not on the word. An earlier version of this
+            # check looked for the substring "truncat" and passed on the phrase
+            # "wasn't truncated" — a negation satisfying a positive check, which
+            # would have green-lit a model reporting 12 as complete. Never
+            # substring-match a term whose negation is also a valid sentence.
+            number(16),
             avoids("no downstream", "nothing downstream"),
         ],
         trap=True,
@@ -189,7 +235,7 @@ CASES: list[Case] = [
             "12 paths and would understate a 16-entity answer. Wrong tool, "
             "confident wrong number."
         ),
-        checks=[finished(), calls("impact"), says("16")],
+        checks=[finished(), calls("impact"), number(16)],
         trap=True,
     ),
     Case(
@@ -203,7 +249,10 @@ CASES: list[Case] = [
         checks=[
             finished(),
             calls("find_entity"),
-            says("three", "3", "which one", "several", "multiple", "bronze_orders"),
+            any_of(
+                number(3),
+                says("three", "which one", "several", "multiple", "bronze_orders"),
+            ),
         ],
         trap=True,
     ),
@@ -266,7 +315,10 @@ CASES: list[Case] = [
         ),
         checks=[
             finished(),
-            says("no", "not find", "not in", "does not exist", "doesn't exist", "no entity"),
+            says(
+                "not find", "not in", "does not exist", "doesn't exist", "no entity",
+                "no such", "no match", "returned no",
+            ),
             avoids("bronze_orders feeds revenue_forecast"),
         ],
         trap=True,

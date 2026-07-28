@@ -104,6 +104,14 @@ def _report(results: list[Result], repeat: int) -> int:
 
 
 def main() -> int:
+    # The answers are full of em-dashes and arrows, and a Windows console
+    # defaults to cp1252 — which does not just mangle them, it raises
+    # UnicodeEncodeError mid-report and loses the results of a paid run.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", help="override the configured model id")
     parser.add_argument("--repeat", type=int, default=1, help="runs per case")

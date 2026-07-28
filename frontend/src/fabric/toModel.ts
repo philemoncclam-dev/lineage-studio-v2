@@ -403,7 +403,15 @@ export function sequenceToModel(
       if (options.columns)
         for (const column of n.columns) {
           const attr: Attribute = { id: crypto.randomUUID(), name: column.name, children: [] }
-          attrIdOf.set(`${n.name}\0${column.name}`, attr.id)
+          // Keyed by the REF, not the display name. The column-lineage lookup
+          // below uses `f.to_table`, which is always a canonical ref
+          // (`Analytics/Silver/silver_orders`), while `n.name` is the leaf
+          // label (`silver_orders`). Those coincide only for bare unqualified
+          // refs — which is what a hand-written fixture uses and what a real
+          // Fabric run never produces. Keyed by name, every lookup missed and
+          // EVERY column edge was silently dropped from a real model: the
+          // columns still drew on the cards, so the loss was invisible.
+          attrIdOf.set(`${n.ref ?? n.name}\0${column.name}`, attr.id)
           if (column.type) props[attr.id] = { 'Data type': column.type }
           object.children.push(attr)
         }

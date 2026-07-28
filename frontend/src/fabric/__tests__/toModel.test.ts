@@ -524,3 +524,68 @@ describe('the raw file layer becomes an object', () => {
     expect(model.transitions.some((t) => ids.has(t.source) || ids.has(t.target))).toBe(true)
   })
 })
+
+describe('column edges with workspace-qualified refs', () => {
+  // Every earlier fixture uses bare refs ('raw_orders'), where the ref and the
+  // display label happen to be the same string. A real Fabric run never does —
+  // its refs are 'Workspace/Lakehouse/table'. Keying the attribute lookup by
+  // label instead of ref therefore passed every test and dropped every column
+  // edge in production.
+  const BRONZE = 'Analytics/Bronze/bronze_orders'
+  const SILVER = 'Analytics/Silver/silver_orders'
+
+  function qualifiedRun() {
+    const s = step('a', 'enrich')
+    return {
+      s,
+      results: new Map([
+        [
+          s.key,
+          ran('enrich', result({
+            reads: [BRONZE],
+            writes: [SILVER],
+            table_schemas: {
+              [BRONZE]: [{ name: 'amount', type: 'double' }],
+              [SILVER]: [{ name: 'amount_usd', type: null }],
+            },
+            column_lineage: [{
+              to_table: SILVER, to_column: 'amount_usd',
+              from_table: BRONZE, from_column: 'amount',
+              transform: 'amount * 1.1',
+            }],
+          })),
+        ],
+      ]),
+    }
+  }
+
+  it('creates the attribute-level edge', () => {
+    const { s, results } = qualifiedRun()
+    const { stats } = sequenceToModel([s], results, 'M')
+    expect(stats.columnEdges).toBe(1)
+  })
+
+  it('connects the two columns, not their tables', () => {
+    const { s, results } = qualifiedRun()
+    const { model } = sequenceToModel([s], results, 'M')
+    const attrs = model.layers
+      .flatMap((l) => l.objects)
+      .flatMap((o) => o.children.map((c) => [c.id, `${o.name}.${c.name}`] as const))
+    const byId = new Map(attrs)
+    const edge = model.transitions.find((t) => byId.has(t.source) && byId.has(t.target))
+    expect(edge).toBeDefined()
+    expect([byId.get(edge!.source), byId.get(edge!.target)]).toEqual([
+      'bronze_orders.amount',
+      'silver_orders.amount_usd',
+    ])
+  })
+
+  it('carries the transform onto the edge', () => {
+    const { s, results } = qualifiedRun()
+    const { model } = sequenceToModel([s], results, 'M')
+    const withTransform = Object.values(model.properties).filter((p) => p['Transform'])
+    expect(withTransform).toEqual([
+      expect.objectContaining({ Transform: 'amount * 1.1' }),
+    ])
+  })
+})

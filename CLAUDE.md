@@ -35,6 +35,10 @@ cd backend
 py -m venv .venv && .venv/Scripts/pip install -r requirements.txt
 .venv/Scripts/uvicorn app.main:app --reload   # http://localhost:8000
 
+# assistant eval — COSTS MONEY, calls a live provider. Not part of pytest.
+cd backend && .venv/Scripts/python -m evals.run
+.venv/Scripts/python -m evals.run --model claude-haiku-4-5 --repeat 3
+
 # frontend
 cd frontend
 npm install

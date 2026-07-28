@@ -43,7 +43,7 @@ two, and it is also the honest one: the model changes between turns.
 from __future__ import annotations
 
 import json
-from typing import Any, Protocol
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -51,14 +51,18 @@ from ..config import get_settings
 from . import edits as edits_module
 from .edits import ProposedEdit
 from .model import LineageModel
+from .providers import (
+    MAX_TOKENS,
+    AnthropicProvider,
+    Provider,
+    ProviderError,
+)
+from .providers import build as build_provider
 from .tools import TOOLS, outline, run_tool
 
 #: A question needs a handful of walks, not a hundred. This bounds a model that
 #: has started looping — it stops the turn and says so rather than spending.
 MAX_TOOL_ROUNDS = 8
-
-#: Caps thinking + reply together on models where thinking is on by default.
-MAX_TOKENS = 8000
 
 SYSTEM = """\
 You are the lineage assistant for Lineage Studio, answering questions about ONE \
@@ -196,50 +200,32 @@ class AssistantError(RuntimeError):
     """Configuration or upstream failure — surfaced to the caller as 4xx/5xx."""
 
 
-class _Client(Protocol):
-    """The slice of the Anthropic client this module uses.
-
-    Narrow on purpose: it is the whole seam the tests substitute, and keeping it
-    to one method means a test double cannot accidentally diverge from the parts
-    of the SDK we actually depend on.
-    """
-
-    @property
-    def messages(self) -> Any: ...
-
-
-def build_client() -> _Client:
-    """The configured Anthropic client, or a clear error saying why not."""
-    settings = get_settings()
-    if not settings.anthropic_api_key:
-        raise AssistantError(
-            "The assistant is not configured — set ANTHROPIC_API_KEY in the "
-            "environment to enable it."
-        )
-    try:
-        import anthropic
-    except ImportError as exc:  # pragma: no cover - depends on the install
-        raise AssistantError(
-            "The `anthropic` package is not installed; run "
-            "`pip install -r requirements.txt`."
-        ) from exc
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
-
-
 def ask(
     model: LineageModel,
     messages: list[Message],
     *,
-    client: _Client | None = None,
+    client: Any | None = None,
+    provider: Provider | None = None,
 ) -> Answer:
-    """Answer a question about `model`, running traversals as needed."""
+    """Answer a question about `model`, running traversals as needed.
+
+    `client` is the Anthropic-shaped seam the tests substitute; `provider` takes
+    an already-built adapter. Neither is required in production — the configured
+    provider is built from settings.
+    """
     if not messages:
         raise AssistantError("No question was asked.")
 
-    client = client or build_client()
-    llm_model = get_settings().anthropic_model
+    if provider is None:
+        provider = (
+            AnthropicProvider(client, get_settings().chat_model)
+            if client is not None
+            else build_provider()
+        )
 
     system = _system_blocks(model)
+    # Provider-neutral conversation. Each adapter renders it into its own wire
+    # shape; nothing in this loop knows what that looks like.
     convo: list[dict[str, Any]] = [
         {"role": m.role, "content": m.content} for m in messages
     ]
@@ -247,35 +233,37 @@ def ask(
     proposals: list[ProposedEdit] = []
 
     for _ in range(MAX_TOOL_ROUNDS):
-        response = _create(client, llm_model, system, convo)
+        try:
+            reply = provider.complete(system=system, convo=convo, tools=TOOLS)
+        except ProviderError as exc:
+            raise AssistantError(str(exc)) from exc
 
-        if getattr(response, "stop_reason", None) == "refusal":
+        if reply.stop_reason == "refusal":
             return Answer(
                 text=(
                     "I wasn't able to answer that one. Try rephrasing the "
                     "question about the model."
                 ),
                 trace=trace,
+                proposals=proposals,
                 stop_reason="refusal",
             )
 
-        blocks = list(response.content)
-        calls = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
-        if not calls:
+        if not reply.tool_calls:
             return Answer(
-                text=_text_of(blocks),
+                text=reply.text or "(no answer)",
                 trace=trace,
                 proposals=proposals,
                 stop_reason="end_turn",
             )
 
-        # The assistant turn goes back verbatim — thinking and tool_use blocks
-        # included. Reconstructing it from the text alone loses the tool_use ids
-        # the results below have to match, and the API rejects the next request.
-        convo.append({"role": "assistant", "content": blocks})
+        # The assistant turn is carried as the provider gave it, so each adapter
+        # can echo it verbatim — reconstructing it from text loses the tool-call
+        # ids the results below have to match.
+        convo.append({"role": "assistant", "reply": reply})
 
         results: list[dict[str, Any]] = []
-        for call in calls:
+        for call in reply.tool_calls:
             args = dict(call.input or {})
             try:
                 if call.name in edits_module.TOOL_NAMES:
@@ -296,16 +284,14 @@ def ask(
             )
             results.append(
                 {
-                    "type": "tool_result",
-                    "tool_use_id": call.id,
+                    "id": call.id,
                     "content": json.dumps(payload, default=str),
                     "is_error": is_error,
                 }
             )
-        # All results for one assistant turn go back in a SINGLE user message.
-        # Splitting them teaches the model to stop calling tools in parallel.
-        convo.append({"role": "user", "content": results})
-        _mark_cache_point(convo)
+        # All results for one assistant turn go back together. Splitting them
+        # teaches the model to stop calling tools in parallel.
+        convo.append({"role": "tool_results", "results": results})
 
     return Answer(
         text=(
@@ -358,55 +344,6 @@ def _system_blocks(model: LineageModel) -> list[dict[str, Any]]:
         {"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}},
         {"type": "text", "text": variable},
     ]
-
-
-def _mark_cache_point(convo: list[dict[str, Any]]) -> None:
-    """Keep exactly one rolling breakpoint on the newest tool results.
-
-    Within a turn the loop re-sends the whole growing conversation each round,
-    and tool results are the bulk of it — a trace can be a few thousand tokens
-    of JSON. Caching the newest one means the next round reads everything before
-    it at a tenth of the price.
-
-    The breakpoint has to ROLL rather than accumulate: a request may carry at
-    most four, and marking every round would exceed that on a long turn and be
-    rejected outright. So the previous mark is cleared before the new one is
-    set, leaving one here plus one in the system prompt.
-    """
-    for message in convo:
-        content = message.get("content")
-        if isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict):
-                    block.pop("cache_control", None)
-
-    last = convo[-1]["content"]
-    if isinstance(last, list) and last and isinstance(last[-1], dict):
-        last[-1]["cache_control"] = {"type": "ephemeral"}
-
-
-def _create(
-    client: _Client, llm_model: str, system: list[dict[str, Any]], convo: list[dict[str, Any]]
-) -> Any:
-    try:
-        return client.messages.create(
-            model=llm_model,
-            max_tokens=MAX_TOKENS,
-            system=system,
-            tools=TOOLS,
-            messages=convo,
-        )
-    except AssistantError:
-        raise
-    except Exception as exc:  # noqa: BLE001 - the SDK's error tree is broad
-        raise AssistantError(f"The assistant call failed: {exc}") from exc
-
-
-def _text_of(blocks: list[Any]) -> str:
-    parts = [
-        b.text for b in blocks if getattr(b, "type", None) == "text" and getattr(b, "text", "")
-    ]
-    return "\n\n".join(parts).strip() or "(no answer)"
 
 
 def _summarize(name: str, payload: Any) -> str:

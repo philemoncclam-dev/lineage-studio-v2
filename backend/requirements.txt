@@ -18,6 +18,9 @@ sqlglot>=25.0
 # The model assistant (app/chat) — the LLM half of phase 2. Optional at
 # runtime: with no ANTHROPIC_API_KEY the app starts and every other path works.
 anthropic>=0.69
+# The OpenAI-compatible dialect — Gemini, Groq, OpenRouter and Ollama all speak
+# it, so this one client covers every non-Anthropic option. See chat/providers.py.
+openai>=1.60
 
 # Tests
 pytest>=8.3

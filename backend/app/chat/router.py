@@ -35,8 +35,12 @@ class AskRequest(BaseModel):
 def status() -> dict[str, bool | str]:
     settings = get_settings()
     return {
-        "configured": bool(settings.anthropic_api_key),
-        "model": settings.anthropic_model,
+        "configured": settings.chat_configured,
+        "model": settings.chat_model,
+        # Which LLM is answering is worth surfacing: the same question gets a
+        # different quality of answer from Gemini's free tier than from Opus,
+        # and "which model was that?" is otherwise unanswerable from the UI.
+        "provider": settings.chat_provider,
     }
 
 

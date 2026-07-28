@@ -54,6 +54,26 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-opus-5"
 
+    #: `anthropic` or `openai_compatible`. The second is the common dialect
+    #: spoken by Gemini, Groq, OpenRouter and Ollama alike — which one you get
+    #: is decided by `chat_base_url`, not by a separate provider each time.
+    chat_provider: str = "anthropic"
+    chat_api_key: str | None = None
+    chat_base_url: str | None = None
+    #: Empty means "use the Anthropic default", so an existing .env that only
+    #: sets ANTHROPIC_MODEL keeps working untouched.
+    chat_model_name: str = ""
+
+    @property
+    def chat_model(self) -> str:
+        return self.chat_model_name or self.anthropic_model
+
+    @property
+    def chat_configured(self) -> bool:
+        if self.chat_provider == "openai_compatible":
+            return bool(self.chat_api_key)
+        return bool(self.anthropic_api_key)
+
     @property
     def allowed_origins(self) -> list[str]:
         configured = [o.strip().rstrip("/") for o in self.cors_origins.split(",")]

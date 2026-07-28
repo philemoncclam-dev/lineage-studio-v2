@@ -1008,6 +1008,11 @@ export default function ModelViewer({
           // "Undo the assistant's suggestion" is a single intention; six ⌃Z to
           // reverse one click would be a worse promise than not offering it.
           onApplyEdits={(edits) => onChange(applyProposals(model, edits))}
+          // An ordinary model edit: undoable, and persisted by the same
+          // debounced save as everything else.
+          onSetInstructions={(text) =>
+            onChange({ ...model, assistantInstructions: text, updatedAt: Date.now() })
+          }
           onClose={() => setDock(null)}
         />
       )}

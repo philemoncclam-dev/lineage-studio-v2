@@ -28,7 +28,12 @@ each one is a place a naive implementation goes wrong:
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+#: Custom instructions are the user's own words, so they are capped rather than
+#: trusted to be short. They ride in the prompt on every request and every
+#: round of the tool loop, so an unbounded field is an unbounded bill.
+MAX_INSTRUCTIONS = 2000
 
 
 class Attribute(BaseModel):
@@ -71,8 +76,24 @@ class LineageModel(BaseModel):
     untouched.
     """
 
+    # The frontend document is camelCase; this is the first field where that
+    # diverges from Python naming, so it is aliased rather than renamed on
+    # either side. `populate_by_name` keeps the Python name usable in tests.
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str = ""
     name: str = ""
     layers: list[Layer] = Field(default_factory=list)
     transitions: list[Transition] = Field(default_factory=list)
     properties: dict[str, dict[str, str]] = Field(default_factory=dict)
+    #: House rules for the assistant, written by the user and stored WITH THE
+    #: MODEL rather than in the environment — different models want different
+    #: conventions, they travel with an exported model, and changing them is an
+    #: edit rather than a redeploy. Style and format only: see `assistant.py`
+    #: for why these cannot loosen how faithfully a result is reported.
+    assistant_instructions: str = Field("", alias="assistantInstructions")
+
+    @property
+    def instructions(self) -> str:
+        """The custom instructions, trimmed and capped."""
+        return self.assistant_instructions.strip()[:MAX_INSTRUCTIONS]

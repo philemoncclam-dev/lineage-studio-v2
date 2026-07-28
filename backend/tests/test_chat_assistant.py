@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 from app.chat.assistant import MAX_TOOL_ROUNDS, AssistantError, Message, ask
-from app.chat.model import LineageModel
+from app.chat.model import MAX_INSTRUCTIONS, LineageModel
 from app.chat.tools import TOOLS, outline, run_tool
 
 
@@ -211,6 +211,153 @@ def test_an_upstream_failure_becomes_an_assistant_error_not_a_raw_sdk_exception(
 def test_an_empty_conversation_is_refused_before_any_call_is_made():
     with pytest.raises(AssistantError):
         ask(_model(), [], client=_FakeClient([]))
+
+
+# --- prompt caching ---------------------------------------------------------
+
+
+def _blocks(request):
+    return request["system"]
+
+
+def test_the_fixed_rules_and_tool_schemas_are_cached_together():
+    """Render order is tools then system, so a breakpoint at the end of the
+    stable system block covers both — the largest fixed cost in a turn."""
+    client = _FakeClient([_Response([_text("hi")])])
+    ask(_model(), [Message(role="user", content="q")], client=client)
+
+    blocks = _blocks(client.requests[0])
+    assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in blocks[1]
+
+
+def test_everything_model_specific_sits_after_the_breakpoint():
+    """A per-model outline before the breakpoint would change the cached prefix
+    for every model — the silent invalidator, where nothing errors and the
+    cache simply never hits."""
+    client = _FakeClient([_Response([_text("hi")])])
+    ask(_model(), [Message(role="user", content="q")], client=client)
+
+    stable, variable = _blocks(client.requests[0])
+    assert "Medallion" not in stable["text"]
+    assert "Medallion" in variable["text"]
+    assert "bronze_orders" in variable["text"]
+
+
+def test_the_cached_block_is_byte_identical_across_different_models():
+    """The whole point: two users on two models share one cache entry."""
+    other = LineageModel.model_validate({"id": "m2", "name": "Other", "layers": []})
+    a, b = _FakeClient([_Response([_text("x")])]), _FakeClient([_Response([_text("x")])])
+    ask(_model(), [Message(role="user", content="q")], client=a)
+    ask(other, [Message(role="user", content="q")], client=b)
+
+    assert _blocks(a.requests[0])[0]["text"] == _blocks(b.requests[0])[0]["text"]
+
+
+def test_the_newest_tool_results_carry_a_rolling_cache_point():
+    client = _FakeClient(
+        [
+            _Response([_use("c1", "find_entity", name="amount")]),
+            _Response([_use("c2", "find_entity", name="ltv")]),
+            _Response([_text("done")]),
+        ]
+    )
+    ask(_model(), [Message(role="user", content="q")], client=client)
+
+    sent = client.requests[-1]["messages"]
+    marked = [
+        block
+        for message in sent
+        if isinstance(message["content"], list)
+        for block in message["content"]
+        if isinstance(block, dict) and "cache_control" in block
+    ]
+    # Exactly one, on the most recent results — not one per round.
+    assert len(marked) == 1
+    assert marked[0]["tool_use_id"] == "c2"
+
+
+def test_a_long_turn_never_exceeds_the_four_breakpoint_limit():
+    """Accumulating a breakpoint per round would be REJECTED outright by the
+    API on a long turn, losing the whole answer."""
+    client = _FakeClient(
+        [_Response([_use(f"c{i}", "find_entity", name="amount")]) for i in range(MAX_TOOL_ROUNDS)]
+    )
+    ask(_model(), [Message(role="user", content="q")], client=client)
+
+    for request in client.requests:
+        count = sum(1 for b in request["system"] if "cache_control" in b)
+        count += sum(
+            1
+            for message in request["messages"]
+            if isinstance(message["content"], list)
+            for block in message["content"]
+            if isinstance(block, dict) and "cache_control" in block
+        )
+        assert count <= 4
+
+
+# --- custom instructions ----------------------------------------------------
+
+
+def _with_instructions(text: str) -> LineageModel:
+    model = _model()
+    model.assistant_instructions = text
+    return model
+
+
+def test_house_rules_reach_the_prompt():
+    client = _FakeClient([_Response([_text("hi")])])
+    ask(_with_instructions("Always answer in British English."), [Message(role="user", content="q")], client=client)
+
+    assert "British English" in _blocks(client.requests[0])[1]["text"]
+
+
+def test_house_rules_sit_after_the_cache_breakpoint():
+    """Otherwise editing them invalidates the shared prefix on every request —
+    and instructions are edited far more often than the rules above them."""
+    client = _FakeClient([_Response([_text("hi")])])
+    ask(_with_instructions("Be terse."), [Message(role="user", content="q")], client=client)
+
+    stable, variable = _blocks(client.requests[0])
+    assert "Be terse." not in stable["text"]
+    assert "Be terse." in variable["text"]
+
+
+def test_house_rules_are_framed_as_style_and_cannot_loosen_fidelity():
+    """A rule asking for confident one-liners must not license reporting a
+    table-level path as a column-level claim."""
+    client = _FakeClient([_Response([_text("hi")])])
+    ask(_with_instructions("Be confident."), [Message(role="user", content="q")], client=client)
+
+    variable = _blocks(client.requests[0])[1]["text"]
+    assert "do not change what counts as a fact" in variable
+    assert "follow the trace" in variable
+
+
+def test_no_house_rules_section_appears_when_there_are_none():
+    client = _FakeClient([_Response([_text("hi")])])
+    ask(_model(), [Message(role="user", content="q")], client=client)
+    assert "House rules" not in _blocks(client.requests[0])[1]["text"]
+
+
+def test_blank_instructions_are_not_treated_as_instructions():
+    client = _FakeClient([_Response([_text("hi")])])
+    ask(_with_instructions("   \n  "), [Message(role="user", content="q")], client=client)
+    assert "House rules" not in _blocks(client.requests[0])[1]["text"]
+
+
+def test_instructions_are_capped_rather_than_trusted_to_be_short():
+    """They ride in the prompt on every round of every turn, so an unbounded
+    field is an unbounded bill."""
+    model = _with_instructions("x" * 9000)
+    assert len(model.instructions) == MAX_INSTRUCTIONS
+
+
+def test_instructions_arrive_under_the_frontend_camelcase_name():
+    """The browser sends the document as it stores it."""
+    parsed = LineageModel.model_validate({"assistantInstructions": "Use tables."})
+    assert parsed.instructions == "Use tables."
 
 
 # --- the trace: what the UI shows next to the prose -------------------------

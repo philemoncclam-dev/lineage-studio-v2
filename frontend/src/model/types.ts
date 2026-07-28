@@ -91,6 +91,17 @@ export interface LineageModel {
   starred?: boolean
   /** Epoch ms of the last time the model was opened. Drives the default sort. */
   lastViewedAt?: number
+
+  /**
+   * House rules for the assistant — style, voice, formatting.
+   *
+   * Stored with the model rather than in the backend's environment: different
+   * models want different conventions, the rules travel with an exported model,
+   * and changing them is an edit (undoable, persisted) rather than a redeploy.
+   * The backend places them after its cache breakpoint so editing them costs
+   * nothing, and downstream of the fidelity rules so they cannot loosen them.
+   */
+  assistantInstructions?: string
 }
 
 /** Summary row for the model list, so the browser needn't parse every model. */

@@ -48,6 +48,7 @@ export function AssistantPanel({
   model,
   onSelect,
   onApplyEdits,
+  onSetInstructions,
   onClose,
 }: {
   model: LineageModel
@@ -59,8 +60,11 @@ export function AssistantPanel({
    * and undo history so an assistant edit is indistinguishable from a hand one.
    */
   onApplyEdits: (edits: ProposedEdit[]) => void
+  /** Save the house rules onto the model. Committed on blur, not per keystroke. */
+  onSetInstructions: (text: string) => void
   onClose: () => void
 }) {
+  const [rulesOpen, setRulesOpen] = useState(false)
   const [turns, setTurns] = useState<Turn[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -131,10 +135,23 @@ export function AssistantPanel({
     <aside className="as-panel" aria-label="Assistant">
       <header className="vw-head">
         <h2 className="vw-title">Assistant</h2>
+        <button
+          className="as-rules-toggle"
+          aria-expanded={rulesOpen}
+          aria-label="House rules"
+          title="House rules — how the assistant should answer"
+          onClick={() => setRulesOpen((open) => !open)}
+        >
+          Rules{model.assistantInstructions?.trim() ? ' •' : ''}
+        </button>
         <button className="tg-x" onClick={onClose} aria-label="Close assistant">
           ×
         </button>
       </header>
+
+      {rulesOpen && (
+        <HouseRules value={model.assistantInstructions ?? ''} onSave={onSetInstructions} />
+      )}
 
       <div className="as-log" ref={scroller}>
         {turns.length === 0 && (
@@ -224,6 +241,53 @@ export function AssistantPanel({
         </form>
       )}
     </aside>
+  )
+}
+
+/**
+ * House rules — the user's own instructions for how answers should read.
+ *
+ * Drafted locally and committed on blur, matching the Properties panel: one
+ * undo step per edit rather than one per keystroke, and the model is not
+ * rewritten (and re-persisted) on every character typed.
+ *
+ * The placeholder is doing real work. Left to guess, people write rules about
+ * what the assistant should *conclude*, which is the one thing house rules
+ * cannot govern — the backend keeps them downstream of the fidelity rules. The
+ * examples are all about voice and shape, which is what they can actually change.
+ */
+function HouseRules({ value, onSave }: { value: string; onSave: (text: string) => void }) {
+  const [draft, setDraft] = useState(value)
+
+  // A rules edit from elsewhere (undo, another tab) should win over a stale draft.
+  useEffect(() => setDraft(value), [value])
+
+  return (
+    <div className="as-rules">
+      <label className="as-rules-label" htmlFor="as-rules-input">
+        How should the assistant answer? Applies to this model only.
+      </label>
+      <textarea
+        id="as-rules-input"
+        className="as-rules-input"
+        rows={4}
+        value={draft}
+        placeholder={
+          'e.g. Answer in British English.\n' +
+          'Lead with a one-line summary, then the detail.\n' +
+          'Use a bullet per hop when describing a path.\n' +
+          'Always name the layer a table sits in.'
+        }
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (draft !== value) onSave(draft)
+        }}
+      />
+      <p className="as-rules-note">
+        These shape voice and formatting. They can’t change what the assistant treats
+        as a fact — a table-level answer stays a table-level answer.
+      </p>
+    </div>
   )
 }
 

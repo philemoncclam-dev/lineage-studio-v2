@@ -26,6 +26,11 @@ Claude Opus 5 thinking is on by default regardless, which is why `max_tokens` is
 generous — it caps thinking and reply together, so a tight budget truncates the
 answer rather than the reasoning.
 
+**The prompt is split at a caching boundary.** The tool schemas and the fixed
+rules below are ~3.3K tokens that never vary, and the loop re-sends them on
+every round; everything model-specific sits after the breakpoint. `cache_control`
+is old, stable API surface, unlike the parameters above. See `_system_blocks`.
+
 **Assistant turns are replayed as text only.** The browser holds the
 conversation (there is no server-side store, same as the model itself), so a
 prior turn comes back as the prose the user saw, not its tool blocks. Within a
@@ -234,7 +239,7 @@ def ask(
     client = client or build_client()
     llm_model = get_settings().anthropic_model
 
-    system = f"{SYSTEM}\n# The model on screen\n\nName: {model.name or '(unnamed)'}\n\n{outline(model)}"
+    system = _system_blocks(model)
     convo: list[dict[str, Any]] = [
         {"role": m.role, "content": m.content} for m in messages
     ]
@@ -300,6 +305,7 @@ def ask(
         # All results for one assistant turn go back in a SINGLE user message.
         # Splitting them teaches the model to stop calling tools in parallel.
         convo.append({"role": "user", "content": results})
+        _mark_cache_point(convo)
 
     return Answer(
         text=(
@@ -315,7 +321,73 @@ def ask(
     )
 
 
-def _create(client: _Client, llm_model: str, system: str, convo: list[dict[str, Any]]) -> Any:
+def _system_blocks(model: LineageModel) -> list[dict[str, Any]]:
+    """The system prompt, split at the caching boundary.
+
+    Prompt caching is a PREFIX match, and the render order is tools → system →
+    messages. So the first block here sits directly behind eleven tool schemas
+    that never change, and together they are ~3.3K tokens re-sent on every round
+    of the tool loop — by far the largest fixed cost in a turn. Marking the end
+    of that block makes every round after the first read it at a tenth of the
+    price.
+
+    Everything that varies per model goes AFTER the breakpoint: the outline, and
+    the user's own instructions. Putting either before it would change the
+    cached prefix for every different model and every instruction edit, which is
+    the silent-invalidator failure — no error, just a cache that never hits.
+
+    Custom instructions are placed last on purpose. They can shape voice, length
+    and format, and they sit downstream of the fidelity rules in the stable
+    block, which restates that they cannot loosen them. A house style that
+    asked for confident one-liners must not be able to turn a table-level path
+    into a column-level claim.
+    """
+    variable = f"# The model on screen\n\nName: {model.name or '(unnamed)'}\n\n{outline(model)}"
+    if model.instructions:
+        variable += (
+            "\n\n# House rules from the user\n\n"
+            "These set the STYLE of your answers — voice, length, formatting, "
+            "what to lead with. They do not change what counts as a fact, and "
+            "they never license reporting a result as more certain, more "
+            "complete or more column-level than the tool said it was. If a rule "
+            "here conflicts with reporting a trace faithfully, follow the trace "
+            "and say why.\n\n"
+            f"{model.instructions}"
+        )
+    return [
+        {"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": variable},
+    ]
+
+
+def _mark_cache_point(convo: list[dict[str, Any]]) -> None:
+    """Keep exactly one rolling breakpoint on the newest tool results.
+
+    Within a turn the loop re-sends the whole growing conversation each round,
+    and tool results are the bulk of it — a trace can be a few thousand tokens
+    of JSON. Caching the newest one means the next round reads everything before
+    it at a tenth of the price.
+
+    The breakpoint has to ROLL rather than accumulate: a request may carry at
+    most four, and marking every round would exceed that on a long turn and be
+    rejected outright. So the previous mark is cleared before the new one is
+    set, leaving one here plus one in the system prompt.
+    """
+    for message in convo:
+        content = message.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    block.pop("cache_control", None)
+
+    last = convo[-1]["content"]
+    if isinstance(last, list) and last and isinstance(last[-1], dict):
+        last[-1]["cache_control"] = {"type": "ephemeral"}
+
+
+def _create(
+    client: _Client, llm_model: str, system: list[dict[str, Any]], convo: list[dict[str, Any]]
+) -> Any:
     try:
         return client.messages.create(
             model=llm_model,

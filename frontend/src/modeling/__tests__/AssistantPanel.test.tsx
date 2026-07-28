@@ -59,18 +59,25 @@ function answer(over: Partial<Record<string, unknown>> = {}) {
 }
 
 function renderPanel(
-  props: { onSelect?: (id: string) => void; onApplyEdits?: (edits: unknown[]) => void } = {},
+  props: {
+    onSelect?: (id: string) => void
+    onApplyEdits?: (edits: unknown[]) => void
+    onSetInstructions?: (text: string) => void
+    instructions?: string
+  } = {},
 ) {
   const onApplyEdits = props.onApplyEdits ?? vi.fn()
+  const onSetInstructions = props.onSetInstructions ?? vi.fn()
   render(
     <AssistantPanel
-      model={model()}
+      model={{ ...model(), assistantInstructions: props.instructions }}
       onSelect={props.onSelect ?? vi.fn()}
       onApplyEdits={onApplyEdits as never}
+      onSetInstructions={onSetInstructions}
       onClose={vi.fn()}
     />,
   )
-  return { onApplyEdits }
+  return { onApplyEdits, onSetInstructions }
 }
 
 beforeEach(() => {
@@ -264,6 +271,55 @@ describe('AssistantPanel', () => {
       await ask('just tell me')
       await screen.findByText('It reaches Gold.')
       expect(screen.queryByText(/Proposed change/)).toBeNull()
+    })
+  })
+
+  describe('house rules', () => {
+    it('saves on blur rather than on every keystroke', async () => {
+      // One undo step per edit, and one persist — not one per character.
+      const { onSetInstructions } = renderPanel()
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'House rules' }))
+
+      const box = screen.getByLabelText(/How should the assistant answer/)
+      await user.type(box, 'Be terse.')
+      expect(onSetInstructions).not.toHaveBeenCalled()
+
+      await user.tab()
+      expect(onSetInstructions).toHaveBeenCalledExactlyOnceWith('Be terse.')
+    })
+
+    it('does not save when nothing changed', async () => {
+      const { onSetInstructions } = renderPanel({ instructions: 'Be terse.' })
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'House rules' }))
+      await user.click(screen.getByLabelText(/How should the assistant answer/))
+      await user.tab()
+
+      expect(onSetInstructions).not.toHaveBeenCalled()
+    })
+
+    it('shows existing rules when reopened', async () => {
+      renderPanel({ instructions: 'Answer in British English.' })
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'House rules' }))
+
+      expect(screen.getByDisplayValue('Answer in British English.')).toBeTruthy()
+    })
+
+    it('marks the toggle when rules are set', () => {
+      renderPanel({ instructions: 'Be terse.' })
+      expect(screen.getByRole('button', { name: 'House rules' }).textContent).toContain('•')
+    })
+
+    it('says plainly that rules cannot change what counts as a fact', async () => {
+      // The backend enforces this; the UI has to promise the same thing, or
+      // someone writes a rule expecting it to work and is quietly ignored.
+      renderPanel()
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'House rules' }))
+
+      expect(screen.getByText(/can’t change what the assistant treats/)).toBeTruthy()
     })
   })
 

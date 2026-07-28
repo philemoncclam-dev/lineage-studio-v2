@@ -30,14 +30,85 @@ full price for the prefix.
 from __future__ import annotations
 
 import json
+import re
+import time
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from ..config import Settings, get_settings
 
 
 class ProviderError(RuntimeError):
     """Configuration or upstream failure, reported as 503 by the router."""
+
+
+#: A short 429 is waited out in place; a long one is reported so the user can
+#: decide. The boundary is roughly how long somebody will sit watching a spinner
+#: before assuming the app has hung.
+MAX_WAIT_SECONDS = 12
+
+#: Per turn, across all rounds. Bounded so a rate-limited backend cannot hold a
+#: request open indefinitely.
+MAX_RETRIES = 3
+
+
+def _retry_delay(error: Exception) -> float | None:
+    """Seconds the provider asked us to wait, if it said.
+
+    Both dialects report this, in different places and formats: a `retry-after`
+    header, or — as Gemini does — a `retryDelay: '49s'` buried in the error body.
+    Reading it matters because guessing is worse in both directions: too short
+    and the retry is refused again, too long and a one-second blip becomes a
+    ten-second stall.
+    """
+    response = getattr(error, "response", None)
+    header = getattr(response, "headers", None)
+    if header is not None:
+        raw = header.get("retry-after")
+        if raw:
+            try:
+                return float(raw)
+            except ValueError:
+                pass
+    match = re.search(r"retry in (\d+(?:\.\d+)?)s|retryDelay['\"]?[:=]\s*['\"]?(\d+(?:\.\d+)?)s", str(error))
+    if match:
+        return float(match.group(1) or match.group(2))
+    return None
+
+
+def _is_rate_limit(error: Exception) -> bool:
+    status = getattr(error, "status_code", None) or getattr(
+        getattr(error, "response", None), "status_code", None
+    )
+    return status == 429 or "429" in str(error)[:200]
+
+
+def _call_with_retry(send: Callable[[], Any]) -> Any:
+    """Run `send`, waiting out short rate limits.
+
+    A tool loop is several requests in a few seconds, which is precisely the
+    shape that trips a per-minute quota — so a raw 429 reaching the user is a
+    self-inflicted failure on an account that has plenty of quota left. A long
+    wait is NOT swallowed: it is reported with the delay, because silently
+    holding a request open for a minute looks identical to a hang.
+    """
+    for attempt in range(MAX_RETRIES):
+        try:
+            return send()
+        except Exception as exc:  # noqa: BLE001 - both SDKs' error trees are broad
+            if not _is_rate_limit(exc):
+                raise
+            delay = _retry_delay(exc)
+            if attempt == MAX_RETRIES - 1 or (delay is not None and delay > MAX_WAIT_SECONDS):
+                raise ProviderError(
+                    "The model provider is rate-limiting this key"
+                    + (f" — it asked to wait about {round(delay)}s." if delay else ".")
+                    + " On a free tier this usually means the per-minute quota;"
+                    " wait a moment and ask again."
+                ) from exc
+            # No stated delay means a short backoff is the safe guess.
+            time.sleep(delay if delay is not None else 2.0 * (attempt + 1))
+    raise ProviderError("The model provider is rate-limiting this key.")
 
 
 @dataclass
@@ -88,13 +159,17 @@ class AnthropicProvider:
         messages = _to_anthropic(convo)
         _mark_cache_point(messages)
         try:
-            response = self._client.messages.create(
-                model=self._model,
-                max_tokens=MAX_TOKENS,
-                system=system,
-                tools=tools,
-                messages=messages,
+            response = _call_with_retry(
+                lambda: self._client.messages.create(
+                    model=self._model,
+                    max_tokens=MAX_TOKENS,
+                    system=system,
+                    tools=tools,
+                    messages=messages,
+                )
             )
+        except ProviderError:
+            raise
         except Exception as exc:  # noqa: BLE001 - the SDK's error tree is broad
             raise ProviderError(f"The assistant call failed: {exc}") from exc
 
@@ -182,12 +257,16 @@ class OpenAICompatibleProvider:
         messages = [{"role": "system", "content": _flatten_system(system)}]
         messages.extend(_to_openai(convo))
         try:
-            response = self._client.chat.completions.create(
-                model=self._model,
-                max_tokens=MAX_TOKENS,
-                messages=messages,
-                tools=[_tool_to_openai(t) for t in tools],
+            response = _call_with_retry(
+                lambda: self._client.chat.completions.create(
+                    model=self._model,
+                    max_tokens=MAX_TOKENS,
+                    messages=messages,
+                    tools=[_tool_to_openai(t) for t in tools],
+                )
             )
+        except ProviderError:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise ProviderError(f"The assistant call failed: {exc}") from exc
 

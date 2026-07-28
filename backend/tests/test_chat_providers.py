@@ -290,6 +290,97 @@ def test_malformed_tool_arguments_become_a_reportable_error_not_a_crash():
     assert answer.trace[0].name == "find_entity"
 
 
+# --- rate limits ------------------------------------------------------------
+
+
+class _RateLimited(Exception):
+    """Shaped like the SDKs' 429, which carries its delay in the message body."""
+
+    def __init__(self, delay: str = "2s") -> None:
+        super().__init__(
+            f"Error code: 429 - quota exceeded. retryDelay: '{delay}'"
+        )
+        self.status_code = 429
+
+
+def test_a_short_rate_limit_is_waited_out_rather_than_shown_to_the_user(monkeypatch):
+    """A tool loop is several requests in a few seconds — exactly the shape that
+    trips a per-minute quota. A raw 429 reaching the user is a self-inflicted
+    failure on a key with plenty of quota left."""
+    from app.chat import providers
+
+    slept: list[float] = []
+    monkeypatch.setattr(providers.time, "sleep", slept.append)
+
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _RateLimited("2s")
+        return "ok"
+
+    assert providers._call_with_retry(flaky) == "ok"
+    # Waited exactly as long as the provider asked — guessing is worse in both
+    # directions.
+    assert slept == [2.0]
+
+
+def test_a_long_rate_limit_is_reported_with_the_wait_rather_than_stalling(monkeypatch):
+    """Holding a request open for a minute is indistinguishable from a hang."""
+    from app.chat import providers
+
+    monkeypatch.setattr(providers.time, "sleep", lambda _: None)
+
+    def always():
+        raise _RateLimited("49s")
+
+    with pytest.raises(ProviderError, match="about 49s"):
+        providers._call_with_retry(always)
+
+
+def test_a_persistent_rate_limit_gives_up_rather_than_retrying_forever(monkeypatch):
+    from app.chat import providers
+
+    monkeypatch.setattr(providers.time, "sleep", lambda _: None)
+    calls = {"n": 0}
+
+    def always():
+        calls["n"] += 1
+        raise _RateLimited("1s")
+
+    with pytest.raises(ProviderError, match="rate-limiting"):
+        providers._call_with_retry(always)
+    assert calls["n"] == providers.MAX_RETRIES
+
+
+def test_a_non_rate_limit_error_is_not_retried():
+    """Retrying a 400 wastes the user's time and changes nothing."""
+    from app.chat import providers
+
+    calls = {"n": 0}
+
+    def broken():
+        calls["n"] += 1
+        raise RuntimeError("bad request")
+
+    with pytest.raises(RuntimeError, match="bad request"):
+        providers._call_with_retry(broken)
+    assert calls["n"] == 1
+
+
+def test_a_retry_after_header_is_preferred_when_present():
+    from app.chat import providers
+
+    class _WithHeader(Exception):
+        def __init__(self) -> None:
+            super().__init__("429 slow down")
+            self.status_code = 429
+            self.response = type("R", (), {"headers": {"retry-after": "5"}})()
+
+    assert providers._retry_delay(_WithHeader()) == 5.0
+
+
 def test_an_upstream_failure_is_a_provider_error_in_either_dialect():
     class _Boom:
         def __init__(self) -> None:

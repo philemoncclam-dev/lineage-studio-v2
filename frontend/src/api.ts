@@ -781,11 +781,17 @@ export async function fetchChatStatus(): Promise<{ configured: boolean; model: s
 export async function askAssistant(
   model: unknown,
   messages: ChatMessage[],
+  /**
+   * Entity ids selected on the canvas. This is what lets "this column" mean
+   * something — without it the assistant resolves a pronoun by searching for a
+   * name, which can match a dozen entities and pick the wrong one.
+   */
+  selection: string[] = [],
 ): Promise<AssistantAnswer> {
   const res = await fetch(`${BASE}/chat/ask`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages }),
+    body: JSON.stringify({ model, messages, selection }),
   })
   if (!res.ok) return detail(res, 'assistant')
   return res.json()

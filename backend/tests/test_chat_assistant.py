@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 from app.chat.assistant import MAX_TOOL_ROUNDS, AssistantError, Message, ask
-from app.chat.model import MAX_INSTRUCTIONS, LineageModel
+from app.chat.model import MAX_INSTRUCTIONS, Attribute, LineageModel
 from app.chat.tools import TOOLS, outline, run_tool
 
 
@@ -304,6 +304,88 @@ def test_the_prompt_bans_opening_an_answer_with_a_completion_word():
     from app.chat.assistant import SYSTEM
 
     assert "DO NOT OPEN WITH A COMPLETION WORD" in SYSTEM
+
+
+# --- what the user has selected ---------------------------------------------
+
+
+def test_the_selection_reaches_the_prompt_with_its_ids():
+    """The ids are the point: they let a trace run directly on what the user is
+    pointing at, instead of resolving a name that may match a dozen entities."""
+    client = _FakeClient([_Response([_text("hi")])])
+    ask(_model(), [Message(role="user", content="where does this go?")],
+        selection=["a_b_amount"], client=client)
+
+    variable = _blocks(client.requests[0])[1]["text"]
+    assert "Currently selected" in variable
+    assert "Bronze / bronze_orders / amount" in variable
+    assert "`a_b_amount`" in variable
+
+
+def test_the_selection_sits_after_the_cache_breakpoint():
+    """It changes on every click. Before the breakpoint it would invalidate the
+    shared prefix each time the user touched the canvas."""
+    client = _FakeClient([_Response([_text("hi")])])
+    ask(_model(), [Message(role="user", content="q")], selection=["a_b_amount"], client=client)
+
+    stable, variable = _blocks(client.requests[0])
+    assert "a_b_amount" not in stable["text"]
+    assert "a_b_amount" in variable["text"]
+
+
+def test_an_entity_that_no_longer_exists_is_dropped_from_the_selection():
+    """A stale selection arrives whenever something is deleted with the panel
+    open. Passing the id through would have the assistant report 'no entity with
+    that id' about something the user can still see highlighted."""
+    client = _FakeClient([_Response([_text("hi")])])
+    ask(_model(), [Message(role="user", content="q")], selection=["deleted"], client=client)
+
+    assert "Currently selected" not in _blocks(client.requests[0])[1]["text"]
+
+
+def test_a_large_selection_is_capped_and_says_so():
+    """Selecting a layer selects everything under it. A partial list the model
+    believes is complete would have it answer '20 columns' about 200."""
+    from app.chat.assistant import MAX_SELECTION
+
+    model = _model()
+    layer = model.layers[0]
+    layer.objects[0].children = [
+        Attribute(id=f"c{i}", name=f"col_{i}") for i in range(MAX_SELECTION + 5)
+    ]
+    client = _FakeClient([_Response([_text("hi")])])
+    ask(model, [Message(role="user", content="q")],
+        selection=[f"c{i}" for i in range(MAX_SELECTION + 5)], client=client)
+
+    variable = _blocks(client.requests[0])[1]["text"]
+    assert variable.count("id `c") == MAX_SELECTION
+    assert "5 more selected" in variable
+
+
+def test_no_selection_section_appears_when_nothing_is_selected():
+    client = _FakeClient([_Response([_text("hi")])])
+    ask(_model(), [Message(role="user", content="q")], client=client)
+    assert "Currently selected" not in _blocks(client.requests[0])[1]["text"]
+
+
+def test_the_prompt_tells_the_model_to_resolve_pronouns_to_the_selection():
+    from app.chat.assistant import SYSTEM
+
+    assert "resolve to the \\\nselection first" in SYSTEM or "selection first" in SYSTEM
+    # And to use the ids rather than searching by name.
+    assert "Do not call find_entity to look up something already selected" in SYSTEM
+
+
+# --- grounding --------------------------------------------------------------
+
+
+def test_the_prompt_forbids_inferring_lineage_from_names():
+    """The single most plausible-sounding wrong answer this system can give:
+    `customer_id` in two tables does not mean they are connected."""
+    from app.chat.assistant import SYSTEM
+
+    assert "Do NOT infer lineage from names" in SYSTEM
+    assert "Do NOT infer a column's meaning" in SYSTEM
 
 
 # --- custom instructions ----------------------------------------------------

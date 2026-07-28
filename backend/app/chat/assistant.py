@@ -50,6 +50,7 @@ from pydantic import BaseModel, Field
 from ..config import get_settings
 from . import edits as edits_module
 from .edits import ProposedEdit
+from .graph import build_index, ref_of
 from .model import LineageModel
 from .providers import (
     MAX_TOKENS,
@@ -63,6 +64,11 @@ from .tools import TOOLS, outline, run_tool
 #: A question needs a handful of walks, not a hundred. This bounds a model that
 #: has started looping — it stops the turn and says so rather than spending.
 MAX_TOOL_ROUNDS = 8
+
+#: Selecting a whole layer selects everything under it, so a selection can be
+#: hundreds of entities. Enough to disambiguate a pronoun, not enough to crowd
+#: out the answer.
+MAX_SELECTION = 20
 
 SYSTEM = """\
 You are the lineage assistant for Lineage Studio, answering questions about ONE \
@@ -78,6 +84,40 @@ Every fact you state about this model MUST come from a tool result in this \
 conversation. You cannot see the graph; the tools are your only access to it. \
 If the tools do not support a claim, say you could not determine it — never fill \
 the gap with what a lineage model usually looks like.
+
+This is strict, and the tempting failures are specific:
+
+- Do NOT infer lineage from names. `customer_id` appearing in two tables is not \
+  evidence they are connected; a `bronze_` prefix is not evidence a table feeds \
+  a silver one; a medallion-shaped set of layer names does not tell you which \
+  columns flow where. If there is no transition, there is no lineage — say so.
+- Do NOT infer a column's meaning, type, sensitivity or purpose from its name. \
+  `describe_entity` returns the properties that were actually recorded; \
+  anything beyond them is your guess, not this model's content.
+- Do NOT carry facts between models or between turns. Each question is answered \
+  from the tools run in THIS conversation.
+- General background — what a medallion architecture is, what a slowly changing \
+  dimension means — is fine when the user asks for it, but say plainly that you \
+  are explaining a general concept, not describing their model. Never let the \
+  two blur into one sentence.
+
+Start with find_entity to turn the name in the question into an id, then trace or describe from that id. If a name matches several entities, say so and use their paths to ask which one is meant, or answer for the most likely and name which you picked.
+
+# What the user has selected
+
+If a "Currently selected" section appears below, those entities are highlighted \
+on the user's canvas right now, and a vague reference almost certainly means \
+them. "This column", "it", "that table", "these", "here" — resolve to the \
+selection first.
+
+Their ids are given, so use them DIRECTLY in trace, describe and impact calls. \
+Do not call find_entity to look up something already selected: a name search \
+can return several entities and pick the wrong one, while the selection is \
+exactly what the user is pointing at.
+
+Two cautions. If the question clearly names something else, follow the question \
+rather than the selection. And if the selection holds several entities but the \
+user's wording is singular, say which one you answered about.
 
 Start with find_entity to turn the name in the question into an id, then trace \
 or describe from that id. If a name matches several entities, say so and use \
@@ -208,6 +248,7 @@ def ask(
     model: LineageModel,
     messages: list[Message],
     *,
+    selection: list[str] | None = None,
     client: Any | None = None,
     provider: Provider | None = None,
 ) -> Answer:
@@ -227,7 +268,7 @@ def ask(
             else build_provider()
         )
 
-    system = _system_blocks(model)
+    system = _system_blocks(model, selection or [])
     # Provider-neutral conversation. Each adapter renders it into its own wire
     # shape; nothing in this loop knows what that looks like.
     convo: list[dict[str, Any]] = [
@@ -311,7 +352,7 @@ def ask(
     )
 
 
-def _system_blocks(model: LineageModel) -> list[dict[str, Any]]:
+def _system_blocks(model: LineageModel, selection: list[str] | None = None) -> list[dict[str, Any]]:
     """The system prompt, split at the caching boundary.
 
     Prompt caching is a PREFIX match, and the render order is tools → system →
@@ -333,6 +374,12 @@ def _system_blocks(model: LineageModel) -> list[dict[str, Any]]:
     into a column-level claim.
     """
     variable = f"# The model on screen\n\nName: {model.name or '(unnamed)'}\n\n{outline(model)}"
+    # Selection changes on every click, so it belongs firmly after the
+    # breakpoint — putting it before would invalidate the shared prefix each
+    # time the user touched the canvas.
+    selected = _selection_lines(model, selection or [])
+    if selected:
+        variable += f"\n\n# Currently selected\n\n{selected}"
     if model.instructions:
         variable += (
             "\n\n# House rules from the user\n\n"
@@ -348,6 +395,35 @@ def _system_blocks(model: LineageModel) -> list[dict[str, Any]]:
         {"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}},
         {"type": "text", "text": variable},
     ]
+
+
+def _selection_lines(model: LineageModel, selection: list[str]) -> str:
+    """The selected entities, named and with their ids.
+
+    Ids are included so the model can call a trace DIRECTLY on what the user is
+    pointing at. That is the accuracy win, not just an efficiency one: resolving
+    "this column" by searching for its name can land on any of a dozen entities
+    called `customer_id`, while the selection is unambiguous by construction.
+
+    Ids that no longer exist are dropped rather than passed through — a stale
+    selection arrives whenever the user deletes something with the panel open,
+    and an id resolving to nothing would have the assistant report "no entity
+    with that id" about something the user can still see highlighted.
+    """
+    if not selection:
+        return ""
+    index = build_index(model)
+    refs = [ref_of(index, i) for i in selection if i in index.entries]
+    if not refs:
+        return ""
+
+    shown = refs[:MAX_SELECTION]
+    lines = [f"- {r.path} — {r.kind}, id `{r.id}`" for r in shown]
+    if len(refs) > len(shown):
+        # Capped, and the cap is declared: a partial list the model believes is
+        # complete would have it answer "you selected 20 columns" about 200.
+        lines.append(f"- …and {len(refs) - len(shown)} more selected, not listed here.")
+    return "\n".join(lines)
 
 
 def _summarize(name: str, payload: Any) -> str:

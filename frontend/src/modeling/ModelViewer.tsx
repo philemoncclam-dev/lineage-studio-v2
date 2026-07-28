@@ -988,6 +988,8 @@ export default function ModelViewer({
       {dock === 'assistant' && (
         <AssistantPanel
           model={model}
+          // The live canvas selection, so a question can say "this column".
+          selection={[...selection]}
           // Selecting from a trace does NOT close the panel, unlike the Tag
           // manager: the answer and the entity it names are meant to be read
           // together, and the next question usually follows from the first.

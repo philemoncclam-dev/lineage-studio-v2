@@ -2426,3 +2426,21 @@
   line-height: 1.45;
   color: #6b7280;
 }
+
+/* Names what a vague reference will resolve to. Sits directly above the
+   composer because it qualifies what you are about to type. */
+.as-referent {
+  flex: none;
+  padding: 6px 12px;
+  border-top: 1px solid rgb(28 35 51 / 0.12);
+  background: #f7f9fe;
+  font-size: 11px;
+  color: #4b5563;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.as-referent strong {
+  color: #24406e;
+  font-weight: 600;
+}

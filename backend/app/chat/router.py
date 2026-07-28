@@ -29,6 +29,11 @@ class AskRequest(BaseModel):
     model: LineageModel
     #: Full conversation, oldest first, ending with the user's new question.
     messages: list[Message] = Field(default_factory=list)
+    #: Entity ids selected on the canvas right now. This is what makes "this
+    #: column" mean something: the user points at the canvas and types a
+    #: pronoun, and without it the assistant has to guess from a name that may
+    #: match a dozen entities. Optional, so an older frontend still works.
+    selection: list[str] = Field(default_factory=list)
 
 
 @router.get("/status")
@@ -49,7 +54,7 @@ def ask_endpoint(req: AskRequest) -> Answer:
     if not req.messages:
         raise HTTPException(status_code=400, detail="No question was asked.")
     try:
-        return ask(req.model, req.messages)
+        return ask(req.model, req.messages, selection=req.selection)
     except AssistantError as exc:
         # 503, not 500: every AssistantError is "this backend cannot serve the
         # assistant right now" — unconfigured, uninstalled, or upstream — and

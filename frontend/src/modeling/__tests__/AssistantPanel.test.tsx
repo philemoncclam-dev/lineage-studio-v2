@@ -64,6 +64,7 @@ function renderPanel(
     onApplyEdits?: (edits: unknown[]) => void
     onSetInstructions?: (text: string) => void
     instructions?: string
+    selection?: string[]
   } = {},
 ) {
   const onApplyEdits = props.onApplyEdits ?? vi.fn()
@@ -71,6 +72,7 @@ function renderPanel(
   render(
     <AssistantPanel
       model={{ ...model(), assistantInstructions: props.instructions }}
+      selection={props.selection ?? []}
       onSelect={props.onSelect ?? vi.fn()}
       onApplyEdits={onApplyEdits as never}
       onSetInstructions={onSetInstructions}
@@ -191,6 +193,34 @@ describe('AssistantPanel', () => {
 
     await waitFor(() => expect(screen.queryByLabelText('Ask about this model')).toBeNull())
     expect(screen.getByText(/ANTHROPIC_API_KEY/)).toBeTruthy()
+  })
+
+  describe('canvas selection', () => {
+    it('sends the selection with the question', async () => {
+      renderPanel({ selection: ['A1'] })
+      await ask('where does this go?')
+
+      await waitFor(() => expect(askAssistant).toHaveBeenCalled())
+      expect(askAssistant.mock.calls[0][2]).toEqual(['A1'])
+    })
+
+    it('names what a vague reference will resolve to', async () => {
+      // An assistant resolving "this" to a selection the user has forgotten
+      // about is indistinguishable from it guessing. Naming the referent makes
+      // the behaviour checkable.
+      renderPanel({ selection: ['A1'] })
+      expect(screen.getByText('Bronze / orders / money / amount')).toBeTruthy()
+    })
+
+    it('summarises rather than listing a multi-entity selection', async () => {
+      renderPanel({ selection: ['A1', 'O1', 'L1'] })
+      expect(screen.getByText('3 selected entities')).toBeTruthy()
+    })
+
+    it('says nothing when nothing is selected', async () => {
+      renderPanel()
+      expect(screen.queryByText(/Referring to/)).toBeNull()
+    })
   })
 
   describe('proposed edits', () => {

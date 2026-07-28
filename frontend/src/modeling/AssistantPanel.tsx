@@ -46,12 +46,19 @@ const EXAMPLES = [
 
 export function AssistantPanel({
   model,
+  selection,
   onSelect,
   onApplyEdits,
   onSetInstructions,
   onClose,
 }: {
   model: LineageModel
+  /**
+   * Entity ids selected on the canvas. Sent with every question so "this
+   * column" resolves to what the user is pointing at rather than to whatever a
+   * name search happens to return first.
+   */
+  selection: EntityId[]
   /** Select and reveal an entity on the canvas behind the panel. */
   onSelect: (id: EntityId) => void
   /**
@@ -112,6 +119,7 @@ export function AssistantPanel({
       const answer = await askAssistant(
         model,
         history.map((t) => ({ role: t.role, content: t.content })),
+        selection,
       )
       setTurns([
         ...history,
@@ -212,8 +220,22 @@ export function AssistantPanel({
           <code> ANTHROPIC_API_KEY</code> in the environment.
         </div>
       ) : (
-        <form
-          className="as-composer"
+        <>
+          {selection.length > 0 && (
+            /* The assistant resolving a pronoun to a selection the user has
+               forgotten about is indistinguishable from it guessing. Naming the
+               referent makes the behaviour checkable rather than uncanny. */
+            <div className="as-referent" title="Vague references resolve to this">
+              Referring to{' '}
+              <strong>
+                {selection.length === 1
+                  ? (paths.get(selection[0]) ?? '1 selected entity')
+                  : `${selection.length} selected entities`}
+              </strong>
+            </div>
+          )}
+          <form
+            className="as-composer"
           onSubmit={(e) => {
             e.preventDefault()
             void send(draft)
@@ -235,10 +257,11 @@ export function AssistantPanel({
               }
             }}
           />
-          <button className="as-send" type="submit" disabled={busy || !draft.trim()}>
-            Ask
-          </button>
-        </form>
+            <button className="as-send" type="submit" disabled={busy || !draft.trim()}>
+              Ask
+            </button>
+          </form>
+        </>
       )}
     </aside>
   )

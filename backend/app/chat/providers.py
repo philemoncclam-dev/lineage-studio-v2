@@ -245,17 +245,32 @@ def _mark_cache_point(messages: list[dict[str, Any]]) -> None:
 
 
 class OpenAICompatibleProvider:
-    """The common dialect, pointed anywhere by base_url."""
+    """The common dialect, pointed anywhere by base_url.
+
+    `session_id` is what makes caching work on this path. These providers cache
+    implicitly — no `cache_control` to send — but only when a request reaches
+    the endpoint that already holds the warm prefix, and a gateway is free to
+    route each round of a tool loop somewhere else. OpenRouter pins routing to
+    whatever `x-session-id` says, so passing a stable one per conversation is
+    the difference between paying for the ~3.8K fixed prefix on every round and
+    paying for it once.
+
+    It rides in a HEADER rather than the request body deliberately: an unknown
+    body field is a 400 on a strict server, while an unknown header is ignored
+    everywhere. This has to stay safe against a plain OpenAI endpoint.
+    """
 
     name = "openai_compatible"
 
-    def __init__(self, client: Any, model: str) -> None:
+    def __init__(self, client: Any, model: str, session_id: str | None = None) -> None:
         self._client = client
         self._model = model
+        self._session_id = session_id
 
     def complete(self, *, system, convo, tools) -> Reply:
         messages = [{"role": "system", "content": _flatten_system(system)}]
         messages.extend(_to_openai(convo))
+        headers = {"x-session-id": self._session_id} if self._session_id else None
         try:
             response = _call_with_retry(
                 lambda: self._client.chat.completions.create(
@@ -263,6 +278,7 @@ class OpenAICompatibleProvider:
                     max_tokens=MAX_TOKENS,
                     messages=messages,
                     tools=[_tool_to_openai(t) for t in tools],
+                    extra_headers=headers,
                 )
             )
         except ProviderError:
@@ -378,8 +394,12 @@ def _tool_to_openai(tool: dict[str, Any]) -> dict[str, Any]:
 MAX_TOKENS = 8000
 
 
-def build(settings: Settings | None = None) -> Provider:
-    """The configured provider, or a clear error saying what is missing."""
+def build(settings: Settings | None = None, *, session_id: str | None = None) -> Provider:
+    """The configured provider, or a clear error saying what is missing.
+
+    `session_id` is advisory and only reaches the OpenAI-compatible path — the
+    Anthropic one caches on explicit breakpoints and needs no routing hint.
+    """
     settings = settings or get_settings()
 
     if settings.chat_provider == "openai_compatible":
@@ -396,7 +416,7 @@ def build(settings: Settings | None = None) -> Provider:
                 "`pip install -r requirements.txt`."
             ) from exc
         client = OpenAI(api_key=settings.chat_api_key, base_url=settings.chat_base_url or None)
-        return OpenAICompatibleProvider(client, settings.chat_model)
+        return OpenAICompatibleProvider(client, settings.chat_model, session_id)
 
     if not settings.anthropic_api_key:
         raise ProviderError(

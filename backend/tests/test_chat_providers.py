@@ -430,3 +430,56 @@ def test_configured_reads_the_key_belonging_to_the_selected_provider():
     # An Anthropic key does not configure a Gemini deployment.
     stale = _settings(chat_provider="openai_compatible", anthropic_api_key="k")
     assert stale.chat_configured is False
+
+
+# --- cache stickiness -------------------------------------------------------
+
+
+def test_a_session_id_rides_in_a_header_on_every_round_of_a_turn():
+    """These providers cache implicitly, but only at the endpoint holding the
+    warm prefix — so every round of one turn must carry the same routing key."""
+    client = _FakeOpenAI(
+        [
+            _oai_reply(calls=[_oai_call("c1", "find_entity", name="amount")]),
+            _oai_reply(text="done"),
+        ]
+    )
+    provider = OpenAICompatibleProvider(client, "gpt-5-mini", session_id="abc123")
+    ask(_model(), [Message(role="user", content="q")], provider=provider)
+
+    assert len(client.requests) == 2
+    for request in client.requests:
+        assert request["extra_headers"] == {"x-session-id": "abc123"}
+
+
+def test_no_session_id_sends_no_header_rather_than_an_empty_one():
+    """A plain OpenAI endpoint has no use for it; absent beats blank."""
+    client = _FakeOpenAI([_oai_reply(text="done")])
+    provider = OpenAICompatibleProvider(client, "gpt-5-mini")
+    ask(_model(), [Message(role="user", content="q")], provider=provider)
+
+    assert client.requests[0]["extra_headers"] is None
+
+
+def test_the_session_key_is_stable_across_turns_of_one_conversation():
+    """Stability across turns is the point: a key that changed per question
+    would route each turn somewhere new and never reuse a cached prefix."""
+    from app.chat.assistant import _session_key
+
+    first = [Message(role="user", content="where does revenue come from?")]
+    later = [
+        *first,
+        Message(role="assistant", content="From Bronze / orders."),
+        Message(role="user", content="and what about cost?"),
+    ]
+    assert _session_key(first) == _session_key(later)
+    # A different conversation is a different key.
+    assert _session_key([Message(role="user", content="something else")]) != _session_key(first)
+
+
+def test_the_session_key_does_not_leak_the_question():
+    """It travels to a third party in a header, and a question can name a
+    table somebody considers private."""
+    from app.chat.assistant import _session_key
+
+    assert "revenue" not in _session_key([Message(role="user", content="trace revenue")])

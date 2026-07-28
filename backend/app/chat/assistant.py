@@ -42,6 +42,7 @@ two, and it is also the honest one: the model changes between turns.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -101,7 +102,10 @@ This is strict, and the tempting failures are specific:
   are explaining a general concept, not describing their model. Never let the \
   two blur into one sentence.
 
-Start with find_entity to turn the name in the question into an id, then trace or describe from that id. If a name matches several entities, say so and use their paths to ask which one is meant, or answer for the most likely and name which you picked.
+Start with find_entity to turn the name in the question into an id, then trace \
+or describe from that id. If a name matches several entities, say so and use \
+their paths to ask which one is meant, or answer for the most likely and name \
+which you picked.
 
 # What the user has selected
 
@@ -118,11 +122,6 @@ exactly what the user is pointing at.
 Two cautions. If the question clearly names something else, follow the question \
 rather than the selection. And if the selection holds several entities but the \
 user's wording is singular, say which one you answered about.
-
-Start with find_entity to turn the name in the question into an id, then trace \
-or describe from that id. If a name matches several entities, say so and use \
-their paths to ask which one is meant, or answer for the most likely and name \
-which you picked.
 
 # Reporting a trace faithfully
 
@@ -265,7 +264,7 @@ def ask(
         provider = (
             AnthropicProvider(client, get_settings().chat_model)
             if client is not None
-            else build_provider()
+            else build_provider(session_id=_session_key(messages))
         )
 
     system = _system_blocks(model, selection or [])
@@ -350,6 +349,22 @@ def ask(
         proposals=proposals,
         stop_reason="max_rounds",
     )
+
+
+def _session_key(messages: list[Message]) -> str:
+    """A routing key that is stable for one conversation and nothing else.
+
+    Cache stickiness needs the same key on every round of a turn AND on every
+    later turn of the same conversation, and there is no session to read it
+    from — the browser owns the conversation and replays it (see `router.py`).
+    The first user message is the one thing that satisfies both: it is present
+    on every replay and it never changes once the conversation has started.
+
+    Hashed rather than sent, because the key travels in a header to a third
+    party and a question can carry a table name somebody considers private.
+    """
+    first = next((m.content for m in messages if m.role == "user"), "")
+    return hashlib.sha256(first.encode("utf-8")).hexdigest()[:32]
 
 
 def _system_blocks(model: LineageModel, selection: list[str] | None = None) -> list[dict[str, Any]]:

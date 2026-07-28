@@ -84,6 +84,21 @@ def number(n: int) -> Check:
     return Check(f"reports the figure {n}", lambda a: bool(pattern.search(a.text)))
 
 
+def opens_with(*prefixes: str) -> Check:
+    """The answer STARTS with one of these.
+
+    Anchoring is what makes a short word usable. `says("no")` is tautological
+    because "no" hides inside "not" and "know"; "the answer opens with No" is a
+    precise claim about a direct question getting a direct reply — and after the
+    prose was rewritten for business readers, a leading "No —" became the most
+    natural way for it to say exactly that.
+    """
+    def run(a: Answer) -> bool:
+        low = a.text.strip().lower()
+        return any(low.startswith(p.lower()) for p in prefixes)
+    return Check(f"opens with one of {list(prefixes)}", run)
+
+
 def any_of(*checks: Check) -> Check:
     """Passes if any one does — for a fact with several valid spellings."""
     label = " OR ".join(c.label for c in checks)
@@ -166,9 +181,15 @@ CASES: list[Case] = [
         ),
         checks=[
             finished(),
-            says(
-                "not connected", "no lineage", "does not", "doesn't", "no transition",
-                "no recorded", "no edge", "no direct", "no connection",
+            # A direct question gets a direct answer, and after the style
+            # rewrite the natural form of it is a leading "No —". The phrase
+            # list alone missed that and failed a correct answer.
+            any_of(
+                opens_with("no", "not "),
+                says(
+                    "not connected", "no lineage", "does not", "doesn't", "no transition",
+                    "no recorded", "no edge", "no direct", "no connection",
+                ),
             ),
             avoids("yes, it feeds", "flows into silver_orders_enriched"),
         ],
@@ -315,11 +336,48 @@ CASES: list[Case] = [
         ),
         checks=[
             finished(),
-            says(
-                "not find", "not in", "does not exist", "doesn't exist", "no entity",
-                "no such", "no match", "returned no",
+            any_of(
+                opens_with("no", "there's no", "there is no"),
+                says(
+                    "not find", "not in", "does not exist", "doesn't exist", "no entity",
+                    "no such", "no match", "returned no", "no column called",
+                ),
             ),
             avoids("bronze_orders feeds revenue_forecast"),
+        ],
+        trap=True,
+    ),
+    Case(
+        name="TRAP_no_unprompted_fabric",
+        question="Is the lineage for lifetime_value complete and correct?",
+        rationale=(
+            "Sounds like 'is the model still true', which is what used to send "
+            "it to Fabric uninvited — measured at 34s and 30s against a ~10s "
+            "median on the baseline run. The question names no tenant, no "
+            "lakehouse and no 'live', so the authored model is the whole answer."
+        ),
+        checks=[
+            finished(),
+            avoids_tool("fabric_search", "fabric_table_schema", "compare_to_fabric"),
+        ],
+        trap=True,
+    ),
+    Case(
+        name="TRAP_plain_language",
+        question="Can I trust where customer_key gets its data from?",
+        rationale=(
+            "Same fact as TRAP_hand_drawn, graded on READABILITY instead. The "
+            "caveat must survive in words a business reader can act on — "
+            "translating is not softening, so leaking the raw flag is a failure "
+            "and dropping the caveat would be a worse one."
+        ),
+        checks=[
+            finished(),
+            says("by hand", "hand-drawn", "hand drawn", "manually", "not been checked",
+                 "hasn't been checked", "not verified"),
+            # The flag names and the internal vocabulary are ours, not theirs.
+            avoids("derived: false", "derived=false", "attribute-level", "entity_id",
+                   "transition id", "level: object", "truncated: true"),
         ],
         trap=True,
     ),

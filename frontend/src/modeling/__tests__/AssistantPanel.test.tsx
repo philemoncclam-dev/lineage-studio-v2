@@ -361,3 +361,74 @@ describe('AssistantPanel', () => {
     await waitFor(() => expect(screen.queryByLabelText('Ask about this model')).toBeNull())
   })
 })
+
+describe('copying an answer out of the panel', () => {
+  // jsdom defines navigator.clipboard as a getter, so Object.assign throws.
+  function setClipboard(value: unknown) {
+    Object.defineProperty(navigator, 'clipboard', { value, configurable: true })
+  }
+
+  function stubClipboard() {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard({ writeText })
+    return writeText
+  }
+
+  it('copies the answer with the checks that produced it', async () => {
+    // Prose alone is an assertion. Pasted into a ticket, the tool calls behind
+    // it are the reason anyone should believe the claim.
+    askAssistant.mockResolvedValue(
+      answer({ trace: [{ name: 'trace_downstream', input: {}, result: '2 paths' }] }),
+    )
+    renderPanel()
+    const user = await ask('where does amount go?')
+    await screen.findByText('It reaches Gold.')
+    // After ask(): userEvent.setup() installs its own clipboard stub and would
+    // otherwise clobber this one.
+    const writeText = stubClipboard()
+
+    await user.click(screen.getAllByRole('button', { name: 'Copy' })[0])
+
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    const copied = writeText.mock.calls[0][0] as string
+    expect(copied).toContain('It reaches Gold.')
+    expect(copied).toContain('Checked against the model:')
+    expect(copied).toContain('trace_downstream')
+  })
+
+  it('copies the whole conversation as markdown', async () => {
+    renderPanel()
+    const user = await ask('where does amount go?')
+    await screen.findByText('It reaches Gold.')
+    // After ask(): userEvent.setup() installs its own clipboard stub and would
+    // otherwise clobber this one.
+    const writeText = stubClipboard()
+
+    await user.click(screen.getByRole('button', { name: 'Copy all' }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    const copied = writeText.mock.calls[0][0] as string
+    expect(copied).toContain('**Q:** where does amount go?')
+    expect(copied).toContain('**A:** It reaches Gold.')
+  })
+
+  it('offers no transcript copy before there is a transcript', () => {
+    renderPanel()
+    expect(screen.queryByRole('button', { name: 'Copy all' })).toBeNull()
+  })
+
+  it('says so when the clipboard is unavailable rather than failing silently', async () => {
+    // navigator.clipboard is genuinely absent over plain http on anything but
+    // localhost — which is exactly how a colleague reaches a demo. A silent
+    // no-op there means pasting whatever was on the clipboard before.
+    renderPanel()
+    const user = await ask('where does amount go?')
+    await screen.findByText('It reaches Gold.')
+    // After ask(), for the same reason as above.
+    setClipboard(undefined)
+
+    await user.click(screen.getAllByRole('button', { name: 'Copy' })[0])
+
+    expect(await screen.findByRole('button', { name: 'Press Ctrl+C' })).toBeTruthy()
+  })
+})

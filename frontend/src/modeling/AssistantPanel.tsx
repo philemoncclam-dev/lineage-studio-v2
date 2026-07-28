@@ -143,6 +143,13 @@ export function AssistantPanel({
     <aside className="as-panel" aria-label="Assistant">
       <header className="vw-head">
         <h2 className="vw-title">Assistant</h2>
+        {turns.length > 0 && (
+          <CopyButton
+            label="Copy all"
+            title="Copy the whole conversation as markdown"
+            text={() => transcriptToText(turns, model.name)}
+          />
+        )}
         <button
           className="as-rules-toggle"
           aria-expanded={rulesOpen}
@@ -183,6 +190,13 @@ export function AssistantPanel({
             <div className="as-bubble">{turn.content}</div>
             {turn.role === 'assistant' && (
               <>
+                <div className="as-answer-tools">
+                  <CopyButton
+                    label="Copy"
+                    title="Copy this answer, with the checks behind it"
+                    text={() => answerToText(turn)}
+                  />
+                </div>
                 <TraceList trace={turn.trace ?? []} paths={paths} onSelect={onSelect} />
                 {(turn.proposals?.length ?? 0) > 0 && (
                   <ProposalList
@@ -403,6 +417,77 @@ function targetLabel(edit: ProposedEdit): string {
   if (edit.kind === 'set_property') return `${where} · ${edit.key} = ${edit.value}`
   if (edit.kind === 'add_tag') return `${where} · ${edit.value}`
   return `${where} → ${edit.value}`
+}
+
+/**
+ * Copy to clipboard, with the outcome shown on the button itself.
+ *
+ * The feedback is not decoration. A copy that silently failed is
+ * indistinguishable from one that worked until the user pastes somewhere else
+ * and finds the wrong thing — and `navigator.clipboard` is genuinely absent
+ * over plain http on anything but localhost, which is exactly how a colleague
+ * reaches a demo on your machine.
+ */
+function CopyButton({
+  text,
+  label,
+  title,
+}: {
+  text: () => string
+  label: string
+  title: string
+}) {
+  const [state, setState] = useState<'idle' | 'done' | 'failed'>('idle')
+
+  useEffect(() => {
+    if (state === 'idle') return
+    const timer = setTimeout(() => setState('idle'), 1600)
+    return () => clearTimeout(timer)
+  }, [state])
+
+  return (
+    <button
+      type="button"
+      className="as-copy"
+      data-state={state}
+      title={title}
+      onClick={async () => {
+        try {
+          if (!navigator.clipboard) throw new Error('no clipboard')
+          await navigator.clipboard.writeText(text())
+          setState('done')
+        } catch {
+          setState('failed')
+        }
+      }}
+    >
+      {state === 'done' ? 'Copied' : state === 'failed' ? 'Press Ctrl+C' : label}
+    </button>
+  )
+}
+
+/**
+ * One answer as pasteable text.
+ *
+ * The trace rides along under a "Checked:" line rather than being dropped.
+ * Prose alone is an assertion; the tool calls behind it are the reason to
+ * believe it, and a lineage claim pasted into a ticket or a change request is
+ * worth much more with them than without.
+ */
+function answerToText(turn: Turn): string {
+  const trace = turn.trace ?? []
+  if (trace.length === 0) return turn.content
+  const lines = trace.map((c) => `  - ${c.name}: ${c.result}`)
+  return `${turn.content}\n\nChecked against the model:\n${lines.join('\n')}`
+}
+
+/** The whole conversation as markdown — the shape people paste into Teams. */
+function transcriptToText(turns: Turn[], modelName: string): string {
+  const head = `# Lineage assistant — ${modelName || 'untitled model'}`
+  const body = turns.map((t) =>
+    t.role === 'user' ? `\n**Q:** ${t.content}` : `\n**A:** ${answerToText(t)}`,
+  )
+  return `${head}\n${body.join('\n')}\n`
 }
 
 function TraceList({

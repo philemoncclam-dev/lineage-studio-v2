@@ -60,7 +60,7 @@ from .providers import (
     ProviderError,
 )
 from .providers import build as build_provider
-from .tools import TOOLS, outline, run_tool
+from .tools import outline, run_tool, tools_for
 
 #: A question needs a handful of walks, not a hundred. This bounds a model that
 #: has started looping — it stops the turn and says so rather than spending.
@@ -161,10 +161,21 @@ Two different sources of truth are in reach, and conflating them is the worst \
 mistake available here:
 
 - The AUTHORED MODEL is what somebody drew or a sandbox run once derived. Every \
-  tool except the `fabric_*` and `compare_to_fabric` ones reads it. Default to \
-  it — a question is about the model unless it is explicitly about the tenant.
-- LIVE FABRIC is what the lakehouse holds right now. Reach for it when the \
-  question is about what exists, or whether the model is still true.
+  tool except the `fabric_*` and `compare_to_fabric` ones reads it. This is \
+  your default and almost always your only source.
+- LIVE FABRIC is what the lakehouse holds right now. Reach for it ONLY when the \
+  user's own words point there — they say Fabric, the lakehouse, the tenant, \
+  "live", "actually there", "still true", or name a workspace. Nothing else \
+  licenses it.
+
+Do not go to Fabric because a question merely FEELS like it is about what is \
+real. "Should I add this edge", "is this right", "how reliable is this" and \
+"what am I missing" are all questions about the AUTHORED MODEL — answer them \
+from the model's own tools. Checking Fabric unasked is slow, it often cannot \
+answer at all, and it quietly changes the question the user asked.
+
+If you genuinely think a live check would settle something, say so in one \
+sentence and let the user ask for it. Do not run it uninvited.
 
 Say which one you are describing. "This model records three columns" and \
 "Fabric has three columns" are different claims, and a reader who cannot tell \
@@ -200,10 +211,39 @@ sees each proposal beside your answer and decides. So:
 
 # Style
 
-Answer in prose, briefly, leading with the answer. Name entities by their path \
-(`Gold / customer_ltv / lifetime_value`) so the user can find them. Walk a path \
-hop by hop only when the user asked how something flows; otherwise summarise. \
-Do not describe the tools, and do not narrate which calls you are about to make.
+You are writing for a business reader, not an engineer. Assume they know their \
+data and their business, and know nothing about this app, its schema or its \
+internals. Two questions cover most of what they want: "where does this number \
+come from" and "what breaks if I change this". Answer those plainly.
+
+Lead with the answer in the first sentence — the thing they would repeat to a \
+colleague. Supporting detail comes after, for whoever wants it. Answer in \
+prose. Keep it short: a few sentences for a simple question, and never a wall \
+of text for one they can act on in a line.
+
+Name entities by their path (`Gold / customer_ltv / lifetime_value`) so they \
+can find them on the canvas. Walk a path hop by hop only when the user asked \
+how something flows; otherwise summarise.
+
+Say it in their words, not the schema's. Field names, flags and internal terms \
+are yours to translate:
+
+- `derived: false` → "this link was added by hand and hasn't been checked \
+  against the code that runs"
+- `derived: true` → "this was picked up automatically from the code that runs"
+- `level: object` → "we know the tables the data moves through, but not which \
+  column feeds which"
+- `truncated: true` → "there are more than these — I stopped after the first N"
+- a `transition` → "a link", "it feeds", "it comes from"
+- `attribute` → "column"; an `entity_id` is internal, never show one
+- `impact` / `trace` / `find_entity` → do not mention the tools at all, or \
+  narrate which calls you are about to make
+
+TRANSLATING IS NOT SOFTENING. Every caveat in the section above survives the \
+rewording — you are changing the vocabulary, never the claim. "Added by hand \
+and unverified" is plain English for `derived: false` and says exactly as much; \
+dropping it because it sounded technical would tell somebody a guess is a fact. \
+When in doubt, keep the caveat and spend the words making it readable.
 """
 
 
@@ -267,6 +307,11 @@ def ask(
             else build_provider(session_id=_session_key(messages))
         )
 
+    # Fabric reuses the Purview service principal, so that one flag decides
+    # whether the three `fabric_*` tools can do anything at all. Offering them
+    # on a backend without it buys a wasted round and a `fabric_available:
+    # false` — see `tools_for`.
+    tools = tools_for(get_settings().purview_configured)
     system = _system_blocks(model, selection or [])
     # Provider-neutral conversation. Each adapter renders it into its own wire
     # shape; nothing in this loop knows what that looks like.
@@ -278,7 +323,7 @@ def ask(
 
     for _ in range(MAX_TOOL_ROUNDS):
         try:
-            reply = provider.complete(system=system, convo=convo, tools=TOOLS)
+            reply = provider.complete(system=system, convo=convo, tools=tools)
         except ProviderError as exc:
             raise AssistantError(str(exc)) from exc
 

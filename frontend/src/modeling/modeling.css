@@ -2444,3 +2444,50 @@
   color: #24406e;
   font-weight: 600;
 }
+
+/* Copy affordances on the assistant transcript. Quiet until hovered — the
+   answer is what the panel is for, and a button competing with it on every
+   turn would be noise. It stays visible once focused so the keyboard path is
+   not a hidden control. */
+.as-copy {
+  border: 1px solid #d9dee8;
+  background: #fff;
+  color: #55607a;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.as-turn:hover .as-copy,
+.as-copy:focus-visible,
+.as-copy[data-state='done'],
+.as-copy[data-state='failed'] {
+  opacity: 1;
+}
+/* The header copy is not inside a turn, so it has nothing to hover onto. */
+.vw-head .as-copy {
+  opacity: 1;
+  margin-left: auto;
+}
+.as-copy:hover {
+  border-color: #b9c2d4;
+  color: #1c2333;
+}
+.as-copy[data-state='done'] {
+  border-color: #9ccfae;
+  color: #1f7a44;
+}
+/* Failure is a real state, not a silent no-op: without the clipboard API the
+   only way through is a manual copy, and the label has to say so. */
+.as-copy[data-state='failed'] {
+  border-color: #e4c07a;
+  color: #8a6116;
+}
+.as-answer-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}

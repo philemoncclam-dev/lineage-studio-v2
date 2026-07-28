@@ -293,6 +293,21 @@ def outline(model: LineageModel, max_objects: int = OUTLINE_MAX_OBJECTS) -> str:
     NOT listed — they are the bulk of a model and the thing `find_entity`
     exists to look up — and the listing is capped, with the cap declared, so a
     truncated outline is never mistaken for a complete inventory.
+
+    Tags ARE listed, and they are the one thing here that earns its tokens
+    twice. A sandbox import tags every object `Table`, `Notebook` or
+    `Pipeline`, so the tag is how this model records what an object IS — the
+    backend `ModelObject` has no kind field. Without them "which notebooks
+    write to Gold" costs a search that the map could have answered. They also
+    carry the classifications a business reader actually asks about (PII,
+    Certified), and those are stable orientation rather than facts to trace.
+
+    The line between what belongs here and what does not is worth stating,
+    because it is the line the whole design rests on: this is a MAP, not a
+    source of facts. Anything listed here is something the model can answer
+    from WITHOUT calling a tool, which puts it beyond the reach of `trace` and
+    outside `Answer.trace` where nobody can check it. Names and tags are safe
+    because they are labels. Lineage never is.
     """
     if not model.layers:
         return "This model is empty — it has no layers."
@@ -304,7 +319,8 @@ def outline(model: LineageModel, max_objects: int = OUTLINE_MAX_OBJECTS) -> str:
         names: list[str] = []
         for obj in layer.objects:
             if shown < max_objects:
-                names.append(obj.name)
+                tags = (model.properties.get(obj.id) or {}).get("Tags", "").strip()
+                names.append(f"{obj.name} [{tags}]" if tags else obj.name)
                 shown += 1
             else:
                 hidden += 1
@@ -316,3 +332,34 @@ def outline(model: LineageModel, max_objects: int = OUTLINE_MAX_OBJECTS) -> str:
             f"({hidden} more objects are not listed here — use find_entity to reach them.)"
         )
     return "\n".join(lines)
+
+
+#: The tools that read LIVE FABRIC rather than the authored model. Grouped
+#: because they share a fate: they all need the Purview service principal, and
+#: without it every one of them can only answer `fabric_available: false`.
+FABRIC_TOOLS = frozenset({"fabric_search", "fabric_table_schema", "compare_to_fabric"})
+
+
+def tools_for(fabric_configured: bool) -> list[dict[str, Any]]:
+    """The tool surface this deployment can actually serve.
+
+    Offering a tool that cannot work is not neutral. The model reaches for
+    Fabric on questions that merely *sound* like they are about what is live —
+    "should I add this edge" reads as "is the model still true" — and on a
+    backend with no credentials that costs a full extra round to be told
+    nothing, twice over if it retries. Measured on the eval: the two questions
+    where it reached for Fabric unprompted took 34s and 30s against a ~10s
+    median.
+
+    Removing the tools removes the temptation structurally, which is worth more
+    than asking the model nicely in a prompt it reads once per round. It also
+    drops ~700 tokens from a prefix that is re-sent 3-8 times per question.
+
+    Safe for prompt caching: the answer depends only on deployment config, so
+    the tool list is byte-identical across every request this process serves.
+    A per-REQUEST tool set would invalidate the cached prefix every time and
+    cost far more than it saved.
+    """
+    if fabric_configured:
+        return TOOLS
+    return [t for t in TOOLS if t["name"] not in FABRIC_TOOLS]

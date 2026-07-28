@@ -1,0 +1,298 @@
+"""The LLM layer — the loop, the tool surface, and what it refuses to do.
+
+There is no live API call here. The client is a script of canned responses, so
+what these tests actually check is the part that is ours: that a tool call is
+dispatched to the real traversal, that its result goes back in the shape the API
+requires, that the loop terminates, and that the recorded trace tells the truth
+about what was read. The model's prose is not under test; its *access* is.
+
+The fixture is the same medallion shape as `test_chat_graph.py` — column edges
+through the warehouse, table-level only into bronze — because the interesting
+failures are all about reporting that distinction rather than flattening it.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from app.chat.assistant import MAX_TOOL_ROUNDS, AssistantError, Message, ask
+from app.chat.model import LineageModel
+from app.chat.tools import TOOLS, outline, run_tool
+
+
+def _model() -> LineageModel:
+    return LineageModel.model_validate(
+        {
+            "id": "m1",
+            "name": "Medallion",
+            "layers": [
+                {
+                    "id": "L_bronze",
+                    "name": "Bronze",
+                    "objects": [
+                        {
+                            "id": "o_bronze",
+                            "name": "bronze_orders",
+                            "children": [{"id": "a_b_amount", "name": "amount", "children": []}],
+                        }
+                    ],
+                },
+                {
+                    "id": "L_gold",
+                    "name": "Gold",
+                    "objects": [
+                        {
+                            "id": "o_gold",
+                            "name": "gold_ltv",
+                            "children": [{"id": "a_g_ltv", "name": "ltv", "children": []}],
+                        }
+                    ],
+                },
+            ],
+            "transitions": [
+                {"id": "t1", "source": "a_b_amount", "target": "a_g_ltv"},
+                {"id": "t2", "source": "o_bronze", "target": "o_gold"},
+            ],
+            "properties": {
+                "t1": {"Transform": "SUM(amount)", "Source": "Fabric sandbox"},
+            },
+        }
+    )
+
+
+# --- a scripted stand-in for the SDK ----------------------------------------
+
+
+class _Block:
+    def __init__(self, **kw: Any) -> None:
+        self.__dict__.update(kw)
+
+
+def _text(s: str) -> _Block:
+    return _Block(type="text", text=s)
+
+
+def _use(call_id: str, tool: str, **args: Any) -> _Block:
+    # `tool`, not `name` — a tool argument is also called `name`, and the two
+    # collide as keywords.
+    return _Block(type="tool_use", id=call_id, name=tool, input=args)
+
+
+class _Response:
+    def __init__(self, blocks: list[_Block], stop_reason: str = "end_turn") -> None:
+        self.content = blocks
+        self.stop_reason = stop_reason
+
+
+class _FakeClient:
+    """Replays `script` turn by turn, recording every request it was sent."""
+
+    def __init__(self, script: list[_Response]) -> None:
+        self._script = list(script)
+        self.requests: list[dict[str, Any]] = []
+        self.messages = self  # the SDK's `client.messages.create` shape
+
+    def create(self, **kwargs: Any) -> _Response:
+        self.requests.append(kwargs)
+        if not self._script:
+            raise AssertionError("the loop asked for more turns than were scripted")
+        return self._script.pop(0)
+
+
+# --- the loop ---------------------------------------------------------------
+
+
+def test_a_tool_call_reaches_the_real_traversal_and_its_result_comes_back():
+    client = _FakeClient(
+        [
+            _Response([_use("c1", "trace_downstream", entity_id="a_b_amount")]),
+            _Response([_text("amount feeds ltv via SUM(amount).")]),
+        ]
+    )
+    answer = ask(_model(), [Message(role="user", content="where does amount go?")], client=client)
+
+    assert answer.text == "amount feeds ltv via SUM(amount)."
+    assert answer.stop_reason == "end_turn"
+
+    # The second request must carry the tool result, and it must be the walk
+    # `graph.py` computed — not something the loop made up on its way past.
+    results = client.requests[1]["messages"][-1]["content"]
+    assert results[0]["tool_use_id"] == "c1"
+    assert results[0]["is_error"] is False
+    assert "SUM(amount)" in results[0]["content"]
+    assert "a_g_ltv" in results[0]["content"]
+
+
+def test_the_assistant_turn_is_replayed_verbatim_so_tool_ids_still_match():
+    """Rebuilding the turn from its text drops the tool_use blocks, and the API
+    then rejects the tool_result that references an id it can no longer see."""
+    call = _use("c1", "find_entity", name="amount")
+    client = _FakeClient([_Response([_text("Looking…"), call]), _Response([_text("done")])])
+    ask(_model(), [Message(role="user", content="amount?")], client=client)
+
+    replayed = client.requests[1]["messages"][-2]
+    assert replayed["role"] == "assistant"
+    assert replayed["content"][1] is call
+
+
+def test_every_result_for_one_turn_goes_back_in_a_single_user_message():
+    """Splitting parallel results across messages trains the model out of
+    calling tools in parallel at all."""
+    client = _FakeClient(
+        [
+            _Response(
+                [
+                    _use("c1", "find_entity", name="amount"),
+                    _use("c2", "find_entity", name="ltv"),
+                ]
+            ),
+            _Response([_text("both found")]),
+        ]
+    )
+    ask(_model(), [Message(role="user", content="both?")], client=client)
+
+    sent = client.requests[1]["messages"]
+    assert sent[-1]["role"] == "user"
+    assert [r["tool_use_id"] for r in sent[-1]["content"]] == ["c1", "c2"]
+
+
+def test_a_bad_tool_call_is_answered_as_an_error_rather_than_crashing_the_turn():
+    """A model that sends a malformed call should get a chance to correct it —
+    a 500 to the browser loses the whole conversation instead."""
+    client = _FakeClient(
+        [
+            _Response([_use("c1", "trace_downstream")]),  # missing entity_id
+            _Response([_text("Sorry, which column?")]),
+        ]
+    )
+    answer = ask(_model(), [Message(role="user", content="trace it")], client=client)
+
+    result = client.requests[1]["messages"][-1]["content"][0]
+    assert result["is_error"] is True
+    assert "entity_id" in result["content"]
+    assert answer.text == "Sorry, which column?"
+
+
+def test_a_looping_model_is_stopped_and_the_answer_says_so():
+    """The failure mode this guards is spend, and an answer that never arrives."""
+    client = _FakeClient(
+        [_Response([_use(f"c{i}", "find_entity", name="amount")]) for i in range(MAX_TOOL_ROUNDS)]
+    )
+    answer = ask(_model(), [Message(role="user", content="loop")], client=client)
+
+    assert answer.stop_reason == "max_rounds"
+    assert len(answer.trace) == MAX_TOOL_ROUNDS
+    assert "ran out of steps" in answer.text
+
+
+def test_a_refusal_is_reported_rather_than_read_as_an_empty_answer():
+    """`content` is empty on a pre-output refusal, so indexing it would raise
+    and the user would see a 503 for a request that actually succeeded."""
+    client = _FakeClient([_Response([], stop_reason="refusal")])
+    answer = ask(_model(), [Message(role="user", content="…")], client=client)
+
+    assert answer.stop_reason == "refusal"
+    assert answer.text
+
+
+def test_an_upstream_failure_becomes_an_assistant_error_not_a_raw_sdk_exception():
+    class _Boom:
+        messages = property(lambda self: self)
+
+        def create(self, **kwargs: Any):
+            raise RuntimeError("connection reset")
+
+    with pytest.raises(AssistantError, match="connection reset"):
+        ask(_model(), [Message(role="user", content="hi")], client=_Boom())
+
+
+def test_an_empty_conversation_is_refused_before_any_call_is_made():
+    with pytest.raises(AssistantError):
+        ask(_model(), [], client=_FakeClient([]))
+
+
+# --- the trace: what the UI shows next to the prose -------------------------
+
+
+def test_the_trace_records_every_call_in_order_with_its_arguments():
+    client = _FakeClient(
+        [
+            _Response([_use("c1", "find_entity", name="amount")]),
+            _Response([_use("c2", "trace_downstream", entity_id="a_b_amount")]),
+            _Response([_text("done")]),
+        ]
+    )
+    answer = ask(_model(), [Message(role="user", content="q")], client=client)
+
+    assert [c.name for c in answer.trace] == ["find_entity", "trace_downstream"]
+    assert answer.trace[0].input == {"name": "amount"}
+    assert answer.trace[0].result == "1 match"
+
+
+def test_the_trace_repeats_the_traversals_own_caveats_not_just_a_count():
+    """A trace reading '1 path' beside prose implying column lineage hides the
+    thing phase 1 went to trouble to preserve. It must say 'object level'."""
+    client = _FakeClient(
+        [
+            # bronze_orders has only a table-level edge out of it.
+            _Response([_use("c1", "trace_downstream", entity_id="o_bronze")]),
+            _Response([_text("done")]),
+        ]
+    )
+    answer = ask(_model(), [Message(role="user", content="q")], client=client)
+    assert answer.trace[0].result == "1 path · object level"
+
+
+# --- the tool surface -------------------------------------------------------
+
+
+def test_the_traversal_tools_take_an_id_and_never_a_name():
+    """A name is not unique in a lineage model — `id` is on a dozen tables — so
+    a name-addressed trace would silently answer about the wrong entity."""
+    for tool in TOOLS:
+        if tool["name"].startswith("trace_") or tool["name"] == "describe_entity":
+            props = tool["input_schema"]["properties"]
+            assert "entity_id" in props
+            assert "name" not in props
+
+
+def test_find_entity_distinguishes_no_matches_from_a_failed_call():
+    assert run_tool(_model(), "find_entity", {"name": "nonexistent"}) == {
+        "matches": [],
+        "count": 0,
+    }
+
+
+def test_describing_an_unknown_id_says_so_instead_of_returning_null():
+    """`null` reads as "no properties" rather than "no such entity", and the
+    model reports the former as a fact about the column."""
+    result = run_tool(_model(), "describe_entity", {"entity_id": "nope"})
+    assert "error" in result
+
+
+def test_an_unknown_tool_name_is_rejected():
+    with pytest.raises(KeyError):
+        run_tool(_model(), "delete_everything", {})
+
+
+# --- the outline in the system prompt ---------------------------------------
+
+
+def test_the_outline_lists_layers_and_their_objects():
+    text = outline(_model())
+    assert "Bronze (1): bronze_orders" in text
+    assert "Gold (1): gold_ltv" in text
+
+
+def test_a_truncated_outline_declares_that_it_is_truncated():
+    """Silently cutting the list makes a partial inventory look complete, and
+    the assistant then reports 'there is no such table' about one it cannot see."""
+    text = outline(_model(), max_objects=1)
+    assert "1 more objects are not listed" in text
+    assert "use find_entity" in text
+
+
+def test_an_empty_model_is_described_rather_than_rendered_as_a_blank_prompt():
+    assert "empty" in outline(LineageModel())

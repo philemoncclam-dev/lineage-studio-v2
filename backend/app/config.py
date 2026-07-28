@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     #: them on a visitor's behalf.
     cors_origins: str = ""
 
+    #: The model assistant. Absent is a normal state, exactly like Purview and
+    #: Fabric: the app serves every other path without it, and `/chat/status`
+    #: lets the UI hide the assistant rather than offer a failing button.
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-opus-5"
+
     @property
     def allowed_origins(self) -> list[str]:
         configured = [o.strip().rstrip("/") for o in self.cors_origins.split(",")]

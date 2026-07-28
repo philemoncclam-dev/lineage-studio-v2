@@ -15,6 +15,10 @@ openpyxl>=3.1
 # which has no JVM. See app/sandbox/_sqllineage.py.
 sqlglot>=25.0
 
+# The model assistant (app/chat) — the LLM half of phase 2. Optional at
+# runtime: with no ANTHROPIC_API_KEY the app starts and every other path works.
+anthropic>=0.69
+
 # Tests
 pytest>=8.3
 httpx>=0.28          # required by fastapi.testclient

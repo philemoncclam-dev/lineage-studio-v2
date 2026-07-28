@@ -2283,3 +2283,97 @@
   background: #c3cad6;
   cursor: default;
 }
+
+/* --- Proposed edits -------------------------------------------------------
+   Bordered and tinted, so a block of suggestions never blends into the prose
+   above it. The whole point is that this is a decision, not a readout. */
+.as-proposals {
+  margin-top: 2px;
+  width: 100%;
+  border: 1px solid #cfd9ea;
+  border-radius: 10px;
+  background: #f7f9fe;
+  overflow: hidden;
+}
+.as-proposals-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #e0e7f4;
+}
+.as-proposals-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #24406e;
+}
+/* Carries the same claim as the assistant's own wording and as the tool result
+   it was given. If these three ever disagree the user is misled by whichever
+   they happen to read first. */
+.as-proposals-note {
+  font-size: 10px;
+  color: #6b7280;
+}
+.as-proposal-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.as-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e8edf7;
+}
+.as-proposal:last-child {
+  border-bottom: 0;
+}
+.as-proposal-kind {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+.as-proposal-target {
+  font-size: 12px;
+  color: #1c2333;
+  word-break: break-word;
+}
+.as-proposal-why {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #4b5563;
+}
+.as-proposal-acts {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px 0;
+  margin: 0 -10px -8px;
+}
+.as-proposal-list + .as-proposal-acts {
+  padding: 8px 10px;
+  margin: 0;
+  border-top: 1px solid #e0e7f4;
+}
+.as-proposal-apply,
+.as-proposal-skip {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.as-proposal-apply {
+  border: 0;
+  background: #1f6feb;
+  color: #fff;
+}
+.as-proposal-skip {
+  border: 1px solid rgb(28 35 51 / 0.2);
+  background: #fff;
+  color: #4b5563;
+}

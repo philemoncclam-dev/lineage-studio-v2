@@ -49,7 +49,28 @@ function model(): LineageModel {
 }
 
 function answer(over: Partial<Record<string, unknown>> = {}) {
-  return { text: 'It reaches Gold.', trace: [], stop_reason: 'end_turn', ...over }
+  return {
+    text: 'It reaches Gold.',
+    trace: [],
+    proposals: [],
+    stop_reason: 'end_turn',
+    ...over,
+  }
+}
+
+function renderPanel(
+  props: { onSelect?: (id: string) => void; onApplyEdits?: (edits: unknown[]) => void } = {},
+) {
+  const onApplyEdits = props.onApplyEdits ?? vi.fn()
+  render(
+    <AssistantPanel
+      model={model()}
+      onSelect={props.onSelect ?? vi.fn()}
+      onApplyEdits={onApplyEdits as never}
+      onClose={vi.fn()}
+    />,
+  )
+  return { onApplyEdits }
 }
 
 beforeEach(() => {
@@ -67,7 +88,7 @@ async function ask(text: string) {
 
 describe('AssistantPanel', () => {
   it('sends the model and the question, and shows the answer', async () => {
-    render(<AssistantPanel model={model()} onSelect={vi.fn()} onClose={vi.fn()} />)
+    renderPanel()
     await ask('where does amount go?')
 
     await waitFor(() => expect(askAssistant).toHaveBeenCalled())
@@ -80,7 +101,7 @@ describe('AssistantPanel', () => {
   it('replays the whole conversation on the next turn', async () => {
     // There is no server-side session — this array IS the memory, so a second
     // question sent alone would arrive with no context at all.
-    render(<AssistantPanel model={model()} onSelect={vi.fn()} onClose={vi.fn()} />)
+    renderPanel()
     await ask('first')
     await screen.findByText('It reaches Gold.')
     await ask('and then?')
@@ -96,7 +117,7 @@ describe('AssistantPanel', () => {
   it('marks an answer that no traversal backed', async () => {
     // The one failure mode where a wrong answer looks exactly like a right one:
     // the model replying from its system-prompt outline instead of the graph.
-    render(<AssistantPanel model={model()} onSelect={vi.fn()} onClose={vi.fn()} />)
+    renderPanel()
     await ask('anything')
     expect(await screen.findByText('not checked against the model')).toBeTruthy()
   })
@@ -109,7 +130,7 @@ describe('AssistantPanel', () => {
         ],
       }),
     )
-    render(<AssistantPanel model={model()} onSelect={vi.fn()} onClose={vi.fn()} />)
+    renderPanel()
     const user = await ask('trace it')
 
     expect(screen.queryByText('not checked against the model')).toBeNull()
@@ -126,7 +147,7 @@ describe('AssistantPanel', () => {
       answer({ trace: [{ name: 'trace_upstream', input: { entity_id: 'A1' }, result: 'ok' }] }),
     )
     const onSelect = vi.fn()
-    render(<AssistantPanel model={model()} onSelect={onSelect} onClose={vi.fn()} />)
+    renderPanel({ onSelect })
     const user = await ask('q')
     await user.click(await screen.findByRole('button', { name: /1 step/ }))
 
@@ -139,7 +160,7 @@ describe('AssistantPanel', () => {
     askAssistant.mockResolvedValue(
       answer({ trace: [{ name: 'find_entity', input: { name: 'amount' }, result: '1 match' }] }),
     )
-    render(<AssistantPanel model={model()} onSelect={vi.fn()} onClose={vi.fn()} />)
+    renderPanel()
     const user = await ask('q')
     await user.click(await screen.findByRole('button', { name: /1 step/ }))
 
@@ -150,7 +171,7 @@ describe('AssistantPanel', () => {
   it('keeps the question in the transcript when the turn fails', async () => {
     // Retrying should not mean retyping.
     askAssistant.mockRejectedValue(new Error('backend is asleep'))
-    render(<AssistantPanel model={model()} onSelect={vi.fn()} onClose={vi.fn()} />)
+    renderPanel()
     await ask('where does amount go?')
 
     expect(await screen.findByText('backend is asleep')).toBeTruthy()
@@ -159,16 +180,97 @@ describe('AssistantPanel', () => {
 
   it('hides the composer and says why when the backend has no key', async () => {
     fetchChatStatus.mockResolvedValue({ configured: false, model: '' })
-    render(<AssistantPanel model={model()} onSelect={vi.fn()} onClose={vi.fn()} />)
+    renderPanel()
 
     await waitFor(() => expect(screen.queryByLabelText('Ask about this model')).toBeNull())
     expect(screen.getByText(/ANTHROPIC_API_KEY/)).toBeTruthy()
   })
 
+  describe('proposed edits', () => {
+    const edit = {
+      kind: 'add_transition',
+      describes: 'note has no lineage; bronze feeds gold here.',
+      source_id: 'A1',
+      target_id: 'A2',
+      source_path: 'Bronze / orders / amount',
+      target_path: 'Gold / ltv',
+    }
+
+    it('shows a proposal as pending rather than as work already done', async () => {
+      // The panel, the assistant's own wording and the tool result all have to
+      // agree that nothing has changed — a user misled by any one of them acts
+      // on a model they think was edited.
+      askAssistant.mockResolvedValue(answer({ text: 'I’d wire that up.', proposals: [edit] }))
+      renderPanel()
+      await ask('fix the gap')
+
+      expect(await screen.findByText('not applied yet')).toBeTruthy()
+      expect(screen.getByText('Bronze / orders / amount → Gold / ltv')).toBeTruthy()
+      expect(screen.getByText(edit.describes)).toBeTruthy()
+    })
+
+    it('does not touch the model until Apply is pressed', async () => {
+      askAssistant.mockResolvedValue(answer({ proposals: [edit] }))
+      const { onApplyEdits } = renderPanel()
+      await ask('fix it')
+
+      await screen.findByText('not applied yet')
+      expect(onApplyEdits).not.toHaveBeenCalled()
+    })
+
+    it('hands the edit up on Apply', async () => {
+      askAssistant.mockResolvedValue(answer({ proposals: [edit] }))
+      const { onApplyEdits } = renderPanel()
+      const user = await ask('fix it')
+
+      await user.click(await screen.findByRole('button', { name: 'Apply' }))
+      expect(onApplyEdits).toHaveBeenCalledWith([edit])
+    })
+
+    it('removes a spent proposal rather than leaving its button live', async () => {
+      // A second Apply is either a silent no-op or a duplicate edit.
+      askAssistant.mockResolvedValue(answer({ proposals: [edit] }))
+      renderPanel()
+      const user = await ask('fix it')
+
+      await user.click(await screen.findByRole('button', { name: 'Apply' }))
+      expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull()
+      expect(screen.queryByText('not applied yet')).toBeNull()
+    })
+
+    it('discards without applying anything', async () => {
+      askAssistant.mockResolvedValue(answer({ proposals: [edit] }))
+      const { onApplyEdits } = renderPanel()
+      const user = await ask('fix it')
+
+      await user.click(await screen.findByRole('button', { name: 'Discard' }))
+      expect(onApplyEdits).not.toHaveBeenCalled()
+      expect(screen.queryByText('not applied yet')).toBeNull()
+    })
+
+    it('applies a batch in one call so it is one undo step', async () => {
+      const second = { ...edit, describes: 'and this one too', source_id: 'A2' }
+      askAssistant.mockResolvedValue(answer({ proposals: [edit, second] }))
+      const { onApplyEdits } = renderPanel()
+      const user = await ask('fix them')
+
+      await user.click(await screen.findByRole('button', { name: 'Apply all 2' }))
+      expect(onApplyEdits).toHaveBeenCalledTimes(1)
+      expect(onApplyEdits).toHaveBeenCalledWith([edit, second])
+    })
+
+    it('shows no proposal block on a read-only turn', async () => {
+      renderPanel()
+      await ask('just tell me')
+      await screen.findByText('It reaches Gold.')
+      expect(screen.queryByText(/Proposed change/)).toBeNull()
+    })
+  })
+
   it('treats an unreachable status endpoint as unavailable, not as available', async () => {
     // Otherwise the panel offers a composer whose every submission 503s.
     fetchChatStatus.mockRejectedValue(new Error('network'))
-    render(<AssistantPanel model={model()} onSelect={vi.fn()} onClose={vi.fn()} />)
+    renderPanel()
 
     await waitFor(() => expect(screen.queryByLabelText('Ask about this model')).toBeNull())
   })

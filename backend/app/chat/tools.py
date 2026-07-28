@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import analysis, fabric_tools, graph
+from . import analysis, edits, fabric_tools, graph
 from .model import LineageModel
 
 #: How much of the model's shape is inlined in the system prompt before it is
@@ -205,6 +205,11 @@ TOOLS: list[dict[str, Any]] = [
 # is explicitly about the live tenant.
 TOOLS += fabric_tools.TOOLS
 
+# The one tool that changes anything — and it does not change anything either.
+# Last in the list, because proposing an edit is what happens after reading, and
+# an assistant that reaches for it first has skipped the reading.
+TOOLS += edits.TOOLS
+
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
 
@@ -220,6 +225,9 @@ def run_tool(model: LineageModel, name: str, args: dict[str, Any]) -> Any:
 
     if name in fabric_tools.TOOL_NAMES:
         return fabric_tools.run_tool(model, name, args)
+
+    if name in edits.TOOL_NAMES:
+        return edits.run_tool(model, name, args)
 
     if name == "find_entity":
         results = graph.find_entity(

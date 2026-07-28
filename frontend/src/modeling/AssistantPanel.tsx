@@ -21,13 +21,14 @@
 //     table-level walk is a visible contradiction instead of a silent one.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { askAssistant, fetchChatStatus } from '../api'
-import type { AssistantAnswer, ChatMessage } from '../api'
+import type { AssistantAnswer, ChatMessage, ProposedEdit } from '../api'
 import type { EntityId, LineageModel } from '../model/types'
 import { BarsSpinner } from '../shell/BarsSpinner'
 
 /** A user turn plus, for an assistant turn, the walks that produced it. */
 interface Turn extends ChatMessage {
   trace?: AssistantAnswer['trace']
+  proposals?: ProposedEdit[]
   stopReason?: AssistantAnswer['stop_reason']
 }
 
@@ -46,11 +47,18 @@ const EXAMPLES = [
 export function AssistantPanel({
   model,
   onSelect,
+  onApplyEdits,
   onClose,
 }: {
   model: LineageModel
   /** Select and reveal an entity on the canvas behind the panel. */
   onSelect: (id: EntityId) => void
+  /**
+   * Apply approved proposals. The panel never edits the model itself — it hands
+   * the accepted edits up, and the viewer runs them through the normal editor
+   * and undo history so an assistant edit is indistinguishable from a hand one.
+   */
+  onApplyEdits: (edits: ProposedEdit[]) => void
   onClose: () => void
 }) {
   const [turns, setTurns] = useState<Turn[]>([])
@@ -107,6 +115,7 @@ export function AssistantPanel({
           role: 'assistant',
           content: answer.text,
           trace: answer.trace,
+          proposals: answer.proposals ?? [],
           stopReason: answer.stop_reason,
         },
       ])
@@ -148,7 +157,23 @@ export function AssistantPanel({
           <div className="as-turn" data-role={turn.role} key={i}>
             <div className="as-bubble">{turn.content}</div>
             {turn.role === 'assistant' && (
-              <TraceList trace={turn.trace ?? []} paths={paths} onSelect={onSelect} />
+              <>
+                <TraceList trace={turn.trace ?? []} paths={paths} onSelect={onSelect} />
+                {(turn.proposals?.length ?? 0) > 0 && (
+                  <ProposalList
+                    proposals={turn.proposals ?? []}
+                    onApply={onApplyEdits}
+                    // Discarding is local: the proposal is gone from the
+                    // transcript and nothing is sent anywhere. There is nothing
+                    // on the server to tell.
+                    onDiscard={(remaining) =>
+                      setTurns((prev) =>
+                        prev.map((t, j) => (j === i ? { ...t, proposals: remaining } : t)),
+                      )
+                    }
+                  />
+                )}
+              </>
             )}
           </div>
         ))}
@@ -200,6 +225,97 @@ export function AssistantPanel({
       )}
     </aside>
   )
+}
+
+/**
+ * Proposed edits, awaiting approval.
+ *
+ * The header says "Proposed changes" and the button says "Apply", because the
+ * one thing this must never do is read as work already done — the assistant is
+ * told the same, and the two have to agree or the user is misled by whichever
+ * they read first.
+ *
+ * Applied and discarded proposals LEAVE the list rather than staying greyed
+ * out. A spent proposal that still shows an Apply button invites a second
+ * click, and a second Apply is either a silent no-op or a duplicate edit.
+ */
+function ProposalList({
+  proposals,
+  onApply,
+  onDiscard,
+}: {
+  proposals: ProposedEdit[]
+  onApply: (edits: ProposedEdit[]) => void
+  onDiscard: (remaining: ProposedEdit[]) => void
+}) {
+  const take = (edits: ProposedEdit[], keep: ProposedEdit[]) => {
+    onApply(edits)
+    onDiscard(keep)
+  }
+
+  return (
+    <div className="as-proposals">
+      <div className="as-proposals-head">
+        <span className="as-proposals-title">
+          Proposed change{proposals.length === 1 ? '' : 's'}
+        </span>
+        <span className="as-proposals-note">not applied yet</span>
+      </div>
+
+      <ul className="as-proposal-list">
+        {proposals.map((edit, i) => (
+          <li className="as-proposal" key={i}>
+            <span className="as-proposal-kind">{KIND_LABEL[edit.kind] ?? edit.kind}</span>
+            <span className="as-proposal-target">{targetLabel(edit)}</span>
+            <p className="as-proposal-why">{edit.describes}</p>
+            <div className="as-proposal-acts">
+              <button
+                className="as-proposal-apply"
+                onClick={() => take([edit], proposals.filter((_, j) => j !== i))}
+              >
+                Apply
+              </button>
+              <button
+                className="as-proposal-skip"
+                onClick={() => onDiscard(proposals.filter((_, j) => j !== i))}
+              >
+                Discard
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {proposals.length > 1 && (
+        <div className="as-proposal-acts">
+          <button className="as-proposal-apply" onClick={() => take(proposals, [])}>
+            Apply all {proposals.length}
+          </button>
+          <button className="as-proposal-skip" onClick={() => onDiscard([])}>
+            Discard all
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const KIND_LABEL: Record<string, string> = {
+  add_transition: 'New lineage',
+  set_property: 'Set property',
+  add_tag: 'Add tag',
+  rename: 'Rename',
+}
+
+/** What the edit acts on, named by path rather than by id. */
+function targetLabel(edit: ProposedEdit): string {
+  if (edit.kind === 'add_transition') {
+    return `${edit.source_path ?? edit.source_id ?? '?'} → ${edit.target_path ?? edit.target_id ?? '?'}`
+  }
+  const where = edit.entity_path ?? edit.entity_id ?? '?'
+  if (edit.kind === 'set_property') return `${where} · ${edit.key} = ${edit.value}`
+  if (edit.kind === 'add_tag') return `${where} · ${edit.value}`
+  return `${where} → ${edit.value}`
 }
 
 function TraceList({

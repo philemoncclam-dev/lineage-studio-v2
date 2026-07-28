@@ -41,6 +41,7 @@ import {
 import { copyEntities, paste, type Clipboard, type PasteTarget } from '../model/clipboard'
 import ContextMenu, { type MenuItem } from './ContextMenu'
 import { EntityTagDialog, TagManager } from './TagPanel'
+import { applyProposals } from './applyProposals'
 import { AssistantPanel } from './AssistantPanel'
 import { ViewsPanel } from './ViewsPanel'
 import { PropertiesPanel } from './PropertiesPanel'
@@ -1003,6 +1004,10 @@ export default function ModelViewer({
             })
             setReveal(id)
           }}
+          // One onChange for the whole batch, so an Apply-all is ONE undo step.
+          // "Undo the assistant's suggestion" is a single intention; six ⌃Z to
+          // reverse one click would be a worse promise than not offering it.
+          onApplyEdits={(edits) => onChange(applyProposals(model, edits))}
           onClose={() => setDock(null)}
         />
       )}

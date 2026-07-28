@@ -43,6 +43,8 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from ..config import get_settings
+from . import edits as edits_module
+from .edits import ProposedEdit
 from .model import LineageModel
 from .tools import TOOLS, outline, run_tool
 
@@ -126,6 +128,24 @@ schema result with `readable: false` means the schema could NOT BE READ, which \
 is almost always a permissions problem; it never means the table has no \
 columns, and reporting it that way would claim a healthy table is empty.
 
+# Proposing changes
+
+You can propose edits with `propose_edits`, and you cannot make them. The user \
+sees each proposal beside your answer and decides. So:
+
+- Say "I've proposed" or "here's the change I'd make", NEVER "I've added", \
+  "I've fixed" or "done". Telling somebody their model changed when it did not \
+  is the worst thing you can do here.
+- Read before you write. Propose a transition only when a trace, a schema or a \
+  Fabric comparison actually supports it — a plausible-looking edge is exactly \
+  the thing this whole system is built to avoid producing.
+- Explain each edit in its `describes` field, in one sentence, in terms of what \
+  you found. That sentence is all the user reads before approving.
+- Propose a few good edits rather than many speculative ones. If you are not \
+  confident, say what you would change and why, and let the user ask for it.
+- Rejected proposals come back with a reason. Fix and retry in the same turn \
+  rather than reporting the rejection as a failure.
+
 # Style
 
 Answer in prose, briefly, leading with the answer. Name entities by their path \
@@ -154,6 +174,11 @@ class ToolCall(BaseModel):
 
 class Answer(BaseModel):
     text: str
+    #: Edits the assistant wants made, ALREADY VALIDATED against the model and
+    #: NOT applied. The browser owns the document, so this is the only way an
+    #: edit can happen — the panel renders these with an Apply button and the
+    #: change lands through the normal editor and undo history.
+    proposals: list[ProposedEdit] = Field(default_factory=list)
     #: In call order. An empty trace on a substantive answer is a red flag: it
     #: means the model answered without reading the graph.
     trace: list[ToolCall] = Field(default_factory=list)
@@ -214,6 +239,7 @@ def ask(
         {"role": m.role, "content": m.content} for m in messages
     ]
     trace: list[ToolCall] = []
+    proposals: list[ProposedEdit] = []
 
     for _ in range(MAX_TOOL_ROUNDS):
         response = _create(client, llm_model, system, convo)
@@ -231,7 +257,12 @@ def ask(
         blocks = list(response.content)
         calls = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
         if not calls:
-            return Answer(text=_text_of(blocks), trace=trace, stop_reason="end_turn")
+            return Answer(
+                text=_text_of(blocks),
+                trace=trace,
+                proposals=proposals,
+                stop_reason="end_turn",
+            )
 
         # The assistant turn goes back verbatim — thinking and tool_use blocks
         # included. Reconstructing it from the text alone loses the tool_use ids
@@ -242,7 +273,15 @@ def ask(
         for call in calls:
             args = dict(call.input or {})
             try:
-                payload = run_tool(model, call.name, args)
+                if call.name in edits_module.TOOL_NAMES:
+                    # Intercepted rather than dispatched generically: the loop
+                    # needs the ACCEPTED edits to carry back to the browser,
+                    # while the model gets only the count and the rejections.
+                    proposal = edits_module.validate(model, edits_module.edits_of(args))
+                    proposals.extend(proposal.accepted)
+                    payload = edits_module.describe(proposal)
+                else:
+                    payload = run_tool(model, call.name, args)
                 is_error = False
             except (KeyError, TypeError) as exc:
                 payload = {"error": str(exc) or f"bad call to {call.name}"}
@@ -269,6 +308,9 @@ def ask(
             "entity at a time."
         ),
         trace=trace,
+        # Anything validated before the bound was hit is still a real, reviewable
+        # proposal. Dropping it would throw away work the user can act on.
+        proposals=proposals,
         stop_reason="max_rounds",
     )
 
@@ -328,6 +370,12 @@ def _summarize(name: str, payload: Any) -> str:
             f"{len(payload.get('only_in_model') or [])} only in model · "
             f"{len(payload.get('only_in_fabric') or [])} only in Fabric"
         )
+    if name == "propose_edits":
+        count = payload.get("proposed", 0)
+        rejected = len(payload.get("rejected") or [])
+        # "proposed", never "applied" — the trace is read next to the prose, and
+        # it must not be the thing that implies the model changed.
+        return f"proposed {count}" + (f" · {rejected} rejected" if rejected else "")
     if name == "find_entity":
         count = payload.get("count", 0)
         return f"{count} match{'' if count == 1 else 'es'}"

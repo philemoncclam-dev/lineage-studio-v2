@@ -737,8 +737,32 @@ export interface AssistantToolCall {
   result: string
 }
 
+/**
+ * A change the assistant wants made — VALIDATED by the backend, NOT applied.
+ *
+ * The backend cannot apply anything: the model lives in this browser. So a
+ * proposal is a suggestion with an Apply button, and accepting one runs the
+ * ordinary editor function through the ordinary undo history.
+ */
+export interface ProposedEdit {
+  kind: 'add_transition' | 'set_property' | 'add_tag' | 'rename'
+  /** One sentence, written by the assistant. This is what the user reads before approving. */
+  describes: string
+  source_id?: string | null
+  target_id?: string | null
+  entity_id?: string | null
+  key?: string | null
+  value?: string | null
+  /** Display paths, resolved by the backend, so the UI shows names not uuids. */
+  source_path?: string | null
+  target_path?: string | null
+  entity_path?: string | null
+}
+
 export interface AssistantAnswer {
   text: string
+  /** Awaiting the user's approval. Empty on a read-only turn. */
+  proposals: ProposedEdit[]
   /**
    * In call order. EMPTY ON A SUBSTANTIVE ANSWER IS A RED FLAG: it means the
    * model replied without reading the graph, and the UI marks it as such rather

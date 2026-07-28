@@ -121,30 +121,47 @@ describe('paste', () => {
     )
   })
 
-  it('carries an attribute\'s transitions onto the pasted copy', () => {
+  it('gives a pasted attribute no transitions at all', () => {
     const model = sampleModel()
     // A column-level edge: OUTPUT1.name feeds tft_applicant.m_customer_name.
     const source = idOf(model, 'm_customer_name')
     const clip = copyEntities(model, [source])!
     expect(clip.inbound.length + clip.outbound.length).toBeGreaterThan(0)
 
+    // The clone is a structure, not a derivation — it arrives unwired.
     const next = paste(model, clip, { mode: 'after', id: source })
-    expect(next.transitions.length).toBe(
-      model.transitions.length + clip.inbound.length + clip.outbound.length,
+    expect(namesOf(next, 'm_customer_name')).toHaveLength(
+      namesOf(model, 'm_customer_name').length + 1,
     )
+    expect(next.transitions.length).toBe(model.transitions.length)
   })
 
-  it('preserves an attribute\'s transitions across a cut and paste', () => {
+  it('still copies an attribute\'s properties even though it drops its edges', () => {
+    const model = sampleModel()
+    const source = idOf(model, 'ficoscore')
+    const next = paste(model, copyEntities(model, [source])!, { mode: 'after', id: source })
+    const clone = namesOf(next, 'ficoscore').find((id) => id !== source)!
+    expect(next.properties[clone]).toEqual({ Classification: 'SPI' })
+  })
+
+  it('does not restore an attribute\'s transitions across a cut and paste', () => {
     const model = sampleModel()
     const source = idOf(model, 'm_customer_name')
-    // Cut is copy + delete; deleting takes the edges with it, so paste has to
-    // put them back or a move would silently destroy lineage.
+    // Cut is copy + delete; the delete takes the edges and paste does not
+    // bring them back, so a moved column lands unwired under its new parent.
     const clip = copyEntities(model, [source])!
     const afterCut = deleteEntities(model, [source])
     expect(afterCut.transitions.length).toBeLessThan(model.transitions.length)
 
     const next = paste(afterCut, clip, { mode: 'into', id: idOf(model, 'tft_applicant') })
-    expect(next.transitions.length).toBe(model.transitions.length)
+    expect(next.transitions.length).toBe(afterCut.transitions.length)
+  })
+
+  it('keeps carrying transitions for layers and objects', () => {
+    const model = sampleModel()
+    const clip = copyEntities(model, [idOf(model, 'OUTPUT1')])!
+    const next = paste(model, clip, { mode: 'canvas' })
+    expect(next.transitions.length).toBeGreaterThan(model.transitions.length)
   })
 
   it('does not mutate the source model', () => {

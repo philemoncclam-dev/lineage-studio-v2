@@ -306,12 +306,18 @@ export function paste(
   // Transitions. Internal edges are duplicated between the clones; boundary
   // edges re-attach to the outside entity, but only if it still exists.
   //
-  // This applies at every level, ATTRIBUTES INCLUDED: a copied column arrives
-  // wired like the one it came from, and a cut column (copy + delete + paste)
-  // keeps the column-level lineage it had before it moved. Cut is the reason
-  // the rule has to be uniform — deleting an attribute takes its edges with
-  // it, so if paste declined to restore them a move would silently destroy
-  // lineage the user never asked to drop.
+  // EXCEPT FOR ATTRIBUTES, which arrive with no transitions at all. Pasting a
+  // column duplicates a STRUCTURE, not a fact: the new column has not been
+  // derived from anything, nobody has run a notebook that produces it, and no
+  // sandbox has verified it. Cloning its edges would mint lineage claims by
+  // copy-paste, and the clones would be indistinguishable on the canvas from
+  // edges the parser or the sandbox derived. Properties still copy: a data
+  // type or a tag describes the column itself and stays true of a duplicate,
+  // while an edge describes a relationship that does not yet exist.
+  //
+  // This holds for cut-and-paste too, which is copy + delete + paste: moving a
+  // column re-parents it, and the edges it had under its old parent are not
+  // claims about the new one.
   const alive = buildIndex(next).entries
   const transitions = [...next.transitions]
   const add = (source: EntityId, target_: EntityId) => {
@@ -320,18 +326,20 @@ export function paste(
     transitions.push({ id: newId('t'), source, target: target_ })
   }
 
-  for (const edge of clip.internal) {
-    const from = made.idMap.get(edge.source)
-    const to = made.idMap.get(edge.target)
-    if (from && to) add(from, to)
-  }
-  for (const edge of clip.inbound) {
-    const to = made.idMap.get(edge.to)
-    if (to && alive.has(edge.from)) add(edge.from, to)
-  }
-  for (const edge of clip.outbound) {
-    const from = made.idMap.get(edge.from)
-    if (from && alive.has(edge.to)) add(from, edge.to)
+  if (kind !== 'attribute') {
+    for (const edge of clip.internal) {
+      const from = made.idMap.get(edge.source)
+      const to = made.idMap.get(edge.target)
+      if (from && to) add(from, to)
+    }
+    for (const edge of clip.inbound) {
+      const to = made.idMap.get(edge.to)
+      if (to && alive.has(edge.from)) add(edge.from, to)
+    }
+    for (const edge of clip.outbound) {
+      const from = made.idMap.get(edge.from)
+      if (from && alive.has(edge.to)) add(from, edge.to)
+    }
   }
 
   next = {

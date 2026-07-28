@@ -26,6 +26,7 @@ import {
   type SortKey,
 } from '../model/browser'
 import { download } from '../model/exportTabular'
+import { fabricSampleModel } from '../model/fabricSample'
 import { localStore } from '../model/store'
 import { BarsSpinner } from '../shell/BarsSpinner'
 import { LogoMark } from '../shell/Logo'
@@ -229,6 +230,20 @@ export default function ModelBrowser() {
   }
 
 
+  /**
+   * Seed the worked example and open it.
+   *
+   * A fresh id per press, rather than the constant the sample declares: the
+   * store is keyed by id, so a second press would silently overwrite the first
+   * copy along with any edits made to it.
+   */
+  const addSample = () =>
+    run('Sample model added.', async () => {
+      const sample = { ...fabricSampleModel(), id: crypto.randomUUID() }
+      await localStore.save(sample)
+      void navigate({ to: '/model/$modelId', params: { modelId: sample.id } })
+    })
+
   // ===== Modal submission =====
 
   const closeModal = () => setModal(null)
@@ -303,6 +318,14 @@ export default function ModelBrowser() {
 
         <button className="mb-btn primary" onClick={() => setModal({ kind: 'create' })}>
           Create
+        </button>
+
+        <button
+          className="mb-btn"
+          title="Add a worked example: sources, pipelines, a medallion workspace and a catalogued product"
+          onClick={() => void addSample()}
+        >
+          Add sample
         </button>
 
         <button

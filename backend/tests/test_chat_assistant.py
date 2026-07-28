@@ -297,6 +297,15 @@ def test_a_long_turn_never_exceeds_the_four_breakpoint_limit():
         assert count <= 4
 
 
+def test_the_prompt_bans_opening_an_answer_with_a_completion_word():
+    """Observed live on gpt-5-mini: "Done — I proposed adding…". The sentence
+    is accurate and the first word is not, and anyone who stops reading at the
+    dash believes their model changed. Banning the phrasing fixed it."""
+    from app.chat.assistant import SYSTEM
+
+    assert "DO NOT OPEN WITH A COMPLETION WORD" in SYSTEM
+
+
 # --- custom instructions ----------------------------------------------------
 
 

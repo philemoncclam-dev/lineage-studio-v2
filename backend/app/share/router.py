@@ -74,14 +74,32 @@ def _require_signed_in(token: str | None) -> None:
 
 @router.get("/status")
 def status() -> dict[str, str | bool]:
-    """Whether sharing will outlive a deploy, so the UI can warn before it bites."""
+    """Whether sharing will outlive a deploy, so the UI can warn before it bites.
+
+    `durable` is the answer to "will these links still work next week", and it
+    requires BOTH a Postgres DSN and that Postgres actually answering. A DSN
+    with a typo in it otherwise reports durable until the first publish 500s —
+    by which time the user believes the feature works.
+    """
     backend = configured_backend()
-    return {
-        "storage": backend,
-        # The honest bit: SQLite here is fine locally and a trap on a host with
-        # no persistent disk, and only the operator knows which they have.
-        "durable": backend == "postgres",
-    }
+    if backend != "postgres":
+        # SQLite is fine locally and a trap on a host with no persistent disk,
+        # and only the operator knows which they have.
+        return {"storage": backend, "durable": False}
+    try:
+        store = get_store()
+        check = getattr(store, "check", None)
+        if check:
+            check()
+        return {"storage": backend, "durable": True}
+    except Exception as exc:  # noqa: BLE001 - any failure means "not durable"
+        return {
+            "storage": backend,
+            "durable": False,
+            # Named, because "DATABASE_URL is set but unreachable" and "not set"
+            # need completely different fixes.
+            "error": f"DATABASE_URL is set but not reachable: {exc}"[:300],
+        }
 
 
 @router.post("", response_model=ShareCreated)

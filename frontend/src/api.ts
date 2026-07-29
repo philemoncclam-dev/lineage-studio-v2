@@ -871,7 +871,12 @@ export interface SharedModel {
   expires_at: number | null
 }
 
-export async function fetchShareStatus(): Promise<{ storage: string; durable: boolean }> {
+export async function fetchShareStatus(): Promise<{
+  storage: string
+  durable: boolean
+  /** Present when DATABASE_URL is set but the database did not answer. */
+  error?: string
+}> {
   const res = await fetch(`${BASE}/shares/status`)
   if (!res.ok) return detail(res, 'sharing status')
   return res.json()

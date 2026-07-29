@@ -136,3 +136,23 @@ def test_status_admits_when_links_will_not_survive_a_deploy(client):
     body = client.get("/shares/status").json()
     assert body["storage"] == "sqlite"
     assert body["durable"] is False
+
+
+def test_status_reports_a_broken_database_url_rather_than_claiming_durable(
+    client, monkeypatch
+):
+    """"durable" must mean "will still work next week", not "a DSN is set".
+
+    A typo in an environment variable otherwise reports healthy until the first
+    publish 500s — after the user has believed the feature works, and possibly
+    after they have sent links.
+    """
+    monkeypatch.setenv("DATABASE_URL", "postgresql://nobody@127.0.0.1:1/nope")
+    share_store.reset_store()
+
+    body = client.get("/shares/status").json()
+    assert body["storage"] == "postgres"
+    assert body["durable"] is False
+    # The two fixes are completely different, so the message has to distinguish
+    # "unreachable" from "unset".
+    assert "not reachable" in body["error"]

@@ -166,7 +166,27 @@ class PostgresShareStore:
         # once when someone publishes and once when someone opens a link, which
         # does not justify pool lifecycle code that has to survive Render's
         # free-tier sleeps.
-        return self._psycopg.connect(self._dsn, autocommit=True)
+        #
+        # `prepare_threshold=None` disables psycopg's automatic prepared
+        # statements. Every hosted Postgres worth using here — Supabase, Neon,
+        # anything behind PgBouncer — offers a POOLED connection string in
+        # transaction mode, where a prepared statement created on one backend is
+        # gone by the next query and the fifth identical query fails with
+        # "prepared statement does not exist". It appears only after the same
+        # statement runs a few times, so it would pass every test and break in
+        # front of whoever opened the sixth share link.
+        return self._psycopg.connect(self._dsn, autocommit=True, prepare_threshold=None)
+
+    def check(self) -> None:
+        """Raise if the database is not actually reachable.
+
+        Called by `/shares/status` so a wrong DSN is visible BEFORE somebody
+        publishes and sends the link. Without it, a typo in an environment
+        variable surfaces as a 500 at the moment a share is created — after the
+        user believed the feature worked.
+        """
+        with self._connect() as conn:
+            conn.execute("SELECT 1")
 
     def put(self, name: str, model: dict[str, Any], ttl_days: int | None) -> Share:
         share = Share(new_token(), name, model, int(time.time()), _expiry(ttl_days))

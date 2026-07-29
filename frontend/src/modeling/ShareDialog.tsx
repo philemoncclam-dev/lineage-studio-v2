@@ -40,11 +40,18 @@ export default function ShareDialog({
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [durable, setDurable] = useState<boolean | null>(null)
+  // "DATABASE_URL is set but unreachable" and "not set at all" need completely
+  // different fixes, so the backend names which one and this shows it verbatim.
+  const [storageError, setStorageError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     void fetchShareStatus()
-      .then((s) => !cancelled && setDurable(s.durable))
+      .then((s) => {
+        if (cancelled) return
+        setDurable(s.durable)
+        setStorageError(s.error ?? null)
+      })
       // An unreachable status endpoint is not worth a warning of its own —
       // publishing will fail loudly a moment later if the backend is down.
       .catch(() => !cancelled && setDurable(null))
@@ -137,9 +144,8 @@ export default function ShareDialog({
                    from a revoked one, and the person who followed it cannot
                    tell you which happened. */
                 <div className="imp-error">
-                  This backend keeps shares in a local file, so links may be lost
-                  when it restarts or redeploys. Set <code>DATABASE_URL</code> for
-                  links that last.
+                  {storageError ??
+                    'This backend keeps shares in a local file, so links may be lost when it restarts or redeploys. Set DATABASE_URL for links that last.'}
                 </div>
               )}
             </>

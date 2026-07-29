@@ -23,27 +23,23 @@ export function LoginPage() {
       <section className="lg-card">
         <div className="lg-brand">
           <span className="lg-mark" aria-hidden="true" />
+          {/* The name stays — it is what the page is, and `aria-labelledby`
+              points at it. The tagline under it went with the rest of the
+              prose. */}
           <h1 className="lg-title" id="lg-title">
             Lineage Studio
           </h1>
-          <p className="lg-sub">Data lineage across Microsoft Fabric</p>
         </div>
 
         {isConfigured ? (
-          <>
-            <p className="lg-lead">
-              Sign in with your work account. You'll see the Fabric workspaces you
-              already have access to — nothing more, nothing less.
-            </p>
-            <button className="lg-primary" onClick={() => void signIn()}>
-              <MicrosoftLogo size={17} />
-              Sign in with Microsoft
-            </button>
-            <p className="lg-fine">
-              Your session lasts until you close this tab. Lineage Studio reads
-              Fabric on your behalf and never stores your credentials.
-            </p>
-          </>
+          /* One button, nothing else. The prose that used to sit around it
+             explained what sign-in does and what it does not store — true, and
+             read by nobody, because there is only one thing to do on this
+             screen and the button already says it. */
+          <button className="lg-primary" onClick={() => void signIn()}>
+            <MicrosoftLogo size={17} />
+            Sign in with Microsoft
+          </button>
         ) : (
           /* No app registration yet. This is a setup state, not a failure, so
              it says exactly what to create rather than showing a dead button —
@@ -126,14 +122,6 @@ export function LoginPage() {
         )}
       </section>
 
-      {/* The orbits are aria-hidden, so the systems they name are said once
-          here instead — in a sentence, and honest about which one is wired.
-          A ring of source names implying five live integrations would be the
-          screen making a claim the app cannot keep. */}
-      <p className="lg-footer">
-        Microsoft Fabric today. Advent Portfolio Exchange, Yardi, kdb+ and Excel
-        are next. Read-only throughout — Lineage Studio never writes to a source.
-      </p>
     </main>
   )
 }

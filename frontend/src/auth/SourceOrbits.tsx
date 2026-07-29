@@ -14,6 +14,9 @@
 // `aria-hidden`: the names are repeated in the card's prose, so a screen reader
 // gets them once, in a sentence, rather than as a ring of floating nouns.
 
+import type { ReactNode } from 'react'
+import { ExcelMark, FabricMark, OneLakeMark } from './SourceMarks'
+
 interface Orbit {
   /** Ring diameter in px at full size; scaled down together on small screens. */
   size: number
@@ -23,7 +26,8 @@ interface Orbit {
   /** Counter-clockwise. Alternating direction is what keeps the rings from
       looking like a single disc. */
   reverse?: boolean
-  chips: { label: string; angle: number }[]
+  /** `mark` gives a round icon chip; without one the chip is a text pill. */
+  chips: { label: string; angle: number; mark?: ReactNode }[]
 }
 
 const ORBITS: Orbit[] = [
@@ -31,8 +35,8 @@ const ORBITS: Orbit[] = [
     size: 340,
     duration: 44,
     chips: [
-      { label: 'Fabric', angle: -50 },
-      { label: 'KDB', angle: 130 },
+      { label: 'Microsoft Fabric', angle: -50, mark: <FabricMark /> },
+      { label: 'kdb+', angle: 130 },
     ],
   },
   {
@@ -41,7 +45,7 @@ const ORBITS: Orbit[] = [
     reverse: true,
     chips: [
       { label: 'Yardi', angle: 25 },
-      { label: 'Excel', angle: 205 },
+      { label: 'Excel', angle: 205, mark: <ExcelMark /> },
     ],
   },
   {
@@ -49,7 +53,7 @@ const ORBITS: Orbit[] = [
     duration: 78,
     chips: [
       { label: 'Advent Portfolio Exchange', angle: -105 },
-      { label: 'OneLake', angle: 75 },
+      { label: 'OneLake', angle: 75, mark: <OneLakeMark /> },
     ],
   },
 ]
@@ -77,7 +81,8 @@ export function SourceOrbits() {
               style={{ transform: `rotate(${chip.angle}deg)` }}
             >
               <span
-                className="lg-chip"
+                className={chip.mark ? 'lg-chip lg-chip-mark' : 'lg-chip'}
+                title={chip.label}
                 style={{
                   animationDuration: `${orbit.duration}s`,
                   animationDirection: orbit.reverse ? 'normal' : 'reverse',
@@ -86,7 +91,7 @@ export function SourceOrbits() {
                   ['--spoke' as string]: `${-chip.angle}deg`,
                 }}
               >
-                {chip.label}
+                {chip.mark ?? chip.label}
               </span>
             </div>
           ))}

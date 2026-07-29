@@ -102,6 +102,18 @@
   animation-iteration-count: infinite;
 }
 
+/* A mark gets a round chip sized to the icon — the shape the orbit component
+   this came from uses. The text ones stay pills, because a name in a circle is
+   either cropped or a circle the size of a sentence. */
+.lg-chip-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 50%;
+}
+
 @keyframes lg-spin {
   from {
     transform: rotate(0deg);

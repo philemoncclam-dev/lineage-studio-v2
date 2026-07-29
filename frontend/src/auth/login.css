@@ -114,6 +114,21 @@
   border-radius: 50%;
 }
 
+/* A wordmark — Yardi and Advent are ~4:1 — gets a pill wide enough to read.
+   Same height as the round chips so a ring reads as one row of objects. */
+.lg-chip-wordmark {
+  display: grid;
+  place-items: center;
+  height: 46px;
+  padding: 0 14px;
+  border-radius: 999px;
+}
+
+.lg-chip-wordmark .lg-logo {
+  max-height: 18px;
+  max-width: 104px;
+}
+
 @keyframes lg-spin {
   from {
     transform: rotate(0deg);
@@ -190,8 +205,9 @@
 }
 
 .lg-logo {
-  width: 24px;
-  height: 24px;
+  display: block;
+  max-width: 100%;
+  max-height: 26px;
   object-fit: contain;
 }
 

@@ -87,17 +87,19 @@ const ORBITS: Orbit[] = [
 function ChipBody({ chip, style }: { chip: Chip; style: React.CSSProperties }) {
   const candidates = [`/logos/${chip.file}.svg`, `/logos/${chip.file}.png`]
   const [attempt, setAttempt] = useState(0)
+  // Measured from the file, not declared per logo: a brand kit gives you a
+  // square app icon or a wide wordmark and you find out which when you open it.
+  // Reading `naturalWidth` means dropping either kind in just works.
+  const [wide, setWide] = useState(false)
 
   const exhausted = attempt >= candidates.length
   // Round whenever the content is a mark — a dropped file, or our own drawing.
   const round = !exhausted || Boolean(chip.fallback)
 
+  const shape = !round ? '' : wide ? ' lg-chip-wordmark' : ' lg-chip-mark'
+
   return (
-    <span
-      className={round ? 'lg-chip lg-chip-mark' : 'lg-chip'}
-      title={chip.label}
-      style={style}
-    >
+    <span className={`lg-chip${shape}`} title={chip.label} style={style}>
       {exhausted ? (
         chip.fallback ?? chip.label
       ) : (
@@ -105,9 +107,13 @@ function ChipBody({ chip, style }: { chip: Chip; style: React.CSSProperties }) {
           className="lg-logo"
           src={candidates[attempt]}
           alt=""
-          width={24}
-          height={24}
           onError={() => setAttempt((n) => n + 1)}
+          onLoad={(e) => {
+            const img = e.currentTarget
+            // A wordmark squeezed into a circle is either cropped or shrunk to
+            // an illegible smudge. Past 1.6:1 it gets a pill instead.
+            setWide(img.naturalWidth / (img.naturalHeight || 1) > 1.6)
+          }}
         />
       )}
     </span>

@@ -14,9 +14,18 @@ change, no rebuild wiring** — the file name is the whole contract.
 | `apx.svg` | Advent Portfolio Exchange |
 | `kdb.svg` | kdb+ |
 
-`.png` works too — try `.svg` first, since these are drawn at 22px and again at
-2x on a retina screen, and a raster logo goes soft at exactly the size a login
+`.png` works too — try `.svg` first, since these are drawn small and again at 2x
+on a retina screen, and a raster logo goes soft at exactly the size a login
 screen is looked at.
+
+**Give the file its real extension.** A PNG saved as `.svg` does not render:
+the browser is told `image/svg+xml` by the server and gets PNG bytes. That is
+how `Fabric_final_x256.svg` arrived here — a 256×256 PNG — and it is now
+`fabric.png`.
+
+Square icon or wide wordmark, either is fine. The chip measures the file when
+it loads and becomes a circle or a pill accordingly, so you do not have to say
+which you dropped in.
 
 ## What happens if a file is missing
 

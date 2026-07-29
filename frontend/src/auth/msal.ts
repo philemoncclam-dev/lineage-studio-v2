@@ -37,6 +37,23 @@ const TENANT = import.meta.env.VITE_ENTRA_TENANT_ID ?? 'organizations'
 export const isConfigured = Boolean(CLIENT_ID)
 
 /**
+ * Whether "continue without signing in" is offered.
+ *
+ * DEVELOPMENT ONLY. That escape hatch exists so a fresh clone is usable before
+ * anyone has registered an app, and on a laptop that is a convenience. On a
+ * deployed build it is an unlocked door: the bundle is public, so the button
+ * would be reachable by anyone with the URL, and clicking it hands them the
+ * backend's service principal — a credential with real access to a real
+ * tenant, held by someone who never proved who they were.
+ *
+ * So a production build with no `VITE_ENTRA_CLIENT_ID` deliberately has no way
+ * in at all. That is the correct failure: shipping without configuring sign-in
+ * should stop the deploy being useful, not silently downgrade every visitor to
+ * the service principal.
+ */
+export const allowSkip = import.meta.env.DEV
+
+/**
  * Delegated Fabric access — read-only, granular.
  *
  * Fabric does NOT expose `user_impersonation`; that scope belongs to Azure

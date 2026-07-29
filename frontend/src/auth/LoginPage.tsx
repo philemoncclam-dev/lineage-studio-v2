@@ -6,7 +6,7 @@
 // not a fixed set a shared service principal happens to reach.
 
 import { useAuth } from './auth'
-import { isConfigured, redirectUri } from './msal'
+import { allowSkip, isConfigured, redirectUri } from './msal'
 import './login.css'
 
 export function LoginPage() {
@@ -80,15 +80,28 @@ export function LoginPage() {
                 <code>VITE_ENTRA_CLIENT_ID</code>, and restart the dev server.
               </li>
             </ol>
-            <button className="lg-secondary" onClick={skip}>
-              Continue without signing in
-            </button>
-            <p className="lg-fine">
-              Without sign-in the app reads Fabric using the backend's shared
-              service principal, so the workspaces you see are{' '}
-              <strong>whichever that account can reach</strong> — not yours.
-              Everything that doesn't touch Fabric works normally.
-            </p>
+            {allowSkip ? (
+              <>
+                <button className="lg-secondary" onClick={skip}>
+                  Continue without signing in
+                </button>
+                <p className="lg-fine">
+                  Development only. Without sign-in the app reads Fabric using
+                  the backend's shared service principal, so the workspaces you
+                  see are <strong>whichever that account can reach</strong> —
+                  not yours.
+                </p>
+              </>
+            ) : (
+              /* Deployed with no app registration. There is deliberately no way
+                 past this screen: the bundle is public, so a bypass button here
+                 would hand the backend's service principal — a real credential
+                 on a real tenant — to anyone holding the URL. */
+              <p className="lg-fine">
+                This deployment has no sign-in configured, so there is no way in.
+                Set <code>VITE_ENTRA_CLIENT_ID</code> and redeploy.
+              </p>
+            )}
           </>
         )}
 

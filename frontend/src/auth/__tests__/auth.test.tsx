@@ -9,7 +9,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockMsal, isConfigured } = vi.hoisted(() => ({
+const { mockMsal, isConfigured, allowSkip } = vi.hoisted(() => ({
   mockMsal: {
     initialize: vi.fn().mockResolvedValue(undefined),
     handleRedirectPromise: vi.fn().mockResolvedValue(null),
@@ -22,6 +22,7 @@ const { mockMsal, isConfigured } = vi.hoisted(() => ({
     acquireTokenPopup: vi.fn(),
   },
   isConfigured: { value: true },
+  allowSkip: { value: true },
 }))
 
 vi.mock('../msal', async () => {
@@ -32,6 +33,9 @@ vi.mock('../msal', async () => {
     redirectUri: 'http://localhost:5173',
     get isConfigured() {
       return isConfigured.value
+    },
+    get allowSkip() {
+      return allowSkip.value
     },
   }
 })
@@ -60,6 +64,7 @@ beforeEach(() => {
   sessionStorage.clear()
   setTokenSource(null)
   isConfigured.value = true
+  allowSkip.value = true
   mockMsal.initialize.mockResolvedValue(undefined)
   mockMsal.handleRedirectPromise.mockResolvedValue(null)
   mockMsal.getAllAccounts.mockReturnValue([])
@@ -132,6 +137,18 @@ describe('an unconfigured build', () => {
     renderGate()
     await screen.findByText(/isn't configured/i)
     expect(screen.getByText(/service principal/i)).toBeTruthy()
+  })
+
+  it('offers no way past the gate in a deployed build', async () => {
+    // The bundle is public. A bypass button on a deployed site is reachable by
+    // anyone with the URL, and it hands them the backend's service principal —
+    // a real credential on a real tenant, to someone who never proved who they
+    // were. Failing shut is the correct behaviour for an unconfigured deploy.
+    allowSkip.value = false
+    renderGate()
+    await screen.findByText(/isn't configured/i)
+    expect(screen.queryByRole('button', { name: /continue without signing in/i })).toBeNull()
+    expect(screen.getByText(/no way in/i)).toBeTruthy()
   })
 
   it('does not re-ask after a deliberate skip', async () => {

@@ -4,8 +4,12 @@
 // Explore can show them. Everything downstream reads the same identity: the
 // workspaces in the tree are the ones Fabric returns for this person's token,
 // not a fixed set a shared service principal happens to reach.
+//
+// There is deliberately no email/password form. Entra ID is the only way in,
+// so fields we could not honour would be a lie about how the app authenticates.
 
 import { useAuth } from './auth'
+import { MicrosoftLogo } from './MicrosoftLogo'
 import { allowSkip, isConfigured, redirectUri } from './msal'
 import './login.css'
 
@@ -17,12 +21,10 @@ export function LoginPage() {
       <section className="lg-card">
         <div className="lg-brand">
           <span className="lg-mark" aria-hidden="true" />
-          <div>
-            <h1 className="lg-title" id="lg-title">
-              Lineage Studio
-            </h1>
-            <p className="lg-sub">Data lineage across Microsoft Fabric</p>
-          </div>
+          <h1 className="lg-title" id="lg-title">
+            Lineage Studio
+          </h1>
+          <p className="lg-sub">Data lineage across Microsoft Fabric</p>
         </div>
 
         {isConfigured ? (
@@ -32,6 +34,7 @@ export function LoginPage() {
               already have access to — nothing more, nothing less.
             </p>
             <button className="lg-primary" onClick={() => void signIn()}>
+              <MicrosoftLogo size={17} />
               Sign in with Microsoft
             </button>
             <p className="lg-fine">
@@ -46,7 +49,7 @@ export function LoginPage() {
              thing to get wrong (a mismatch fails at Microsoft with AADSTS50011
              before any of this code runs). */
           <>
-            <p className="lg-lead">
+            <p className="lg-lead lg-lead-setup">
               Sign-in isn't configured for this build yet.
             </p>
             <ol className="lg-steps">
@@ -111,6 +114,10 @@ export function LoginPage() {
           </p>
         )}
       </section>
+
+      <p className="lg-footer">
+        Read-only. Lineage Studio never writes to a Fabric table.
+      </p>
     </main>
   )
 }

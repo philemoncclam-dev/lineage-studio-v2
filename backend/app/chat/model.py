@@ -28,7 +28,9 @@ each one is a place a naive implementation goes wrong:
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 #: Custom instructions are the user's own words, so they are capped rather than
 #: trusted to be short. They ride in the prompt on every request and every
@@ -92,6 +94,22 @@ class LineageModel(BaseModel):
     #: edit rather than a redeploy. Style and format only: see `assistant.py`
     #: for why these cannot loosen how faithfully a result is reported.
     assistant_instructions: str = Field("", alias="assistantInstructions")
+
+    #: An opaque scratch slot for `graph.build_index`, and the only mutable
+    #: state on this document.
+    #:
+    #: Flattening the hierarchy costs a full walk of every layer, object and
+    #: column, and a single question ran that walk once PER TOOL CALL — a dozen
+    #: rebuilds of the same structure on a model that arrived whole in the
+    #: request body and cannot change while the turn runs. On a large model
+    #: that is the bulk of the CPU a question spends, on a small instance it is
+    #: the difference between an answer and a request that dies mid-flight.
+    #:
+    #: Private, untyped and set by `graph` alone: the index is that module's
+    #: business, and naming its type here would make the read side of a document
+    #: import the traversal. The lifetime is one request, because a new document
+    #: is parsed from the body each time.
+    _index: Any = PrivateAttr(default=None)
 
     @property
     def instructions(self) -> str:

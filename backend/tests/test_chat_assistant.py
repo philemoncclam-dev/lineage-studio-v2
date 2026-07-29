@@ -497,10 +497,13 @@ def test_the_traversal_tools_take_an_id_and_never_a_name():
 
 
 def test_find_entity_distinguishes_no_matches_from_a_failed_call():
-    assert run_tool(_model(), "find_entity", {"name": "nonexistent"}) == {
-        "matches": [],
-        "count": 0,
-    }
+    result = run_tool(_model(), "find_entity", {"name": "nonexistent"})
+    assert result["matches"] == []
+    assert result["count"] == 0
+    assert result["matched"] == "none"
+    # A real absence says so in words and names the layers, because an empty
+    # list is what a model misreads as a call that went wrong.
+    assert "Bronze" in result["note"]
 
 
 def test_describing_an_unknown_id_says_so_instead_of_returning_null():
@@ -576,3 +579,65 @@ def test_a_truncated_outline_declares_that_it_is_truncated():
 
 def test_an_empty_model_is_described_rather_than_rendered_as_a_blank_prompt():
     assert "empty" in outline(LineageModel())
+
+
+# --- resolving what the user meant ------------------------------------------
+
+
+def test_a_layer_filter_naming_a_table_is_corrected_rather_than_answered_empty():
+    """The reported bug, at the tool boundary.
+
+    A user asks "what's in Bronze"; `Bronze` is a table here, not a layer; the
+    assistant filters a scan by `layer="Bronze"` and gets nothing back — and
+    relays nothing as "there is nothing in the Bronze layer". The empty scan is
+    the problem: a filter that matches no layer is a mistake in the CALL, so it
+    comes back as an error the model can act on in the same turn.
+    """
+    model = _model()
+    model.layers[0].name = "Raw"  # the layer is Raw; `bronze_orders` is a table
+
+    with pytest.raises(TypeError) as caught:
+        run_tool(model, "lineage_gaps", {"layer": "bronze_orders"})
+
+    message = str(caught.value)
+    assert "no layer called" in message
+    assert "Raw" in message  # the layers that DO exist
+    assert "find_entity" in message  # and what to do instead
+
+
+def test_a_layer_filter_is_matched_case_insensitively():
+    """`gold`, `Gold` and `GOLD` are one layer, and typing the wrong one is not
+    a reason to report an empty model."""
+    assert run_tool(_model(), "lineage_gaps", {"layer": "gold"})["count"] >= 0
+
+
+def test_find_entity_offers_a_near_miss_instead_of_reporting_nothing():
+    result = run_tool(_model(), "find_entity", {"name": "amont"})
+    assert result["matches"] == []
+    assert result["matched"] == "none"
+    assert [m["name"] for m in result["did_you_mean"]] == ["amount"]
+
+
+def test_a_turn_that_runs_long_ends_with_an_answer_rather_than_a_dropped_request(
+    monkeypatch,
+):
+    """Rounds are not what runs out — seconds are.
+
+    A turn held open past what the browser or a proxy will wait for loses
+    everything: the user sees a transport failure, not a slow answer. So the
+    budget is checked between rounds and the turn ends itself, with its trace
+    intact.
+    """
+    from app.chat import assistant as assistant_module
+
+    monkeypatch.setattr(assistant_module, "TURN_BUDGET_SECONDS", -1.0)
+    client = _FakeClient(
+        [_Response([_use(f"c{i}", "find_entity", name="amount")]) for i in range(3)]
+    )
+    answer = ask(_model(), [Message(role="user", content="slow one")], client=client)
+
+    assert answer.stop_reason == "max_rounds"
+    # One round ran — the budget stops the NEXT one, so a turn always does some
+    # work rather than refusing outright.
+    assert len(answer.trace) == 1
+    assert "taking too long" in answer.text

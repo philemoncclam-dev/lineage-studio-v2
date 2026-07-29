@@ -828,6 +828,16 @@ export async function fetchChatStatus(): Promise<{
   return res.json()
 }
 
+/**
+ * How long a question may run before this browser gives up on it.
+ *
+ * Generous on purpose: a turn is several model calls plus the traversals
+ * between them, and the backend's own budget (`assistant.TURN_BUDGET_SECONDS`)
+ * is meant to end a slow turn first, with an answer. This is the backstop for
+ * when nothing comes back at all.
+ */
+const ASSISTANT_TIMEOUT_MS = 150_000
+
 export async function askAssistant(
   model: unknown,
   messages: ChatMessage[],
@@ -843,11 +853,37 @@ export async function askAssistant(
   // answered from the service principal's view and could describe workspaces
   // this user cannot open in Explore. A deployed backend also refuses an
   // anonymous question outright — it is the only route that spends money.
-  const res = await fabricFetch(`${BASE}/chat/ask`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, selection }),
-  })
+  let res: Response
+  try {
+    res = await fabricFetch(`${BASE}/chat/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, selection }),
+      // A question runs a tool loop server-side and can legitimately take a
+      // minute. Without a bound the panel spins forever on a backend that has
+      // gone away; with one that is too tight it kills answers that were
+      // coming.
+      signal: AbortSignal.timeout(ASSISTANT_TIMEOUT_MS),
+    })
+  } catch (err) {
+    // A fetch rejects — rather than resolving with a bad status — only when the
+    // request never completed at all, and the browser's own message for that
+    // ("Failed to fetch", "NetworkError…") tells the user nothing they can act
+    // on. It is worth naming the causes, because on a small instance the usual
+    // one is the API restarting mid-answer, which looks identical from here to
+    // being offline.
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      throw new Error(
+        `The assistant didn't answer within ${Math.round(ASSISTANT_TIMEOUT_MS / 1000)}s. ` +
+          'Long questions can outrun it — try a narrower one.',
+      )
+    }
+    throw new Error(
+      "Couldn't reach the assistant — the connection dropped before an answer " +
+        'came back. If the backend is up, check its logs: a request that dies ' +
+        'mid-answer is usually the instance restarting or running out of memory.',
+    )
+  }
   if (!res.ok) return detail(res, 'assistant')
   return res.json()
 }

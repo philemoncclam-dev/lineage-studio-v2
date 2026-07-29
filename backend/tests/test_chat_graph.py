@@ -17,6 +17,8 @@ into bronze — which is exactly what a file source or a DataFrame notebook give
 from __future__ import annotations
 
 from app.chat.graph import (
+    resolve,
+    resolve_layer,
     build_index,
     describe_entity,
     find_entity,
@@ -339,3 +341,68 @@ def test_describe_entity_carries_the_transform_off_its_inbound_edge():
     detail = describe_entity(model, "a_g_ltv")
     assert detail is not None
     assert any("SUM" in t.upper() for t in detail.transforms), detail.transforms
+
+
+# --- resolving a name a person typed ----------------------------------------
+# Every test below is a way a user refers to something that used to come back
+# empty — and an empty result is what the assistant relayed as "there is no such
+# thing", about entities sitting on the user's screen.
+
+
+def test_a_name_is_matched_however_it_is_punctuated_or_cased():
+    """`customer id`, `Customer_ID` and `customerid` are one name."""
+    for typed in ("customer id", "Customer_ID", "customerid", "CUSTOMER-ID"):
+        found = resolve(_model(), typed)
+        assert [r.name for r in found.matches] == ["customer_id"], typed
+        assert found.how in ("exact", "normalized")
+
+
+def test_a_plural_finds_the_singular_and_the_other_way_round():
+    found = resolve(_model(), "regions")
+    # Two columns are called `region` in this fixture, and both are the answer —
+    # telling them apart is the caller's job, from the paths.
+    assert found.matches and {r.name for r in found.matches} == {"region"}
+
+
+def test_exact_matches_rank_first_but_substring_matches_still_come_back():
+    """Ranking, not filtering: somebody asking about `amount` wants to be told
+    `amount_usd` exists too."""
+    names = [r.name for r in resolve(_model(), "amount", kind="attribute").matches]
+    assert names[0] == "amount"
+    assert "amount_usd" in names
+
+
+def test_a_near_miss_comes_back_as_a_suggestion_not_as_a_match():
+    """A typo must not silently answer about the entity it nearly named."""
+    found = resolve(_model(), "custmer_id")
+    assert found.matches == []
+    assert found.how == "none"
+    assert [r.name for r in found.suggestions] == ["customer_id"]
+
+
+def test_nothing_like_it_is_a_real_absence_with_no_suggestions():
+    found = resolve(_model(), "zzzz_not_here")
+    assert found.matches == []
+    assert found.suggestions == []
+
+
+def test_a_filtered_search_that_misses_says_the_name_exists_elsewhere():
+    """THE bug this whole tier exists for. Searching for a layer called
+    `bronze_orders` finds nothing, and "nothing" was reported as an empty
+    model — while the table by that name sat on the user's canvas."""
+    found = resolve(_model(), "bronze_orders", kind="layer")
+    assert found.matches == []
+    assert "does exist in this model" in found.note
+    assert "bronze_orders" in found.note
+
+
+def test_a_layer_argument_is_matched_case_and_punctuation_insensitively():
+    assert resolve_layer(_model(), "gold") == "Gold"
+    assert resolve_layer(_model(), "GOLD") == "Gold"
+    assert resolve_layer(_model(), "nope") is None
+
+
+def test_the_index_is_built_once_per_document():
+    """A dozen tool calls used to flatten the same model a dozen times."""
+    model = _model()
+    assert build_index(model) is build_index(model)

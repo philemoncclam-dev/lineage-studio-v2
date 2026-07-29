@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -66,6 +67,14 @@ from .tools import outline, run_tool, tools_for
 #: A question needs a handful of walks, not a hundred. This bounds a model that
 #: has started looping — it stops the turn and says so rather than spending.
 MAX_TOOL_ROUNDS = 8
+
+#: And a bound in SECONDS, because rounds are not the thing that runs out. Eight
+#: rounds of a thinking model on a busy provider is minutes, and a request held
+#: open that long is one the browser, a proxy or an impatient user ends first —
+#: which loses the whole turn and looks like a network failure rather than a
+#: slow answer. Checked between rounds, so it ends a turn cleanly with whatever
+#: was found instead of being cut off mid-flight.
+TURN_BUDGET_SECONDS = 100.0
 
 #: Selecting a whole layer selects everything under it, so a selection can be
 #: hundreds of entities. Enough to disambiguate a pronoun, not enough to crowd
@@ -117,6 +126,39 @@ Start with find_entity to turn the name in the question into an id, then trace \
 or describe from that id. If a name matches several entities, say so and use \
 their paths to ask which one is meant, or answer for the most likely and name \
 which you picked.
+
+# Working out what they are referring to
+
+**A name in a question does not say what LEVEL it is at.** "Bronze" can be a \
+layer, a table or a column, and the user has no reason to tell you which — they \
+are looking at the canvas, where it is just a box with a label. So:
+
+- Search for the bare name FIRST, with no `kind` and no `layer` filter. Those \
+  filters are for narrowing a search that returned too much, never for the \
+  first attempt. A filtered search that matches nothing looks exactly like an \
+  empty model, and answering "there is nothing in Bronze" about a table called \
+  Bronze that is sitting on their screen is the worst answer this assistant can \
+  give.
+- **Never report an absence you have not earned.** Before saying something does \
+  not exist, is empty, or has nothing in it, you must have run an UNFILTERED \
+  find_entity on that name and got `matched: "none"` with no `did_you_mean`. \
+  Anything else — a filtered search, a scan of the wrong layer, an outline that \
+  did not list it — is you not having looked, and it must be reported that way \
+  or not at all.
+- If the result carries `did_you_mean`, the name was close to something real. \
+  Say what you found and ask, or answer for the obvious one and name it. Do not \
+  say "no such thing" while holding a list of near-misses.
+- "What's in X", "show me X", "what does X contain" → find_entity for X, then \
+  describe_entity on the id. Its `children` are the answer, whatever level X \
+  turned out to be: a layer's tables, a table's columns, a group's members.
+- A layer filter that names no layer comes back as an ERROR listing the real \
+  layer names, and often saying that the name belongs to a table instead. That \
+  is a correction, not a dead end — follow it in the same turn.
+
+The same forgiveness applies to how they type it. `customer id`, `Customer_ID` \
+and `customerid` are one name; so are `orders` and `order`. find_entity already \
+handles all of that, which is another reason to give it the user's own words \
+rather than a cleaned-up guess at the schema's spelling.
 
 # What the user has selected
 
@@ -406,7 +448,20 @@ def ask(
     trace: list[ToolCall] = []
     proposals: list[ProposedEdit] = []
 
-    for _ in range(MAX_TOOL_ROUNDS):
+    deadline = time.monotonic() + TURN_BUDGET_SECONDS
+    for round_number in range(MAX_TOOL_ROUNDS):
+        if round_number and time.monotonic() > deadline:
+            return Answer(
+                text=(
+                    "That one was taking too long, so I stopped partway rather "
+                    "than leave you waiting. What I did check is listed below — "
+                    "asking about one entity at a time is usually enough to get "
+                    "a full answer."
+                ),
+                trace=trace,
+                proposals=proposals,
+                stop_reason="max_rounds",
+            )
         try:
             reply = provider.complete(system=system, convo=convo, tools=tools)
         except ProviderError as exc:

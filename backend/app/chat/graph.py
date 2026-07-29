@@ -37,7 +37,9 @@ complete.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from typing import Callable, Literal
 
 from pydantic import BaseModel, Field
@@ -168,7 +170,18 @@ def build_index(model: LineageModel) -> _Index:
 
     Attributes are walked RECURSIVELY — a group is an attribute with children,
     so a one-level read would miss every column nested under one.
+
+    **Built once per document.** Every entry point here calls this, so answering
+    one question used to flatten the same model a dozen times over — once per
+    tool call, on a document that arrived whole in the request body and cannot
+    change while the turn runs. The result is cached on the document itself
+    (`LineageModel._index`), which is why a model must not be mutated in place
+    while anything holds an index of it; nothing in this package does.
     """
+    cached = getattr(model, "_index", None)
+    if isinstance(cached, _Index):
+        return cached
+
     index = _Index()
 
     def add_attributes(
@@ -236,6 +249,12 @@ def build_index(model: LineageModel) -> _Index:
         index.out_edges.setdefault(t.source, []).append(t.id)
         index.in_edges.setdefault(t.target, []).append(t.id)
 
+    try:
+        model._index = index
+    except (AttributeError, ValueError):  # pragma: no cover - a stand-in model
+        # A caller may pass something LineageModel-shaped that has no slot for
+        # this. Losing the cache is a slower answer, never a wrong one.
+        pass
     return index
 
 
@@ -439,6 +458,156 @@ def _trace(
 # --- the four operations ---------------------------------------------------
 
 
+def squash(text: str) -> str:
+    """A name reduced to what a person actually said out loud.
+
+    `Customer_ID`, `customer id` and `CustomerID` are one name typed three ways,
+    and a user asking about one of them means all three. Punctuation, spacing and
+    case are dropped; nothing else is, because two names that differ in a letter
+    are two names.
+    """
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def _singular(squashed: str) -> str:
+    """`orders` → `order`. Enough plural handling to matter, no more.
+
+    A stemmer would be worse here: this runs on entity names, where an
+    over-eager rule ("address" → "addres") invents matches instead of finding
+    them. One trailing `s` on a word long enough to survive it is the whole
+    rule.
+    """
+    if len(squashed) > 3 and squashed.endswith("s") and not squashed.endswith("ss"):
+        return squashed[:-1]
+    return squashed
+
+
+#: How alike two names must be before a fuzzy match is offered at all. Tuned so
+#: a typo or a word order swap lands and an unrelated name does not: at 0.72,
+#: `custmer_id`/`customer_id` matches and `orders`/`order_items` does not.
+FUZZY_CUTOFF = 0.72
+
+
+class Resolution(BaseModel):
+    """What a name search found, and HOW it found it.
+
+    The `how` is the part that matters, and it exists because of a specific
+    failure: a caller that gets `[]` back reports "there is nothing called
+    Bronze", when what happened is that it searched for a LAYER by that name and
+    the model has an OBJECT. An empty result is not evidence of absence unless
+    the search was unrestricted, so this carries enough to tell the two apart —
+    and `suggestions` gives a caller something to say instead of "nothing".
+    """
+
+    matches: list[EntityRef] = Field(default_factory=list)
+    count: int = 0
+    #: `exact` · `normalized` (case/punctuation differ) · `partial` (substring) ·
+    #: `fuzzy` (nearest names, may be wrong) · `none`.
+    how: str = "none"
+    #: Near-misses when nothing matched, so the caller can ask "did you mean".
+    suggestions: list[EntityRef] = Field(default_factory=list)
+    #: Set when the FILTERS emptied the result — the name exists, elsewhere.
+    note: str = ""
+
+
+def resolve(
+    model: LineageModel,
+    name: str,
+    kind: EntityKind | None = None,
+    layer: str | None = None,
+    limit: int = 20,
+) -> Resolution:
+    """Turn a name a person typed into entities, forgivingly.
+
+    Matches are RANKED, not filtered: exact first, then the same name punctuated
+    or pluralised differently, then substring. All three come back together —
+    somebody asking about `amount` wants to be told `amount_usd` exists — and
+    `how` reports the best tier reached, so a caller can tell an exact hit from
+    a loose one.
+
+    Nearest-by-edit-distance is the exception. It runs only when the first three
+    found nothing, and its results come back as `suggestions` rather than
+    matches, because a fuzzy hit is a guess and a caller that cannot see the
+    difference will answer about the wrong entity with full confidence.
+
+    The tiers exist because of how people refer to things. They say "bronze" for
+    `Bronze`, "customer id" for `customer_id`, "amount" for `amount_usd`, and
+    "orders" for `order`. Every one of those returned nothing before, and
+    nothing reads as "it isn't there".
+    """
+    index = build_index(model)
+    needle_raw = name.strip().lower()
+    if not needle_raw:
+        return Resolution(how="none")
+    needle = squash(needle_raw)
+    if not needle:
+        return Resolution(how="none")
+    wanted_layer = squash(layer) if layer else None
+
+    tiers: dict[str, list[EntityRef]] = {t: [] for t in ("exact", "normalized", "partial", "fuzzy")}
+    #: Entities the name matched that the FILTERS then removed. Kept so an empty
+    #: answer can say "there is one, but not of that kind / not in that layer"
+    #: instead of reporting an absence that is really a mismatched filter.
+    filtered_out: list[str] = []
+    singular = _singular(needle)
+
+    for entry in index.entries.values():
+        lowered = entry.name.strip().lower()
+        squashed = squash(entry.name)
+        if lowered == needle_raw:
+            tier = "exact"
+        elif squashed == needle or squashed == singular or _singular(squashed) == needle:
+            tier = "normalized"
+        elif needle in squashed or (
+            # The reverse direction — the entity's name inside the QUERY — earns
+            # its keep on "the bronze_orders table", but it has to be most of
+            # the query to count. Without the length floor, every short name is
+            # a substring of every longer question: searching for
+            # `bronze_orders` matched the layer `Bronze`, which is the same
+            # wrong-level answer this whole function exists to stop.
+            squashed
+            and squashed in needle
+            and len(squashed) >= 0.7 * len(needle)
+        ):
+            tier = "partial"
+        elif SequenceMatcher(None, needle, squashed).ratio() >= FUZZY_CUTOFF:
+            tier = "fuzzy"
+        else:
+            continue
+
+        if (kind and entry.kind != kind) or (
+            wanted_layer and squash(entry.layer_name) != wanted_layer
+        ):
+            if tier in ("exact", "normalized"):
+                filtered_out.append(f"{_ref(index, entry.id).path} ({entry.kind})")
+            continue
+        tiers[tier].append(_ref(index, entry.id))
+
+    ranked: list[EntityRef] = []
+    best = ""
+    for how in ("exact", "normalized", "partial"):
+        if tiers[how]:
+            best = best or how
+            ranked.extend(sorted(tiers[how], key=lambda r: r.path))
+    if ranked:
+        return Resolution(matches=ranked[:limit], count=len(ranked), how=best)
+
+    fuzzy = sorted(tiers["fuzzy"], key=lambda r: r.path)[:limit]
+    note = ""
+    if filtered_out:
+        note = (
+            f"Nothing matched under those filters, but the name does exist in "
+            f"this model: {', '.join(filtered_out[:5])}. Search again without "
+            f"`kind`/`layer` before reporting an absence."
+        )
+    if fuzzy:
+        # Returned as SUGGESTIONS, never as matches: a fuzzy hit is a guess, and
+        # a caller that cannot see the difference will answer about the wrong
+        # entity with full confidence.
+        return Resolution(how="none", suggestions=fuzzy, note=note)
+    return Resolution(how="none", note=note)
+
+
 def find_entity(
     model: LineageModel,
     name: str,
@@ -446,36 +615,29 @@ def find_entity(
     layer: str | None = None,
     limit: int = 20,
 ) -> list[EntityRef]:
-    """Entities matching `name`, exact matches first.
+    """Entities matching `name`, best tier first. See `resolve`."""
+    return resolve(model, name, kind=kind, layer=layer, limit=limit).matches
 
-    Substring matching is deliberate: a caller asking about "amount" should find
-    `amount_usd` rather than be told nothing exists. Exact matches sort first so
-    the obvious answer stays the obvious answer, and every result carries its
-    full path so two columns of the same name are told apart by the caller
-    rather than being silently collapsed into one.
+
+def layer_names(model: LineageModel) -> list[str]:
+    """Every layer name, in model order — what a bad `layer` argument is told."""
+    return [layer.name for layer in model.layers]
+
+
+def resolve_layer(model: LineageModel, layer: str) -> str | None:
+    """A layer argument matched to a real layer name, or None.
+
+    Case and punctuation are forgiven for the same reason they are in `resolve`.
+    Returns the model's OWN spelling, so everything downstream compares against
+    one canonical string rather than whatever the caller typed.
     """
-    index = build_index(model)
-    needle = name.strip().lower()
-    if not needle:
-        return []
-    wanted_layer = layer.strip().lower() if layer else None
-
-    exact: list[EntityRef] = []
-    partial: list[EntityRef] = []
-    for entry in index.entries.values():
-        if kind and entry.kind != kind:
-            continue
-        if wanted_layer and entry.layer_name.strip().lower() != wanted_layer:
-            continue
-        lowered = entry.name.strip().lower()
-        if lowered == needle:
-            exact.append(_ref(index, entry.id))
-        elif needle in lowered:
-            partial.append(_ref(index, entry.id))
-
-    exact.sort(key=lambda r: r.path)
-    partial.sort(key=lambda r: r.path)
-    return (exact + partial)[:limit]
+    wanted = squash(layer)
+    if not wanted:
+        return None
+    for name in layer_names(model):
+        if squash(name) == wanted:
+            return name
+    return None
 
 
 def trace_downstream(

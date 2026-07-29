@@ -39,11 +39,18 @@ TOOLS: list[dict[str, Any]] = [
         "name": "find_entity",
         "description": (
             "Find layers, objects (tables, notebooks, pipelines) or attributes "
-            "(columns) by name. Matches substrings, so 'amount' also finds "
-            "'amount_usd'; exact matches are listed first. START HERE — the "
+            "(columns) by name. Forgiving: case, spaces, underscores and simple "
+            "plurals are ignored ('customer id' finds 'Customer_ID', 'orders' "
+            "finds 'order'), substrings match ('amount' finds 'amount_usd'), "
+            "and a near-miss comes back under `did_you_mean`. START HERE — the "
             "other tools take an entity id, and this is the only place ids come "
             "from. Every result carries its full path, so two columns with the "
-            "same name in different tables are told apart rather than merged."
+            "same name in different tables are told apart rather than merged. "
+            "LEAVE `kind` AND `layer` UNSET unless the user was explicit: a "
+            "name in a question can be a layer, a table or a column, and "
+            "guessing wrong returns nothing, which is not the same as there "
+            "being nothing. `matched` says how it matched — `none` with "
+            "suggestions means ask, not report an absence."
         ),
         "input_schema": {
             "type": "object",
@@ -120,7 +127,9 @@ TOOLS: list[dict[str, Any]] = [
         "description": (
             "One entity's context: where it sits, its properties (source, step, "
             "data type, tags…), its children, and how many edges enter and leave "
-            "it. The edge counts answer 'does this have lineage at all' without "
+            "it. This is the answer to 'what's in X' for any X — a layer's "
+            "objects, a table's columns, a group's members are all `children`. "
+            "The edge counts answer 'does this have lineage at all' without "
             "running a trace — a column with zero of both has none recorded, "
             "which is different from a trace that found no complete path."
         ),
@@ -261,34 +270,50 @@ def run_tool(
         return edits.run_tool(model, name, args)
 
     if name == "find_entity":
-        results = graph.find_entity(
+        found = graph.resolve(
             model,
             name=_str(args, "name", required=True),
             kind=_str(args, "kind"),  # type: ignore[arg-type]
             layer=_str(args, "layer"),
         )
-        # An empty list is a real answer ("nothing by that name"), but a bare
-        # `[]` reads as a failed call. Say which it is.
-        return {
-            "matches": [r.model_dump() for r in results],
-            "count": len(results),
+        payload = {
+            "matches": [r.model_dump() for r in found.matches],
+            "count": found.count,
+            # HOW it matched, not just that it did. `fuzzy` suggestions are
+            # guesses and are labelled as such; `none` with suggestions is "did
+            # you mean", which is a different answer from "there is no such
+            # thing" and must not be reported as one.
+            "matched": found.how,
         }
+        if found.suggestions:
+            payload["did_you_mean"] = [r.model_dump() for r in found.suggestions]
+        if found.note:
+            payload["note"] = found.note
+        if not found.matches and not found.suggestions:
+            # The only genuine absence: an unfiltered search of every layer,
+            # object and column found nothing close. Said in words, because an
+            # empty list is what a caller misreads as a failed call.
+            payload["note"] = found.note or (
+                "Nothing in this model has a name like that, at any level. "
+                f"Its layers are: {', '.join(graph.layer_names(model)) or '(none)'}."
+            )
+        return payload
 
     if name in ("trace_downstream", "trace_upstream"):
         fn = graph.trace_downstream if name == "trace_downstream" else graph.trace_upstream
         return fn(
             model,
             entity_id=_str(args, "entity_id", required=True),
-            to_layer=_str(args, "to_layer"),
+            to_layer=_layer(model, args, "to_layer"),
         ).model_dump()
 
     if name == "lineage_gaps":
         return analysis.unconnected(
             model,
             kind=_str(args, "kind"),  # type: ignore[arg-type]
-            layer=_str(args, "layer"),
+            layer=_layer(model, args, "layer"),
             direction=_str(args, "direction"),
-            reaches_layer=_str(args, "reaches_layer"),
+            reaches_layer=_layer(model, args, "reaches_layer"),
         ).model_dump()
 
     if name == "impact":
@@ -305,6 +330,45 @@ def run_tool(
     if detail is None:
         return {"error": "No entity with that id exists in this model."}
     return detail.model_dump()
+
+
+def _layer(model: LineageModel, args: dict[str, Any], key: str) -> str | None:
+    """A layer argument, matched to a real layer — or a correction, not silence.
+
+    This is the fix for the worst failure this tool surface had. A user asks
+    "what's in Bronze"; `Bronze` is a TABLE, not a layer; the assistant filters
+    a scan by `layer="Bronze"`, matches no layer, and gets an empty result back
+    — which it reports as "there is nothing in Bronze". The model was right
+    there, one unfiltered search away, and the answer said it did not exist.
+
+    A filter that matches no layer is a MISTAKE IN THE CALL, so it comes back as
+    a tool error naming the layers that do exist and, when the name belongs to
+    something else, saying what that something is. The model gets a round to fix
+    it; the user never sees an absence that was really a typo.
+
+    Case and punctuation are forgiven — `gold`, `Gold` and `GOLD` are one layer.
+    """
+    wanted = _str(args, key)
+    if wanted is None:
+        return None
+    canonical = graph.resolve_layer(model, wanted)
+    if canonical:
+        return canonical
+
+    names = graph.layer_names(model)
+    elsewhere = [r for r in graph.resolve(model, wanted).matches if r.kind != "layer"]
+    hint = ""
+    if elsewhere:
+        first = elsewhere[0]
+        hint = (
+            f" But {first.path} is {'an' if first.kind == 'object' else 'a'} "
+            f"{first.kind} of that name — call find_entity({wanted!r}) and use "
+            f"its id with describe_entity or impact instead of filtering by layer."
+        )
+    raise TypeError(
+        f"There is no layer called {wanted!r} in this model. Its layers are: "
+        f"{', '.join(names) or '(none)'}.{hint}"
+    )
 
 
 def _str(args: dict[str, Any], key: str, *, required: bool = False) -> str | None:

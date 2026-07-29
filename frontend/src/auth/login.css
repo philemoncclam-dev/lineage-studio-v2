@@ -28,9 +28,10 @@
     gap: 8px;
   }
   /* Stacked, the button sits under the rings and already pulls the composition
-     up, so the lift that a two-column layout needs would push them off the top. */
+     up, so this needs less lift than the two-column layout — but still enough
+     that the rings read as the top of the page rather than the middle of it. */
   .lg-orbits {
-    top: -2vh;
+    top: -14vh;
   }
 }
 
@@ -77,14 +78,19 @@
   /* Zero-height so the rings, which are absolutely centred in this cell, do not
      also reserve 700px of column height and push the layout around. */
   height: 0;
-  /* Lifted off dead centre. Geometric centre reads as LOW here: the rings are
+  /* Lifted WELL off centre — the ring centre sits at about a quarter of the
+     window height, not half. Geometric centre reads as low here: the rings are
      the only large shape on the page, and a big circle centred in a window sits
-     visually below the middle because there is nothing above it to balance
-     against. `top`, not a transform — the media queries below own `transform`
-     for scaling, and a second one here would silently replace them.
+     visually below the middle because nothing above it balances the weight.
 
-     This is the number to change if it still sits wrong. */
-  top: -9vh;
+     `top`, not a transform — the media queries below own `transform` for
+     scaling, and a second declaration here would silently replace them.
+
+     This is the number to change if it still sits wrong: more negative is
+     higher. -22vh is the LIMIT before a chip is cut — computed against every
+     chip's actual position, not the ring line, on windows from 961px tall up.
+     At -23vh the Bloomberg chip loses its top edge on a 1000px window. */
+  top: -22vh;
   pointer-events: none;
   z-index: 0;
 }
@@ -194,13 +200,33 @@
   }
 }
 
-/* On a short window the lift starts cutting the top off the widest ring — a
-   circle clipped by the viewport edge reads as a mistake, unlike the sides,
-   where the overhang is the point. Computed rather than eyeballed: at 800px
-   tall, a 9vh lift puts the outer ring's top edge 22px above the window. */
+/* Lifted this far, the outer ring's top passes off-screen — about 70px on a
+   1080-tall window, 40px at 800 once scaled. That is the cost of "high", and it
+   is accepted rather than fixed: the arcs sweeping off the top is the same
+   figure as the reference this came from, which clips its rings at the bottom.
+   The chips are what must not be cut, and none sit near 12 o'clock — the outer
+   ring carries its two at -105° and 75°, both roughly horizontal.
+
+   A short window still scales down, so the clip stays a graze rather than
+   removing the ring's whole upper third. */
+@media (max-height: 960px) {
+  .lg-orbits {
+    top: -21vh;
+    transform: scale(0.88);
+  }
+}
+
 @media (max-height: 860px) {
   .lg-orbits {
-    top: -3vh;
+    top: -20vh;
+    transform: scale(0.8);
+  }
+}
+
+@media (max-height: 760px) {
+  .lg-orbits {
+    top: -16vh;
+    transform: scale(0.66);
   }
 }
 

@@ -27,6 +27,11 @@
     align-content: center;
     gap: 8px;
   }
+  /* Stacked, the button sits under the rings and already pulls the composition
+     up, so the lift that a two-column layout needs would push them off the top. */
+  .lg-orbits {
+    top: -2vh;
+  }
 }
 
 /* Two soft washes behind the card, in the brand's own blue and violet. They
@@ -72,6 +77,14 @@
   /* Zero-height so the rings, which are absolutely centred in this cell, do not
      also reserve 700px of column height and push the layout around. */
   height: 0;
+  /* Lifted off dead centre. Geometric centre reads as LOW here: the rings are
+     the only large shape on the page, and a big circle centred in a window sits
+     visually below the middle because there is nothing above it to balance
+     against. `top`, not a transform — the media queries below own `transform`
+     for scaling, and a second one here would silently replace them.
+
+     This is the number to change if it still sits wrong. */
+  top: -9vh;
   pointer-events: none;
   z-index: 0;
 }
@@ -178,6 +191,16 @@
   .lg-ring,
   .lg-chip {
     animation: none;
+  }
+}
+
+/* On a short window the lift starts cutting the top off the widest ring — a
+   circle clipped by the viewport edge reads as a mistake, unlike the sides,
+   where the overhang is the point. Computed rather than eyeballed: at 800px
+   tall, a 9vh lift puts the outer ring's top edge 22px above the window. */
+@media (max-height: 860px) {
+  .lg-orbits {
+    top: -3vh;
   }
 }
 

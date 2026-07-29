@@ -11,6 +11,7 @@
 import { useAuth } from './auth'
 import { MicrosoftLogo } from './MicrosoftLogo'
 import { allowSkip, isConfigured, redirectUri } from './msal'
+import { SourceOrbits } from './SourceOrbits'
 import './login.css'
 
 export function LoginPage() {
@@ -18,6 +19,7 @@ export function LoginPage() {
 
   return (
     <main className="lg-page" aria-labelledby="lg-title">
+      <SourceOrbits />
       <section className="lg-card">
         <div className="lg-brand">
           <span className="lg-mark" aria-hidden="true" />
@@ -124,8 +126,13 @@ export function LoginPage() {
         )}
       </section>
 
+      {/* The orbits are aria-hidden, so the systems they name are said once
+          here instead — in a sentence, and honest about which one is wired.
+          A ring of source names implying five live integrations would be the
+          screen making a claim the app cannot keep. */}
       <p className="lg-footer">
-        Read-only. Lineage Studio never writes to a Fabric table.
+        Microsoft Fabric today. Advent Portfolio Exchange, Yardi, kdb+ and Excel
+        are next. Read-only throughout — Lineage Studio never writes to a source.
       </p>
     </main>
   )

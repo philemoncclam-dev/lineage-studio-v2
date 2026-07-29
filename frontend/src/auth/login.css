@@ -41,6 +41,113 @@
   background: rgba(111, 79, 216, 0.14);
 }
 
+/* --- the orbits ---------------------------------------------------------
+   Concentric rings centred on the card, each carrying named source systems.
+   Rings counter-rotate in alternate directions; every chip counter-rotates
+   against its own ring so the text never turns upside down. */
+
+.lg-orbits {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  /* Behind the card, above the background washes. */
+  z-index: 0;
+}
+
+.lg-ring {
+  /* Stacked in ONE grid cell rather than absolutely positioned: the animation
+     owns `transform`, so the usual `left:50%; translate(-50%,-50%)` centring
+     is unavailable — it would be overwritten every frame. Same cell plus
+     `place-items: center` makes the rings concentric with no transform at all. */
+  grid-area: 1 / 1;
+  position: relative;
+  border-radius: 50%;
+  border: 1px dashed rgba(59, 111, 212, 0.22);
+  animation-name: lg-spin;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+/* The arm from centre to rim. Rotating THIS positions the chip; the chip then
+   spins back the other way to stay level. */
+.lg-spoke {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 50%;
+  transform-origin: bottom center;
+}
+
+.lg-chip {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  display: block;
+  white-space: nowrap;
+  padding: 5px 12px;
+  border: 1px solid #e3e7ef;
+  border-radius: 999px;
+  background: #fff;
+  color: #344054;
+  font-size: 11.5px;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 6px 16px rgba(16, 24, 40, 0.06);
+  /* Two rotations compose here: `--spoke` cancels this chip's fixed angle on
+     the ring, and the animation cancels the ring's turning. Both are needed —
+     either alone leaves the label tumbling. */
+  transform: translate(-50%, -50%) rotate(var(--spoke, 0deg));
+  transform-origin: center;
+  animation-name: lg-spin-chip;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes lg-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Keeps the chip's own `--spoke` correction while unwinding the ring. A bare
+   `rotate(-360deg)` here would drop it and every label would sit at an angle. */
+@keyframes lg-spin-chip {
+  from {
+    transform: translate(-50%, -50%) rotate(calc(var(--spoke, 0deg) + 0deg));
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(calc(var(--spoke, 0deg) + 360deg));
+  }
+}
+
+/* Motion that circles forever, behind a form, is exactly what this setting is
+   for. The rings stay — the composition is the point — they just hold still. */
+@media (prefers-reduced-motion: reduce) {
+  .lg-ring,
+  .lg-chip {
+    animation: none;
+  }
+}
+
+/* The widest ring is 700px. Below that it would drive horizontal scroll, so the
+   whole system scales as one rather than each ring reflowing on its own. */
+@media (max-width: 780px) {
+  .lg-orbits {
+    transform: scale(0.62);
+  }
+}
+
+@media (max-width: 520px) {
+  .lg-orbits {
+    transform: scale(0.46);
+  }
+}
+
 .lg-card {
   position: relative;
   z-index: 1;

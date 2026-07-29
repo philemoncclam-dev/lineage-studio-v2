@@ -2,20 +2,33 @@
 //
 // It is decorative, and it is also the one-line pitch — a person landing here
 // should see what Lineage Studio reaches before they read a word of prose.
-// Fabric is first because it is the only one wired today; the rest are the
-// estate this is being built for, and naming them is a promise the roadmap has
-// to keep.
 //
-// Text chips rather than vendor logos, deliberately. Half of these have no mark
-// we hold a licence to, and the alternative — hot-linking someone's CDN — puts a
-// third-party request on the sign-in screen, where it is both a privacy leak and
-// a thing that can fail while a user waits.
+// **Logos come from `public/logos/`, and the file name is the whole contract.**
+// Drop `excel.svg` in there and the Excel chip becomes the real mark, with no
+// code change. Nothing is committed for us, because these are other companies'
+// trademarks: a logo redrawn from memory is subtly wrong, and a subtly wrong
+// logo is a false claim about someone else's brand. Hot-linking a CDN — what
+// the component this came from does — is worse again: a third-party request on
+// the one screen where a person is deciding whether to trust this app.
 //
-// `aria-hidden`: the names are repeated in the card's prose, so a screen reader
-// gets them once, in a sentence, rather than as a ring of floating nouns.
+// So each chip degrades: dropped file → our own simplified mark, for the three
+// that have one → the system's name as a pill. All three states are fine to
+// ship, which is why the folder can stay empty.
+//
+// `aria-hidden`: this is scenery. The one thing on this screen that does
+// something is the sign-in button.
 
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ExcelMark, FabricMark, OneLakeMark } from './SourceMarks'
+
+interface Chip {
+  label: string
+  angle: number
+  /** Basename in `public/logos/`, without extension. See that folder's README. */
+  file: string
+  /** Shown until a real logo is dropped in; without one the chip is a text pill. */
+  fallback?: ReactNode
+}
 
 interface Orbit {
   /** Ring diameter in px at full size; scaled down together on small screens. */
@@ -26,8 +39,7 @@ interface Orbit {
   /** Counter-clockwise. Alternating direction is what keeps the rings from
       looking like a single disc. */
   reverse?: boolean
-  /** `mark` gives a round icon chip; without one the chip is a text pill. */
-  chips: { label: string; angle: number; mark?: ReactNode }[]
+  chips: Chip[]
 }
 
 const ORBITS: Orbit[] = [
@@ -35,8 +47,8 @@ const ORBITS: Orbit[] = [
     size: 340,
     duration: 44,
     chips: [
-      { label: 'Microsoft Fabric', angle: -50, mark: <FabricMark /> },
-      { label: 'kdb+', angle: 130 },
+      { label: 'Microsoft Fabric', angle: -50, file: 'fabric', fallback: <FabricMark /> },
+      { label: 'kdb+', angle: 130, file: 'kdb' },
     ],
   },
   {
@@ -44,19 +56,63 @@ const ORBITS: Orbit[] = [
     duration: 60,
     reverse: true,
     chips: [
-      { label: 'Yardi', angle: 25 },
-      { label: 'Excel', angle: 205, mark: <ExcelMark /> },
+      { label: 'Yardi', angle: 25, file: 'yardi' },
+      { label: 'Excel', angle: 205, file: 'excel', fallback: <ExcelMark /> },
     ],
   },
   {
     size: 700,
     duration: 78,
     chips: [
-      { label: 'Advent Portfolio Exchange', angle: -105 },
-      { label: 'OneLake', angle: 75, mark: <OneLakeMark /> },
+      { label: 'Advent Portfolio Exchange', angle: -105, file: 'apx' },
+      { label: 'OneLake', angle: 75, file: 'onelake', fallback: <OneLakeMark /> },
     ],
   },
 ]
+
+/**
+ * One chip: a dropped-in logo, our own mark, or the name — and the right SHAPE
+ * for whichever it turned out to be.
+ *
+ * Shape and content are decided together here because only this component knows
+ * which one resolved. A circle is right for a mark and wrong for "Advent
+ * Portfolio Exchange", which is either cropped by it or makes a circle the size
+ * of a sentence.
+ *
+ * Tries SVG, then PNG, then gives up. `onError` walking a list is what makes
+ * "drop a file in and it appears" work with no build step and no manifest to
+ * keep in sync. The cost is a 404 in the console for each name with no file
+ * yet, which is the right trade for a folder anyone can add to.
+ */
+function ChipBody({ chip, style }: { chip: Chip; style: React.CSSProperties }) {
+  const candidates = [`/logos/${chip.file}.svg`, `/logos/${chip.file}.png`]
+  const [attempt, setAttempt] = useState(0)
+
+  const exhausted = attempt >= candidates.length
+  // Round whenever the content is a mark — a dropped file, or our own drawing.
+  const round = !exhausted || Boolean(chip.fallback)
+
+  return (
+    <span
+      className={round ? 'lg-chip lg-chip-mark' : 'lg-chip'}
+      title={chip.label}
+      style={style}
+    >
+      {exhausted ? (
+        chip.fallback ?? chip.label
+      ) : (
+        <img
+          className="lg-logo"
+          src={candidates[attempt]}
+          alt=""
+          width={24}
+          height={24}
+          onError={() => setAttempt((n) => n + 1)}
+        />
+      )}
+    </span>
+  )
+}
 
 export function SourceOrbits() {
   return (
@@ -80,19 +136,16 @@ export function SourceOrbits() {
               className="lg-spoke"
               style={{ transform: `rotate(${chip.angle}deg)` }}
             >
-              <span
-                className={chip.mark ? 'lg-chip lg-chip-mark' : 'lg-chip'}
-                title={chip.label}
+              <ChipBody
+                chip={chip}
                 style={{
                   animationDuration: `${orbit.duration}s`,
                   animationDirection: orbit.reverse ? 'normal' : 'reverse',
                   // Undo the spoke's own rotation, once and statically. The
                   // animation only cancels the ring's turning.
                   ['--spoke' as string]: `${-chip.angle}deg`,
-                }}
-              >
-                {chip.mark ?? chip.label}
-              </span>
+                } as React.CSSProperties}
+              />
             </div>
           ))}
         </div>

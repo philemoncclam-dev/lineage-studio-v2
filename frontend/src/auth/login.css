@@ -157,6 +157,44 @@
   }
 }
 
+/* The configured screen: the button, alone, at the centre of the orbits. */
+.lg-solo {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  width: min(300px, 100%);
+}
+
+.lg-solo .lg-primary {
+  /* Larger and lifted, because with no card behind it this button is the only
+     surface on the screen and has to read as the thing to press. */
+  padding: 13px 18px;
+  font-size: 14px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 10px 28px rgba(16, 24, 40, 0.12);
+}
+
+/* Present for a screen reader, absent for everyone else. Not `display: none`,
+   which removes it from the accessibility tree along with everything else. */
+.lg-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.lg-logo {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
 .lg-card {
   position: relative;
   z-index: 1;

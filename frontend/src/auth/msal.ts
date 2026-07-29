@@ -16,7 +16,12 @@
 // and anything that tried would be a guess wearing an authority it does not
 // have.
 
-import { PublicClientApplication, type AccountInfo, type Configuration } from '@azure/msal-browser'
+import {
+  PublicClientApplication,
+  type AccountInfo,
+  type AuthenticationResult,
+  type Configuration,
+} from '@azure/msal-browser'
 
 /**
  * The app registration. Absent is a NORMAL state, not a crash: a fresh clone
@@ -109,6 +114,34 @@ export const msal = new PublicClientApplication(config)
 
 /** The redirect URI this build will send, so the error screen can quote it. */
 export const redirectUri = config.auth.redirectUri as string
+
+let redirect: Promise<AuthenticationResult | null> | null = null
+
+/**
+ * Consume the sign-in redirect — ONCE, and BEFORE React renders.
+ *
+ * Microsoft hands the authorization code back in the URL fragment
+ * (`#code=…&state=…`), and it is readable exactly once: whoever changes the URL
+ * first wins. React runs effects child-first, so `RouterProvider` mounts and
+ * normalises the location *before* `AuthProvider`'s boot effect ever runs — the
+ * fragment is gone by then, `handleRedirectPromise` resolves null, no account
+ * is cached, and the gate renders again. From the user's side that is a loop:
+ * pick an account, land straight back on the sign-in button.
+ *
+ * So `main.tsx` calls this at module scope, before `createRoot`, and the
+ * provider awaits the same promise rather than starting its own. Memoised
+ * because the code can only be redeemed once — a second call would race the
+ * first and fail on an already-consumed code, and StrictMode guarantees a
+ * second call if this is left to an effect.
+ */
+export function handleRedirect(): Promise<AuthenticationResult | null> {
+  if (!redirect) {
+    redirect = isConfigured
+      ? msal.initialize().then(() => msal.handleRedirectPromise())
+      : Promise.resolve(null)
+  }
+  return redirect
+}
 
 export function accountName(account: AccountInfo | null): string {
   if (!account) return ''

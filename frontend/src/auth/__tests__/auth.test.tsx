@@ -31,6 +31,9 @@ vi.mock('../msal', async () => {
     ...actual,
     msal: mockMsal,
     redirectUri: 'http://localhost:5173',
+    // The real one memoises across the whole app run; here each test gets a
+    // fresh read of whatever `handleRedirectPromise` is mocked to return.
+    handleRedirect: () => mockMsal.handleRedirectPromise(),
     get isConfigured() {
       return isConfigured.value
     },
@@ -92,6 +95,20 @@ describe('the sign-in gate', () => {
     expect(mockMsal.setActiveAccount).toHaveBeenCalledWith(account)
   })
 
+  it('does not read the redirect response itself — main.tsx got there first', async () => {
+    // The response arrives in the URL fragment and can be read exactly once,
+    // by whoever touches the URL first. React runs effects child-first, so the
+    // router mounts and normalises the location before this provider's boot
+    // effect — and the `#code=…` is gone. Reading it from an effect here sent
+    // a user who had just picked their account back to the sign-in button.
+    // The provider must await the shared promise, never start its own.
+    renderGate()
+    await screen.findByRole('button', { name: /sign in with microsoft/i })
+    // `handleRedirect` owns initialize-then-handle. If boot ever calls
+    // initialize on its own again, it has started its own redirect read.
+    expect(mockMsal.initialize).not.toHaveBeenCalled()
+  })
+
   it('picks up an existing session on a plain reload', async () => {
     mockMsal.getAllAccounts.mockReturnValue([{ name: 'Ada', username: 'ada@contoso.com' }])
     renderGate()
@@ -111,7 +128,9 @@ describe('the sign-in gate', () => {
   })
 
   it('shows the gate rather than a blank page when MSAL itself fails', async () => {
-    mockMsal.initialize.mockRejectedValue(new Error('authority unreachable'))
+    // Failure now surfaces through the shared redirect read, which is where
+    // `initialize()` lives.
+    mockMsal.handleRedirectPromise.mockRejectedValue(new Error('authority unreachable'))
     renderGate()
     expect(await screen.findByRole('alert')).toHaveTextContent('authority unreachable')
   })

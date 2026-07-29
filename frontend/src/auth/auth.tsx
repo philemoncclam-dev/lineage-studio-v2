@@ -20,7 +20,14 @@ import {
   InteractionRequiredAuthError,
   type AccountInfo,
 } from '@azure/msal-browser'
-import { FABRIC_SCOPES, LOGIN_SCOPES, ONELAKE_SCOPES, isConfigured, msal } from './msal'
+import {
+  FABRIC_SCOPES,
+  LOGIN_SCOPES,
+  ONELAKE_SCOPES,
+  handleRedirect,
+  isConfigured,
+  msal,
+} from './msal'
 import { setTokenSource } from '../api'
 
 export type AuthPhase = 'starting' | 'signed-out' | 'signed-in' | 'skipped'
@@ -111,10 +118,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     void (async () => {
       try {
-        await msal.initialize()
         // Completes a redirect if we are coming back from Microsoft; resolves
-        // null on a normal load.
-        const result = await msal.handleRedirectPromise()
+        // null on a normal load. NOT called here — `main.tsx` starts it before
+        // React renders, because the router would otherwise strip the response
+        // fragment off the URL first. See `handleRedirect`.
+        const result = await handleRedirect()
         const found = result?.account ?? msal.getAllAccounts()[0] ?? null
         if (found) {
           msal.setActiveAccount(found)

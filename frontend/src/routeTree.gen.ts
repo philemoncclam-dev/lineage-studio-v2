@@ -53,9 +53,9 @@ const FabricOverviewRoute = FabricOverviewRouteImport.update({
   getParentRoute: () => FabricRouteRoute,
 } as any)
 const ModelModelIdRoute = ModelModelIdRouteImport.update({
-  id: '/$modelId',
-  path: '/$modelId',
-  getParentRoute: () => ModelRoute,
+  id: '/model/$modelId',
+  path: '/model/$modelId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ProductsIndexRoute = ProductsIndexRouteImport.update({
   id: '/',
@@ -174,6 +174,7 @@ export interface RootRouteChildren {
   FabricRouteRoute: typeof FabricRouteRouteWithChildren
   ProductsRouteRoute: typeof ProductsRouteRouteWithChildren
   ModelsRoute: typeof ModelsRoute
+  ModelModelIdRoute: typeof ModelModelIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -222,10 +223,10 @@ declare module '@tanstack/react-router' {
     }
     '/model/$modelId': {
       id: '/model/$modelId'
-      path: '/$modelId'
+      path: '/model/$modelId'
       fullPath: '/model/$modelId'
       preLoaderRoute: typeof ModelModelIdRouteImport
-      parentRoute: typeof ModelRoute
+      parentRoute: typeof rootRouteImport
     }
     '/products/': {
       id: '/products/'
@@ -304,6 +305,7 @@ const rootRouteChildren: RootRouteChildren = {
   FabricRouteRoute: FabricRouteRouteWithChildren,
   ProductsRouteRoute: ProductsRouteRouteWithChildren,
   ModelsRoute: ModelsRoute,
+  ModelModelIdRoute: ModelModelIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

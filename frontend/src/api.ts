@@ -817,7 +817,12 @@ export interface AssistantAnswer {
   stop_reason: 'end_turn' | 'max_rounds' | 'refusal'
 }
 
-export async function fetchChatStatus(): Promise<{ configured: boolean; model: string }> {
+export async function fetchChatStatus(): Promise<{
+  configured: boolean
+  model: string
+  /** Whether this backend refuses an anonymous question — see `askAssistant`. */
+  requires_auth?: boolean
+}> {
   const res = await fetch(`${BASE}/chat/status`)
   if (!res.ok) return detail(res, 'assistant status')
   return res.json()
@@ -833,7 +838,12 @@ export async function askAssistant(
    */
   selection: string[] = [],
 ): Promise<AssistantAnswer> {
-  const res = await fetch(`${BASE}/chat/ask`, {
+  // `fabricFetch`, not a bare fetch: the assistant's Fabric tools read the
+  // tenant as WHOEVER IS ASKING, so an unauthenticated question would be
+  // answered from the service principal's view and could describe workspaces
+  // this user cannot open in Explore. A deployed backend also refuses an
+  // anonymous question outright — it is the only route that spends money.
+  const res = await fabricFetch(`${BASE}/chat/ask`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, messages, selection }),

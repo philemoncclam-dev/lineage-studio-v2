@@ -64,6 +64,19 @@ class Settings(BaseSettings):
     #: sets ANTHROPIC_MODEL keeps working untouched.
     chat_model_name: str = ""
 
+    #: Refuse `/chat/ask` from a caller who sent no bearer token.
+    #:
+    #: On by DEFAULT, unlike every other option here, because this is the one
+    #: route that spends money: an unauthenticated assistant on a public URL is
+    #: a billing account anybody who learns the address can draw on, and the
+    #: quiet version of that failure is a large invoice rather than an error.
+    #: Fabric's own routes need no such flag — a request without a token gets
+    #: the service principal and reads what it is allowed to read, at no cost.
+    #:
+    #: Set `CHAT_REQUIRE_AUTH=false` on a local backend where sign-in is not
+    #: configured. That is a laptop reachable from nowhere; a deployment is not.
+    chat_require_auth: bool = True
+
     @property
     def chat_model(self) -> str:
         return self.chat_model_name or self.anthropic_model

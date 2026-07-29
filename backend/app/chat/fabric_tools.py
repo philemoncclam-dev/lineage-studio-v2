@@ -36,7 +36,9 @@ to answer.
 
 from __future__ import annotations
 
+import hashlib
 import time
+from dataclasses import dataclass
 from typing import Any
 
 from ..fabric.client import FabricClient, FabricError
@@ -51,7 +53,54 @@ CATALOG_TTL_SECONDS = 120
 #: Payload bound — a tenant can hold thousands of tables.
 MAX_RESULTS = 40
 
-_catalog_cache: tuple[float, list[dict[str, Any]]] | None = None
+#: Cached catalogs, keyed by CALLER. Bounded because the key is per-user and an
+#: unbounded dict on a long-lived process is a slow leak; two minutes of TTL
+#: means eviction almost never fires in practice.
+MAX_CACHED_CATALOGS = 16
+
+
+@dataclass(frozen=True)
+class Caller:
+    """Whose Fabric this is — the signed-in user, or nobody.
+
+    The assistant's Fabric tools used to run as the service principal no matter
+    who asked, which is both a disclosure and a WRONG ANSWER: it would describe
+    workspaces the user cannot open in Explore, in a product whose whole claim
+    is "the workspaces you have access to". One person's assistant contradicting
+    their own screen is worse than an assistant that says it cannot see
+    something.
+
+    Two tokens because OneLake is a different audience from the Fabric REST API
+    and each rejects the other's (see `fabric/router.py`). A caller with only
+    the first browses the catalog and cannot read a schema — which is a real
+    state, and `table_schema` reports it as unreadable rather than as empty.
+
+    Both absent is the ANONYMOUS caller: no user to check, so the service
+    principal answers exactly as it did before. That is the development path,
+    and `chat_require_auth` is what keeps it off a deployment.
+    """
+
+    fabric: str | None = None
+    onelake: str | None = None
+
+    @property
+    def cache_key(self) -> str:
+        """A cache key that cannot leak the token it identifies.
+
+        Hashed because a cached catalog is keyed by the credential that fetched
+        it, and a raw token as a dict key is one repr() away from a log.
+        """
+        if not self.fabric:
+            return "anonymous"
+        return hashlib.sha256(self.fabric.encode("utf-8")).hexdigest()[:32]
+
+
+ANONYMOUS = Caller()
+
+#: caller key → (fetched_at, entries). Per caller, never shared: two users get
+#: different tenants back from the same walk, and one cache for both would show
+#: whoever asked second what whoever asked first could see.
+_catalog_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
 
 class FabricUnavailable(RuntimeError):
@@ -132,27 +181,34 @@ TOOLS: list[dict[str, Any]] = [
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
 
-def _client() -> FabricClient:
+def _client(caller: Caller = ANONYMOUS) -> FabricClient:
     try:
-        return FabricClient()
+        return FabricClient(user_token=caller.fabric, onelake_token=caller.onelake)
     except FabricError as exc:
         raise FabricUnavailable(str(exc)) from exc
 
 
-def catalog(force: bool = False) -> list[dict[str, Any]]:
-    """A flat index of the tenant: workspaces, lakehouses, tables, notebooks.
+def catalog(caller: Caller = ANONYMOUS, force: bool = False) -> list[dict[str, Any]]:
+    """A flat index of what THIS CALLER can see: workspaces, lakehouses, tables, notebooks.
+
+    Scoped by Fabric itself, not by a filter here. The walk starts at
+    `list_workspaces`, which with a user token returns that person's
+    memberships — so every lakehouse and table below it is already inside their
+    access, and there is no second rule that could drift out of step with the
+    first.
 
     Per-workspace and per-lakehouse refusals are swallowed so one locked corner
     does not blank the index — but a refused WORKSPACE LIST is raised, because
     an empty tenant and an unauthorised one look identical from here and only
     one of them is a fact.
     """
-    global _catalog_cache
     now = time.monotonic()
-    if not force and _catalog_cache and now - _catalog_cache[0] < CATALOG_TTL_SECONDS:
-        return _catalog_cache[1]
+    key = caller.cache_key
+    hit = _catalog_cache.get(key)
+    if not force and hit and now - hit[0] < CATALOG_TTL_SECONDS:
+        return hit[1]
 
-    client = _client()
+    client = _client(caller)
     try:
         workspaces = client.list_workspaces()
     except FabricError as exc:
@@ -201,24 +257,32 @@ def catalog(force: bool = False) -> list[dict[str, Any]]:
                         }
                     )
 
-    _catalog_cache = (now, out)
+    if len(_catalog_cache) >= MAX_CACHED_CATALOGS and key not in _catalog_cache:
+        # Oldest out. Bounded rather than unbounded because the key is now per
+        # user and the process is long-lived.
+        _catalog_cache.pop(min(_catalog_cache, key=lambda k: _catalog_cache[k][0]), None)
+    _catalog_cache[key] = (now, out)
     return out
 
 
 def reset_catalog_cache() -> None:
-    """Drop the cached index. Used by tests, and by an explicit refresh."""
-    global _catalog_cache
-    _catalog_cache = None
+    """Drop every cached index. Used by tests, and by an explicit refresh."""
+    _catalog_cache.clear()
 
 
-def search(name: str, kind: str | None = None, limit: int = MAX_RESULTS) -> dict[str, Any]:
+def search(
+    name: str,
+    kind: str | None = None,
+    limit: int = MAX_RESULTS,
+    caller: Caller = ANONYMOUS,
+) -> dict[str, Any]:
     needle = (name or "").strip().lower()
     if not needle:
         return {"matches": [], "count": 0}
 
     exact: list[dict[str, Any]] = []
     partial: list[dict[str, Any]] = []
-    for entry in catalog():
+    for entry in catalog(caller):
         if kind and entry["kind"] != kind:
             continue
         lowered = str(entry["name"]).strip().lower()
@@ -238,9 +302,14 @@ def search(name: str, kind: str | None = None, limit: int = MAX_RESULTS) -> dict
     }
 
 
-def table_schema(workspace_id: str, lakehouse_id: str, table: str) -> dict[str, Any]:
+def table_schema(
+    workspace_id: str,
+    lakehouse_id: str,
+    table: str,
+    caller: Caller = ANONYMOUS,
+) -> dict[str, Any]:
     """Live Delta columns, with unreadable told apart from empty."""
-    client = _client()
+    client = _client(caller)
     try:
         dirs = table_dirs_for_lakehouse(client, workspace_id, lakehouse_id)
     except FabricError as exc:
@@ -287,6 +356,7 @@ def compare(
     entity_id: str,
     workspace_id: str | None = None,
     lakehouse_id: str | None = None,
+    caller: Caller = ANONYMOUS,
 ) -> dict[str, Any]:
     """Diff a model object's columns against the live Fabric table."""
     index = build_index(model)
@@ -302,7 +372,7 @@ def compare(
         }
 
     if not (workspace_id and lakehouse_id):
-        hits = [m for m in search(entry.name, kind="table")["matches"]]
+        hits = [m for m in search(entry.name, kind="table", caller=caller)["matches"]]
         if not hits:
             return {
                 "model_table": entry.name,
@@ -328,7 +398,7 @@ def compare(
         workspace_id = workspace_id or hits[0]["workspace_id"]
         lakehouse_id = lakehouse_id or hits[0]["lakehouse_id"]
 
-    live = table_schema(workspace_id, lakehouse_id, entry.name)
+    live = table_schema(workspace_id, lakehouse_id, entry.name, caller=caller)
     if not live["readable"]:
         # Refusing to diff is the point. An unreadable schema diffed as empty
         # reports every column in the model as dropped.
@@ -373,14 +443,17 @@ def compare(
     }
 
 
-def run_tool(model, name: str, args: dict[str, Any]) -> Any:
+def run_tool(model, name: str, args: dict[str, Any], caller: Caller = ANONYMOUS) -> Any:
     """Dispatch a Fabric tool, turning unreachability into a reported result."""
     try:
         if name == "fabric_search":
-            return search(str(args.get("name") or ""), args.get("kind"))
+            return search(str(args.get("name") or ""), args.get("kind"), caller=caller)
         if name == "fabric_table_schema":
             return table_schema(
-                str(args["workspace_id"]), str(args["lakehouse_id"]), str(args["table"])
+                str(args["workspace_id"]),
+                str(args["lakehouse_id"]),
+                str(args["table"]),
+                caller=caller,
             )
         if name == "compare_to_fabric":
             return compare(
@@ -388,6 +461,7 @@ def run_tool(model, name: str, args: dict[str, Any]) -> Any:
                 str(args["entity_id"]),
                 args.get("workspace_id"),
                 args.get("lakehouse_id"),
+                caller=caller,
             )
     except KeyError as exc:
         raise TypeError(f"{exc.args[0]!r} is required") from exc

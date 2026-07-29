@@ -60,6 +60,7 @@ from .providers import (
     ProviderError,
 )
 from .providers import build as build_provider
+from .fabric_tools import ANONYMOUS, Caller
 from .tools import outline, run_tool, tools_for
 
 #: A question needs a handful of walks, not a hundred. This bounds a model that
@@ -187,6 +188,14 @@ schema result with `readable: false` means the schema could NOT BE READ, which \
 is almost always a permissions problem; it never means the table has no \
 columns, and reporting it that way would claim a healthy table is empty.
 
+**Fabric is searched as THIS USER, with their own permissions.** So a Fabric \
+result is what they can see, not what exists in the tenant. When a search finds \
+nothing, the honest answer is "I couldn't find it in the Fabric you have access \
+to" — never "it doesn't exist" or "it was dropped". A table in a workspace they \
+were never granted looks identical from here to one that was deleted, and only \
+one of those is worth acting on. Say which you mean, and offer the other \
+reading in the same breath when it matters.
+
 # Proposing changes
 
 You can propose edits with `propose_edits`, and you cannot make them. The user \
@@ -288,10 +297,17 @@ def ask(
     messages: list[Message],
     *,
     selection: list[str] | None = None,
+    caller: Caller = ANONYMOUS,
     client: Any | None = None,
     provider: Provider | None = None,
 ) -> Answer:
     """Answer a question about `model`, running traversals as needed.
+
+    `caller` is whose Fabric the `fabric_*` tools read. Default anonymous — the
+    service principal, as before — because the eval harness and every offline
+    caller have no user to speak for. The HTTP route supplies the signed-in
+    user's tokens, so the assistant sees the same tenant the user's own Explore
+    tree does.
 
     `client` is the Anthropic-shaped seam the tests substitute; `provider` takes
     an already-built adapter. Neither is required in production — the configured
@@ -363,7 +379,7 @@ def ask(
                     proposals.extend(proposal.accepted)
                     payload = edits_module.describe(proposal)
                 else:
-                    payload = run_tool(model, call.name, args)
+                    payload = run_tool(model, call.name, args, caller)
                 is_error = False
             except (KeyError, TypeError) as exc:
                 payload = {"error": str(exc) or f"bad call to {call.name}"}

@@ -213,18 +213,27 @@ TOOLS += edits.TOOLS
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
 
-def run_tool(model: LineageModel, name: str, args: dict[str, Any]) -> Any:
+def run_tool(
+    model: LineageModel,
+    name: str,
+    args: dict[str, Any],
+    caller: fabric_tools.Caller = fabric_tools.ANONYMOUS,
+) -> Any:
     """Execute one tool call against `model`, returning JSON-ready data.
 
     Raises `KeyError` for an unknown tool and `TypeError` for a malformed
     argument; the caller turns both into an error tool result rather than an
     exception, so a model that sends a bad call gets a chance to correct it.
+
+    `caller` reaches only the Fabric tools. Everything else reads the model
+    document in the request body, which the browser already holds — there is no
+    access question to ask about data the asker sent us.
     """
     if name not in TOOL_NAMES:
         raise KeyError(name)
 
     if name in fabric_tools.TOOL_NAMES:
-        return fabric_tools.run_tool(model, name, args)
+        return fabric_tools.run_tool(model, name, args, caller)
 
     if name in edits.TOOL_NAMES:
         return edits.run_tool(model, name, args)

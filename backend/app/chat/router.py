@@ -13,11 +13,15 @@ API key instead of offering a button that always fails — the same shape as
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..config import get_settings
+from ..fabric.router import onelake_token, user_token
 from .assistant import Answer, AssistantError, Message, ask
+from .fabric_tools import Caller
 from .model import LineageModel
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -46,15 +50,48 @@ def status() -> dict[str, bool | str]:
         # different quality of answer from Gemini's free tier than from Opus,
         # and "which model was that?" is otherwise unanswerable from the UI.
         "provider": settings.chat_provider,
+        # So the UI can say "sign in to use the assistant" rather than letting
+        # somebody type a question and collect a 401 for it.
+        "requires_auth": settings.chat_require_auth,
     }
 
 
 @router.post("/ask", response_model=Answer)
-def ask_endpoint(req: AskRequest) -> Answer:
+def ask_endpoint(
+    req: AskRequest,
+    token: Annotated[str | None, Depends(user_token)] = None,
+    lake: Annotated[str | None, Depends(onelake_token)] = None,
+) -> Answer:
+    """Answer as the signed-in user, on a deployment that requires one.
+
+    This is the ONLY route that spends money, and on a public URL that makes it
+    the only one where "anyone who knows the address" is a billing problem as
+    well as a disclosure one. `chat_require_auth` (default on) refuses a caller
+    who brought no identity; turn it off for a local backend where signing in is
+    not set up.
+
+    The token also carries into the Fabric tools, so the assistant reads the
+    tenant THIS user can see. Without that it answers from the service
+    principal's view and can describe workspaces they cannot open — a wrong
+    answer as much as a leak.
+    """
     if not req.messages:
         raise HTTPException(status_code=400, detail="No question was asked.")
+    if get_settings().chat_require_auth and not token:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Sign in to use the assistant. (A local backend can set "
+                "CHAT_REQUIRE_AUTH=false to allow anonymous questions.)"
+            ),
+        )
     try:
-        return ask(req.model, req.messages, selection=req.selection)
+        return ask(
+            req.model,
+            req.messages,
+            selection=req.selection,
+            caller=Caller(fabric=token, onelake=lake),
+        )
     except AssistantError as exc:
         # 503, not 500: every AssistantError is "this backend cannot serve the
         # assistant right now" — unconfigured, uninstalled, or upstream — and

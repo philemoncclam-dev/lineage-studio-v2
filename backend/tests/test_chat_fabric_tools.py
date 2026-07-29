@@ -99,8 +99,10 @@ def fabric(monkeypatch):
     """A tenant that answers, with knobs for each way it can fail."""
     state: dict[str, Any] = {"catalog": CATALOG, "columns": LIVE_COLUMNS, "failures": []}
 
-    monkeypatch.setattr(fabric_tools, "catalog", lambda force=False: state["catalog"])
-    monkeypatch.setattr(fabric_tools, "_client", lambda: object())
+    monkeypatch.setattr(
+        fabric_tools, "catalog", lambda caller=None, force=False: state["catalog"]
+    )
+    monkeypatch.setattr(fabric_tools, "_client", lambda caller=None: object())
     monkeypatch.setattr(
         fabric_tools, "table_dirs_for_lakehouse", lambda *a, **k: {"orders": "Tables/orders"}
     )
@@ -246,7 +248,7 @@ def test_unreachable_fabric_is_answered_not_raised(monkeypatch):
         raise FabricUnavailable("Fabric is not configured")
 
     monkeypatch.setattr(fabric_tools, "_client", _boom)
-    monkeypatch.setattr(fabric_tools, "catalog", lambda force=False: _boom())
+    monkeypatch.setattr(fabric_tools, "catalog", lambda caller=None, force=False: _boom())
 
     result = run_tool(_model(), "fabric_search", {"name": "orders"})
     assert result["fabric_available"] is False

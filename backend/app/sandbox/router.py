@@ -8,10 +8,14 @@ regardless of where the code came from.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..fabric.access import assert_visible, limit_to_visible, visible_workspace_ids
 from ..fabric.client import FabricClient, FabricError
+from ..fabric.router import user_token
 from ..fabric.notebooks import NotebookDecodeError, fetch_notebook_source
 from ..fabric.schema import (
     guid_name_map,
@@ -44,7 +48,19 @@ class SandboxRunRequest(BaseModel):
 
 
 @router.post("/run", response_model=RunResult)
-def sandbox_run(req: SandboxRunRequest) -> RunResult:
+def sandbox_run(
+    req: SandboxRunRequest,
+    token: Annotated[str | None, Depends(user_token)] = None,
+) -> RunResult:
+    """Run as the service principal, but only against what the CALLER can see.
+
+    The split is deliberate. The run itself needs the SP — there is no user in
+    the loop once the child process starts, and the SP is what holds a
+    credential — but the workspace and notebook are named by the request, so
+    without a check this endpoint would fetch any notebook the SP can reach on
+    behalf of anyone who can reach this endpoint. The target is authorised
+    against the caller's own token; the fetch that follows is not.
+    """
     cells = req.cells
     schemas: dict[str, list[ColumnSchema]] = dict(req.schemas or {})
     # Stays None when no fetch is attempted — caller-supplied cells or schemas.
@@ -61,6 +77,9 @@ def sandbox_run(req: SandboxRunRequest) -> RunResult:
                 status_code=400,
                 detail="provide cells, or workspace_id + item_id to fetch the notebook",
             )
+        # Before anything is fetched: may THIS caller see that workspace?
+        visible = visible_workspace_ids(token)
+        assert_visible(visible, req.workspace_id)
         try:
             client = FabricClient()
             source = fetch_notebook_source(client, req.workspace_id, req.item_id, req.name)
@@ -73,11 +92,23 @@ def sandbox_run(req: SandboxRunRequest) -> RunResult:
         # Names for the GUIDs the notebook's paths use, and the notebook's own
         # workspace name when the caller didn't supply it.
         try:
-            ws_index = workspace_index(client)
+            # Both indexes are cut to what the caller can see. `workspace_index`
+            # is every workspace the SP reaches, and it is what an unqualified
+            # table name is resolved against — so leaving it whole would read
+            # schemas out of workspaces the caller was just refused, by name
+            # rather than by id.
+            ws_index = {
+                k: v
+                for k, v in workspace_index(client).items()
+                if visible is None or v.lower() in visible
+            }
             # Include any workspace the notebook reaches into by `abfss://`,
             # so its lakehouse GUIDs get names too — not just the notebook's own.
             name_map = guid_name_map(
-                client, [req.workspace_id, *referenced_workspace_ids(cells)]
+                client,
+                limit_to_visible(
+                    visible, [req.workspace_id, *referenced_workspace_ids(cells)]
+                ),
             )
             workspace = workspace or name_map.get(req.workspace_id.lower(), "")
         except FabricError:

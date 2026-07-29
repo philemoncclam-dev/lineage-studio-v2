@@ -65,10 +65,19 @@ export function LoginPage() {
                   to Azure Storage, which OneLake needs separately). Both of
                   those are easy half-hours to lose, so the steps name the
                   exact tiles. */}
+              {/* The two ReadWrite scopes look wrong in a read-only app and
+                  are not: Fabric documents `getDefinition` as requiring them
+                  ("the caller must have read and write permissions"), and
+                  there is no read-only scope that can fetch a definition. See
+                  the note in `msal.ts`. */}
               <li>
                 API permissions → Add a permission →{' '}
                 <strong>Power BI Service</strong> → Delegated. Add{' '}
-                <code>Workspace.Read.All</code> and <code>Item.Read.All</code>.
+                <code>Workspace.Read.All</code>, <code>Item.Read.All</code>,{' '}
+                <code>Notebook.ReadWrite.All</code> and{' '}
+                <code>DataPipeline.ReadWrite.All</code>. The last two are
+                Fabric's price for reading notebook and pipeline source — it
+                has no read-only scope for that — and this app never writes.
               </li>
               <li>
                 Add a permission → <strong>Azure Storage</strong> → Delegated →{' '}

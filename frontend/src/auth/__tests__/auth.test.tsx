@@ -125,6 +125,13 @@ describe('the sign-in gate', () => {
     await waitFor(() => expect(mockMsal.loginRedirect).toHaveBeenCalled())
     const { scopes } = mockMsal.loginRedirect.mock.calls[0][0]
     expect(scopes).toContain('https://api.fabric.microsoft.com/Workspace.Read.All')
+    // Reading a notebook's code is `POST .../getDefinition`, which Fabric
+    // documents as needing ReadWrite — there is NO read-only scope that can
+    // fetch a definition. Without this the tree works and every notebook's
+    // source 403s with `InsufficientScopes`, which reads as a problem with the
+    // user's access and is really a problem with what we asked for.
+    expect(scopes).toContain('https://api.fabric.microsoft.com/Notebook.ReadWrite.All')
+    expect(scopes).toContain('https://api.fabric.microsoft.com/DataPipeline.ReadWrite.All')
   })
 
   it('shows the gate rather than a blank page when MSAL itself fails', async () => {

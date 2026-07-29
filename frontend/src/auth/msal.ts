@@ -59,7 +59,7 @@ export const isConfigured = Boolean(CLIENT_ID)
 export const allowSkip = import.meta.env.DEV
 
 /**
- * Delegated Fabric access — read-only, granular.
+ * Delegated Fabric access — as narrow as Fabric's own API allows.
  *
  * Fabric does NOT expose `user_impersonation`; that scope belongs to Azure
  * Storage and Azure Data Explorer. Fabric's delegated scopes are granular
@@ -68,13 +68,33 @@ export const allowSkip = import.meta.env.DEV
  * called Fabric. Asking for a scope the API does not define fails at consent
  * with an error that names the scope but not the reason.
  *
- * Read-only on purpose. This app never writes to Fabric, so requesting
- * `.ReadWrite.All` would ask an admin to consent to more than it can use, and
- * consent prompts are where a reviewer decides whether to trust you.
+ * **Why two ReadWrite scopes are here in a read-only app.** Reading a
+ * notebook's code is `POST .../getDefinition`, and Fabric documents that call
+ * as requiring `Notebook.ReadWrite.All` or `Item.ReadWrite.All` — "the caller
+ * must have read and write permissions for the notebook". There is no read-only
+ * scope that can fetch a definition; `Notebook.Read.All` exists and does not
+ * cover it. A read-only token therefore fails at the SCOPE check, before Fabric
+ * ever looks at what the user can access, with a 403 `InsufficientScopes` that
+ * reads like a permissions problem on their account and is not one.
+ *
+ * So the choice is between naming those two item types and asking for
+ * `Item.ReadWrite.All`, which is write access to every item type in every
+ * workspace the user can reach — and to whatever item types Fabric adds later.
+ * These two are the narrowest thing that answers the question we ask.
+ *
+ * THE APP STILL NEVER WRITES. Nothing here calls an update or delete endpoint,
+ * and the sandbox's dry-run sinks are unchanged (see CLAUDE.md). The scope is
+ * what Fabric demands to hand over source code; it is not a capability this
+ * code uses, and an admin reading the consent screen should be told exactly
+ * that.
  */
 export const FABRIC_SCOPES = [
   'https://api.fabric.microsoft.com/Workspace.Read.All',
   'https://api.fabric.microsoft.com/Item.Read.All',
+  // Both are for `getDefinition` — notebook source and pipeline activities.
+  // Drop either one and that half of Explore's detail pane 403s.
+  'https://api.fabric.microsoft.com/Notebook.ReadWrite.All',
+  'https://api.fabric.microsoft.com/DataPipeline.ReadWrite.All',
 ]
 
 /**

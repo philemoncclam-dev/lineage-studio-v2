@@ -68,6 +68,37 @@ class FabricError(RuntimeError):
     """A Fabric call failed, or the integration is not configured."""
 
 
+def _explain(method: str, path: str, resp: requests.Response) -> str:
+    """A Fabric failure, with the one that lies about its cause translated.
+
+    `403 InsufficientScopes` reads as "you don't have access to this notebook".
+    It is not: it is Fabric refusing at the SCOPE check, before it has looked at
+    the caller's access at all. The token asked for less than the endpoint
+    demands, and no amount of granting the user permissions will fix it.
+
+    It has a second sharp edge. A signed-in session caches its token, so after
+    the app starts requesting the right scope, everyone already signed in keeps
+    the old one until they sign in again — the fix is a sign-out, which nobody
+    guesses from "insufficient scopes".
+
+    `getDefinition` is where this lands, because Fabric documents reading a
+    notebook's own source as requiring `Notebook.ReadWrite.All` — there is no
+    read-only scope that can fetch a definition.
+    """
+    body = resp.text[:500]
+    generic = f"{method} {path} failed [{resp.status_code}]: {body}"
+    if resp.status_code == 403 and "InsufficientScopes" in body:
+        return (
+            "Fabric refused this because of the SCOPES on the sign-in token, not "
+            "because of your access to the item. Reading notebook or pipeline "
+            "source needs Notebook.ReadWrite.All / DataPipeline.ReadWrite.All "
+            "(Fabric has no read-only scope for a definition). If those were "
+            "granted recently, sign out and back in — a cached session keeps the "
+            f"scopes it was issued with. [{generic}]"
+        )
+    return generic
+
+
 class FabricClient:
     """Thin wrapper over the slice of the Fabric REST surface we need."""
 
@@ -128,9 +159,7 @@ class FabricClient:
             method, f"{_BASE}{path}", headers=self._headers(), timeout=_TIMEOUT, **kwargs
         )
         if not resp.ok:
-            raise FabricError(
-                f"{method} {path} failed [{resp.status_code}]: {resp.text[:500]}"
-            )
+            raise FabricError(_explain(method, path, resp))
         if resp.status_code == 202:
             return self._await_operation(resp)
         return resp.json() if resp.content else {}

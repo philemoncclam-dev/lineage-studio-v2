@@ -1061,9 +1061,18 @@ export default function ModelViewer({
       )}
 
       <div className="mv-topbar">
-        <Link to="/models" className="mv-home" aria-label="Lineage Studio — back to all models">
-          <LogoMark />
-        </Link>
+        {/* The mark links to the Model Browser, which a link recipient cannot
+            open — it is behind the sign-in gate and holds someone else's
+            models. On a shared link it is a logo, not a door. */}
+        {readOnly ? (
+          <span className="mv-home" aria-hidden="true">
+            <LogoMark />
+          </span>
+        ) : (
+          <Link to="/models" className="mv-home" aria-label="Lineage Studio — back to all models">
+            <LogoMark />
+          </Link>
+        )}
         <span className="mv-topbar-name">{model.name}</span>
       </div>
 

@@ -39,7 +39,17 @@
   color: #667085;
 }
 
+/* A FLEX COLUMN, matching `.shell-canvas` — not just a sized box.
+   `.mv-host` takes its height from `flex: 1; min-height: 0` (its own CSS says
+   so: "height: 100% alone collapses to the content"). In a grid cell that
+   declaration does nothing, so the host collapsed, `.mv-scroll` — which is
+   absolutely positioned to its inset — got zero height, and the shared page
+   rendered its header over an empty canvas. The viewer must be given the same
+   container shape the app gives it. */
 .sh-canvas {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   position: relative;
   overflow: hidden;
 }

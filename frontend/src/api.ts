@@ -852,6 +852,61 @@ export async function askAssistant(
   return res.json()
 }
 
+// --- shared models (backend/app/share) ------------------------------------
+// Publishing turns a model into a link ANYONE can open — the token is the
+// credential, so a share link is exactly as private as the people it reaches.
+// What is stored is a SNAPSHOT: later edits stay local until you publish again.
+
+export interface ShareCreated {
+  token: string
+  expires_at: number | null
+  /** `sqlite` means the host may lose these links on its next deploy. */
+  storage: string
+}
+
+export interface SharedModel {
+  name: string
+  model: unknown
+  created_at: number
+  expires_at: number | null
+}
+
+export async function fetchShareStatus(): Promise<{ storage: string; durable: boolean }> {
+  const res = await fetch(`${BASE}/shares/status`)
+  if (!res.ok) return detail(res, 'sharing status')
+  return res.json()
+}
+
+export async function shareModel(
+  model: unknown,
+  name: string,
+  ttlDays: number | null,
+): Promise<ShareCreated> {
+  // Signed-in only: an open endpoint that stores megabytes is free hosting for
+  // whoever finds the URL. `fabricFetch` carries the token.
+  const res = await fabricFetch(`${BASE}/shares`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, name, ttl_days: ttlDays }),
+  })
+  if (!res.ok) return detail(res, 'share')
+  return res.json()
+}
+
+/** Open a shared model. Deliberately a plain fetch — a recipient has no token. */
+export async function fetchSharedModel(token: string): Promise<SharedModel> {
+  const res = await fetch(`${BASE}/shares/${encodeURIComponent(token)}`)
+  if (!res.ok) return detail(res, 'shared model')
+  return res.json()
+}
+
+export async function revokeShare(token: string): Promise<void> {
+  const res = await fabricFetch(`${BASE}/shares/${encodeURIComponent(token)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) return detail(res, 'revoke share')
+}
+
 export async function runSandbox(body: {
   name?: string
   workspace_id?: string

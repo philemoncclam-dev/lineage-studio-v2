@@ -22,6 +22,11 @@ anthropic>=0.69
 # it, so this one client covers every non-Anthropic option. See chat/providers.py.
 openai>=1.60
 
+# Shared models (app/share). Only needed where DATABASE_URL is set — the store
+# falls back to stdlib sqlite3 without it, and imports psycopg lazily so a
+# deployment with no Postgres does not carry the dependency.
+psycopg[binary]>=3.2
+
 # Tests
 pytest>=8.3
 httpx>=0.28          # required by fastapi.testclient

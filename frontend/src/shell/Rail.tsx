@@ -46,6 +46,9 @@ const ICONS: Record<RailIconName, ReactNode> = {
   layers: (
     <svg viewBox="0 0 24 24"><path d="M12 3.5 3.5 8l8.5 4.5L20.5 8z" /><path d="M3.5 12 12 16.5 20.5 12M3.5 16 12 20.5 20.5 16" /></svg>
   ),
+  share: (
+    <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="M8.2 10.8 15.8 6.5M8.2 13.2l7.6 4.3" /></svg>
+  ),
   plus: (
     <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
   ),

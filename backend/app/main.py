@@ -27,6 +27,7 @@ from .chat.router import router as chat_router
 from .products.router import router as products_router
 from .fabric.router import router as fabric_router
 from .sandbox.router import router as sandbox_router
+from .share.router import router as share_router
 from .sample import SAMPLE
 
 app = FastAPI(title="Lineage Studio API", version="0.1.0")
@@ -46,6 +47,7 @@ app.include_router(products_router)
 app.include_router(fabric_router)
 app.include_router(sandbox_router)
 app.include_router(chat_router)
+app.include_router(share_router)
 
 # Trivial single-slot store; the last-built graph is what the UI reads.
 _last_graph: LineageGraph = build_graph(SAMPLE)

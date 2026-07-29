@@ -24,6 +24,7 @@ import { registerRailAction } from '../shell/railActions'
 import ModelSearch from './ModelSearch'
 import ImportDialog from './ImportDialog'
 import ExportDialog from './ExportDialog'
+import ShareDialog from './ShareDialog'
 import AutoMapper, { type PickSlot } from './AutoMapper'
 import type { SearchHit } from './searchModel'
 import {
@@ -88,16 +89,38 @@ interface Props {
   onRedo: () => void
   canUndo: boolean
   canRedo: boolean
+  /**
+   * A shared link, opened by someone who is not the owner.
+   *
+   * Enforced at the ONE place every edit passes through — `onChange` — rather
+   * than by hiding each affordance, because the affordances are many (context
+   * menus at four levels, drag, connect, rename, the assistant's proposals)
+   * and a missed one is a stranger editing what they were shown. The menus and
+   * the assistant are also suppressed below, so nothing offers an action that
+   * would then be swallowed; the wrapper is what makes a miss harmless rather
+   * than what makes the UI correct.
+   */
+  readOnly?: boolean
 }
 
 export default function ModelViewer({
   model,
-  onChange,
+  onChange: onChangeProp,
   onUndo,
   onRedo,
   canUndo,
   canRedo,
+  readOnly = false,
 }: Props) {
+  // Shadows the prop deliberately: every existing call site below says
+  // `onChange(...)`, and this is the single point they all pass through.
+  const onChange = useCallback(
+    (next: LineageModel) => {
+      if (readOnly) return
+      onChangeProp(next)
+    },
+    [readOnly, onChangeProp],
+  )
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [scroll, setScroll] = useState({ x: 0, y: 0 })
@@ -126,6 +149,7 @@ export default function ModelViewer({
   const [searchOpen, setSearchOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const [mapperOpen, setMapperOpen] = useState(false)
   // The Auto-Mapper's scope lives HERE, not in the panel, because it is filled
   // by clicking the canvas: the viewer owns the click, so it owns the answer.
@@ -247,6 +271,13 @@ export default function ModelViewer({
   // destinations and act on the model this component holds.
   useEffect(() => registerRailAction('import', () => setImportOpen(true)), [])
   useEffect(() => registerRailAction('export', () => setExportOpen(true)), [])
+  // Not registered on a shared link: the reader has no account to publish
+  // with, and re-sharing someone else's snapshot under your own name is not a
+  // thing this should make easy.
+  useEffect(() => {
+    if (readOnly) return
+    return registerRailAction('share', () => setShareOpen(true))
+  }, [readOnly])
   useEffect(() => registerRailAction('mapping', () => setMapperOpen(true)), [])
   useEffect(() => registerRailAction('tags', () => setTagManagerOpen(true)), [])
   // Both docks toggle rather than open: a second click on the rail button is the
@@ -484,6 +515,9 @@ export default function ModelViewer({
   const openMenu = (e: React.MouseEvent, targetId: EntityId | null) => {
     e.preventDefault()
     e.stopPropagation()
+    // Every item on this menu edits. On a shared link there is nothing to show
+    // — and a menu of actions that silently do nothing is worse than none.
+    if (readOnly) return
 
     const canPaste = clipboard.current !== null
     // Right-clicking inside an existing multi-selection acts on all of it;
@@ -708,6 +742,7 @@ export default function ModelViewer({
    * layer is treated as truly outside.
    */
   const onWorldContextMenu = (e: React.MouseEvent) => {
+    if (readOnly) return
     if ((e.target as HTMLElement).closest('.mv-card, .mv-layer')) return
     const rect = e.currentTarget.getBoundingClientRect()
     const worldX = e.clientX - rect.left
@@ -904,6 +939,7 @@ export default function ModelViewer({
         />
       )}
       {exportOpen && <ExportDialog model={model} onClose={() => setExportOpen(false)} />}
+      {shareOpen && <ShareDialog model={model} onClose={() => setShareOpen(false)} />}
       {mapperOpen && (
         <AutoMapper
           model={model}
@@ -985,7 +1021,9 @@ export default function ModelViewer({
           onClose={() => setDock(null)}
         />
       )}
-      {dock === 'assistant' && (
+      {/* No assistant on a shared link: it proposes edits, and it would spend
+          the OWNER's API key for a stranger who followed a URL. */}
+      {dock === 'assistant' && !readOnly && (
         <AssistantPanel
           model={model}
           // The live canvas selection, so a question can say "this column".
@@ -1060,7 +1098,7 @@ export default function ModelViewer({
                 if (layer.collapsed) toggle(layer.id)
                 else select(layer.id, { additive: e.ctrlKey || e.metaKey, range: e.shiftKey })
               }}
-              onDoubleClick={() => !layer.collapsed && setEditing(layer.id)}
+              onDoubleClick={() => !readOnly && !layer.collapsed && setEditing(layer.id)}
               onContextMenu={(e) => openMenu(e, layer.id)}
               title={layer.collapsed ? `Expand ${layer.name}` : layer.name}
             >

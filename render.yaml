@@ -36,3 +36,11 @@ services:
       # Set to your Vercel URL once you have it, then redeploy.
       - key: CORS_ORIGINS
         sync: false
+      # Shared model links (app/share). WITHOUT THIS they are stored in a
+      # SQLite file on this instance's disk, which the free plan wipes on every
+      # redeploy and every wake from sleep — links would work, then 404, and the
+      # person who followed one cannot tell that from "revoked". Point it at any
+      # Postgres (Render, Supabase, Neon); `/shares/status` reports which
+      # backend is live so the share dialog can warn before anyone sends a link.
+      - key: DATABASE_URL
+        sync: false

@@ -6,7 +6,7 @@
 // being rebuilt from scratch. Only the backend LineageGraph contract survives.
 
 import type { ReactNode } from 'react'
-import { createRootRouteWithContext, Outlet } from '@tanstack/react-router'
+import { createRootRouteWithContext, Outlet, useRouterState } from '@tanstack/react-router'
 import { fetchGraph, type LineageGraph } from '../api'
 import { useAuth } from '../auth/auth'
 import { LoginPage } from '../auth/LoginPage'
@@ -30,6 +30,20 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 })
 
 function RootComponent() {
+  // A shared link is the one route that must render for somebody with no
+  // account — that is the whole point of it — so it goes OUTSIDE the gate and
+  // outside the shell. Inside, a recipient would hit the sign-in wall; and the
+  // rail, mode menu and account chip all lead somewhere they cannot go.
+  //
+  // Matched on the pathname rather than by nesting under a pathless layout
+  // route, because the gate wraps the entire tree by design (see `AuthGate`)
+  // and one carve-out is smaller than restructuring every route to sit under a
+  // second layout.
+  const shared = useRouterState({
+    select: (s) => s.location.pathname.startsWith('/s/'),
+  })
+  if (shared) return <Outlet />
+
   return (
     <AuthGate>
       <AppShell>

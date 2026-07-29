@@ -36,6 +36,7 @@ export type RailIconName =
   | 'tag'
   | 'properties'
   | 'assistant'
+  | 'share'
 
 export interface RailItem {
   key: string
@@ -60,6 +61,8 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
     { key: 'mapping', label: 'Auto-Mapper', icon: 'mapping', action: 'mapping' },
     { key: 'import', label: 'Import', icon: 'import', action: 'import' },
     { key: 'export', label: 'Export', icon: 'export', action: 'export' },
+    // Last: sharing is what you do once the model says what you mean.
+    { key: 'share', label: 'Share', icon: 'share', action: 'share' },
   ],
   fabric: [
     { key: 'overview', label: 'Overview', icon: 'overview', to: '/fabric/overview' },

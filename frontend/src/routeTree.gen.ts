@@ -21,6 +21,7 @@ import { Route as ProductsProductIdRouteImport } from './routes/products/$produc
 import { Route as ProductsDomainsRouteImport } from './routes/products/domains'
 import { Route as ProductsNewRouteImport } from './routes/products/new'
 import { Route as ProductsRequestsRouteImport } from './routes/products/requests'
+import { Route as SShareTokenRouteImport } from './routes/s.$shareToken'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -82,6 +83,11 @@ const ProductsRequestsRoute = ProductsRequestsRouteImport.update({
   path: '/requests',
   getParentRoute: () => ProductsRouteRoute,
 } as any)
+const SShareTokenRoute = SShareTokenRouteImport.update({
+  id: '/s/$shareToken',
+  path: '/s/$shareToken',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -95,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/products/domains': typeof ProductsDomainsRoute
   '/products/new': typeof ProductsNewRoute
   '/products/requests': typeof ProductsRequestsRoute
+  '/s/$shareToken': typeof SShareTokenRoute
   '/products/': typeof ProductsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/products/domains': typeof ProductsDomainsRoute
   '/products/new': typeof ProductsNewRoute
   '/products/requests': typeof ProductsRequestsRoute
+  '/s/$shareToken': typeof SShareTokenRoute
   '/products': typeof ProductsIndexRoute
 }
 export interface FileRoutesById {
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   '/products/domains': typeof ProductsDomainsRoute
   '/products/new': typeof ProductsNewRoute
   '/products/requests': typeof ProductsRequestsRoute
+  '/s/$shareToken': typeof SShareTokenRoute
   '/products/': typeof ProductsIndexRoute
 }
 export interface FileRouteTypes {
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
     | '/products/domains'
     | '/products/new'
     | '/products/requests'
+    | '/s/$shareToken'
     | '/products/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -152,6 +162,7 @@ export interface FileRouteTypes {
     | '/products/domains'
     | '/products/new'
     | '/products/requests'
+    | '/s/$shareToken'
     | '/products'
   id:
     | '__root__'
@@ -166,6 +177,7 @@ export interface FileRouteTypes {
     | '/products/domains'
     | '/products/new'
     | '/products/requests'
+    | '/s/$shareToken'
     | '/products/'
   fileRoutesById: FileRoutesById
 }
@@ -175,6 +187,7 @@ export interface RootRouteChildren {
   ProductsRouteRoute: typeof ProductsRouteRouteWithChildren
   ModelsRoute: typeof ModelsRoute
   ModelModelIdRoute: typeof ModelModelIdRoute
+  SShareTokenRoute: typeof SShareTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -263,6 +276,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsRequestsRouteImport
       parentRoute: typeof ProductsRouteRoute
     }
+    '/s/$shareToken': {
+      id: '/s/$shareToken'
+      path: '/s/$shareToken'
+      fullPath: '/s/$shareToken'
+      preLoaderRoute: typeof SShareTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -306,6 +326,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProductsRouteRoute: ProductsRouteRouteWithChildren,
   ModelsRoute: ModelsRoute,
   ModelModelIdRoute: ModelModelIdRoute,
+  SShareTokenRoute: SShareTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

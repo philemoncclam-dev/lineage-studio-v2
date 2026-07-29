@@ -13,6 +13,7 @@ export type RailActionKey =
   | 'views'
   | 'properties'
   | 'assistant'
+  | 'share'
 
 type Handler = () => void
 

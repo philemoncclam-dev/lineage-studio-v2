@@ -33,3 +33,6 @@ backend/data/
 
 # Eval transcripts — a paid run's output, per-machine and not worth versioning.
 backend/*.json
+
+# The local share store (backend/app/share). Real deployments set DATABASE_URL.
+*.db

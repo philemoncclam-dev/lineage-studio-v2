@@ -1,15 +1,32 @@
 /* The sign-in gate. Deliberately unlike the rest of the app chrome: it is the
-   one screen with a single decision on it, so it gets a centred card and no
-   rail, no mode menu, nothing else to click. */
+   one screen with a single decision on it, so it gets no rail, no mode menu,
+   nothing else to click.
+
+   Two columns: the orbiting estate on the left, the one button on the right.
+   The picture is the argument and the button is the reply, which is why the
+   button gets the side the eye lands on last. */
 
 .lg-page {
   position: relative;
   min-height: 100vh;
   display: grid;
-  place-items: center;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
   padding: 24px;
   background: #f4f6fa;
   overflow: hidden;
+}
+
+/* One column below this: the widest ring is 700px, and two halves of a laptop
+   screen cannot hold that and a button without the rings shrinking to a badge.
+   The orbits sit above the button rather than beside it. */
+@media (max-width: 1080px) {
+  .lg-page {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    align-content: center;
+    gap: 8px;
+  }
 }
 
 /* Two soft washes behind the card, in the brand's own blue and violet. They
@@ -39,17 +56,23 @@
 }
 
 /* --- the orbits ---------------------------------------------------------
-   Concentric rings centred on the card, each carrying named source systems.
-   Rings counter-rotate in alternate directions; every chip counter-rotates
-   against its own ring so the text never turns upside down. */
+   Concentric rings carrying named source systems. Rings counter-rotate in
+   alternate directions; every chip counter-rotates against its own ring so the
+   text never turns upside down. */
 
 .lg-orbits {
-  position: absolute;
-  inset: 0;
+  /* A COLUMN of the page grid now, not an overlay pinned to the whole screen.
+     The rings are wider than their column on purpose and hang past both edges
+     — the page clips them, which is what makes the composition read as a
+     system continuing off-screen rather than a diagram that happens to fit. */
+  position: relative;
   display: grid;
   place-items: center;
+  justify-self: center;
+  /* Zero-height so the rings, which are absolutely centred in this cell, do not
+     also reserve 700px of column height and push the layout around. */
+  height: 0;
   pointer-events: none;
-  /* Behind the card, above the background washes. */
   z-index: 0;
 }
 
@@ -172,13 +195,14 @@
   }
 }
 
-/* The configured screen: the button, alone, at the centre of the orbits. */
+/* The configured screen: the button, alone, in the right-hand column. */
 .lg-solo {
   position: relative;
   z-index: 1;
   display: grid;
   gap: 12px;
   justify-items: center;
+  justify-self: center;
   width: min(300px, 100%);
 }
 
@@ -218,7 +242,11 @@
   object-fit: contain;
 }
 
+/* The setup card spans both columns: it is a procedure to read, not a reply to
+   the picture, and half a screen is too narrow for a numbered list of scopes. */
 .lg-card {
+  grid-column: 1 / -1;
+  justify-self: center;
   position: relative;
   z-index: 1;
   width: min(420px, 100%);

@@ -7,6 +7,8 @@ import { type ReactNode, useEffect, useState } from 'react'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { fetchPurviewStatus } from '../api'
+import { useOptionalAuth } from '../auth/auth'
+import { accountName, initials } from '../auth/msal'
 
 type StatusDot = 'ok' | 'off' | 'err'
 
@@ -22,6 +24,49 @@ function RailBottomButton({ label, onClick, children }: { label: string; onClick
       <Tooltip.Trigger asChild>
         <button type="button" className="rail-bottom-btn" onClick={onClick}>
           {children}
+          <VisuallyHidden>{label}</VisuallyHidden>
+        </button>
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content className="rail-tooltip" side="right" sideOffset={8}>
+          {label}
+          <Tooltip.Arrow className="rail-tooltip-arrow" />
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  )
+}
+
+/**
+ * Who the app is reading Fabric as, and a way to stop being them.
+ *
+ * Always shown, including when nobody signed in — that state is the one worth
+ * surfacing loudest. On the service-principal fallback the workspaces in
+ * Explore belong to a shared robot account, and a user who assumes they are
+ * looking at their own access is drawing conclusions from somebody else's
+ * permissions.
+ */
+function IdentityChip() {
+  const auth = useOptionalAuth()
+  // Outside a provider (router pending fallback, isolated tests) there is no
+  // identity to report, and inventing one would be worse than silence.
+  if (!auth) return null
+  const { account, phase, signIn, signOut } = auth
+  const signedIn = phase === 'signed-in'
+  const label = signedIn
+    ? `${accountName(account)} — sign out`
+    : 'Not signed in — showing the service principal’s workspaces. Sign in.'
+
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <button
+          type="button"
+          className="rail-identity"
+          data-signed-in={signedIn}
+          onClick={() => (signedIn ? signOut() : void signIn())}
+        >
+          {signedIn ? initials(account) : '?'}
           <VisuallyHidden>{label}</VisuallyHidden>
         </button>
       </Tooltip.Trigger>
@@ -51,6 +96,7 @@ export default function RailBottomCluster({ onOpenSearch }: { onOpenSearch: () =
       <RailBottomButton label="Search (⌘K)" onClick={onOpenSearch}>
         <SearchIcon />
       </RailBottomButton>
+      <IdentityChip />
       <Tooltip.Root>
         <Tooltip.Trigger asChild>
           <span className="status-dot-wrap" role="status">

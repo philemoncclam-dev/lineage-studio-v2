@@ -5,8 +5,11 @@
 // sampleModel) was removed with the old Modeling mode — the model shape is
 // being rebuilt from scratch. Only the backend LineageGraph contract survives.
 
+import type { ReactNode } from 'react'
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router'
 import { fetchGraph, type LineageGraph } from '../api'
+import { useAuth } from '../auth/auth'
+import { LoginPage } from '../auth/LoginPage'
 import AppShell from '../shell/AppShell'
 import { BarsSpinner } from '../shell/BarsSpinner'
 
@@ -28,10 +31,39 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function RootComponent() {
   return (
-    <AppShell>
-      <Outlet />
-    </AppShell>
+    <AuthGate>
+      <AppShell>
+        <Outlet />
+      </AppShell>
+    </AuthGate>
   )
+}
+
+/**
+ * Sign-in before anything else.
+ *
+ * The gate wraps the shell rather than sitting on a `/login` route because
+ * there is nothing useful to render underneath it: which workspaces Explore
+ * can list is a function of who is asking, so painting the app first and
+ * resolving identity afterwards would show a tree that is wrong until it
+ * isn't.
+ *
+ * `starting` is its own state, not folded into signed-out. On a return trip
+ * from Microsoft the account is not known until `handleRedirectPromise`
+ * settles, and treating that instant as signed-out would flash the sign-in
+ * screen at somebody who just signed in.
+ */
+function AuthGate({ children }: { children: ReactNode }) {
+  const { phase } = useAuth()
+  if (phase === 'starting') {
+    return (
+      <div className="lg-booting" role="status" aria-live="polite">
+        <BarsSpinner size={16} />
+      </div>
+    )
+  }
+  if (phase === 'signed-out') return <LoginPage />
+  return <>{children}</>
 }
 
 // Canvas-region pending state (UI-SPEC "loading" consideration): the shell

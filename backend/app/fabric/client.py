@@ -71,25 +71,50 @@ class FabricError(RuntimeError):
 class FabricClient:
     """Thin wrapper over the slice of the Fabric REST surface we need."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(self, settings: Settings | None = None, user_token: str | None = None) -> None:
+        """Read Fabric as a signed-in USER, or as the service principal.
+
+        `user_token` is an Entra ID access token the browser acquired for the
+        Fabric scope and forwarded on the request. When it is present it is
+        used verbatim and no service principal is constructed — which is the
+        whole point: Fabric evaluates the caller's own permissions, so the
+        workspaces that come back are the ones THAT PERSON can see. The
+        service-principal path answers the same question about a robot account
+        nobody signed into, and on a multi-user deployment that is the wrong
+        answer, not merely a less personal one.
+
+        The token is passed through, never minted here. This backend is a
+        public client's relay: it holds no secret capable of producing a user
+        token and cannot broaden the one it is given. Anything the caller can
+        reach through it, they could already reach directly.
+
+        The service principal remains the fallback so nothing that worked
+        before an interactive sign-in stops working after it — the sandbox and
+        the lineage build both run without a user in the loop.
+        """
         self.settings = settings or get_settings()
+        self._user_token = user_token
+        self._session = requests.Session()
+        if user_token:
+            self._credential = None
+            return
+
         # Credentials are shared with Purview: there is no separate Fabric
         # config, and requiring one would be a second copy of the same secret.
         if not self.settings.purview_configured:
             raise FabricError(
-                "Fabric is not configured — it reuses the Purview service "
-                "principal, so set PURVIEW_TENANT_ID, PURVIEW_CLIENT_ID and "
-                "PURVIEW_CLIENT_SECRET in .env (see .env.example)."
+                "Fabric is not configured — sign in, or set PURVIEW_TENANT_ID, "
+                "PURVIEW_CLIENT_ID and PURVIEW_CLIENT_SECRET in .env for the "
+                "service-principal fallback (see .env.example)."
             )
         self._credential = ClientSecretCredential(
             tenant_id=self.settings.purview_tenant_id,
             client_id=self.settings.purview_client_id,
             client_secret=self.settings.purview_client_secret,
         )
-        self._session = requests.Session()
 
     def _headers(self) -> dict[str, str]:
-        token = self._credential.get_token(FABRIC_SCOPE).token
+        token = self._user_token or self._credential.get_token(FABRIC_SCOPE).token
         return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
     def request(self, method: str, path: str, **kwargs: Any) -> dict:

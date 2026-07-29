@@ -4,6 +4,7 @@ import { RouterProvider } from '@tanstack/react-router'
 import './styles/tokens.css'
 import { initTheme } from './shell/theme'
 import { router } from './router'
+import { AuthProvider } from './auth/auth'
 
 // Restore a persisted theme choice before first paint (Pitfall 2: Phase 1
 // wired the data-theme/light-dark() mechanism but shipped no control or
@@ -13,6 +14,11 @@ initTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    {/* Above the router: auth is not route-scoped, and the router's own
+        pending fallback renders the shell (identity chip included) before any
+        route component mounts. */}
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
   </StrictMode>,
 )

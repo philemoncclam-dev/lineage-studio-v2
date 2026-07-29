@@ -1,0 +1,128 @@
+/* The sign-in gate. Deliberately unlike the rest of the app chrome: it is the
+   one screen with a single decision on it, so it gets a centred card and no
+   rail, no mode menu, nothing else to click. */
+
+.lg-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f4f6fa;
+}
+
+.lg-card {
+  width: min(480px, 100%);
+  background: #fff;
+  border: 1px solid #e3e7ef;
+  border-radius: 14px;
+  padding: 32px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 32px rgba(16, 24, 40, 0.08);
+}
+
+.lg-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.lg-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #3b6fd4, #6f4fd8);
+  flex: none;
+}
+
+.lg-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  color: #101828;
+}
+
+.lg-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #667085;
+}
+
+.lg-lead {
+  margin: 0 0 18px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: #344054;
+}
+
+.lg-primary,
+.lg-secondary {
+  width: 100%;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.lg-primary {
+  border: 1px solid #2f5fc0;
+  background: #3b6fd4;
+  color: #fff;
+}
+.lg-primary:hover {
+  background: #3363c4;
+}
+
+.lg-secondary {
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #344054;
+}
+.lg-secondary:hover {
+  border-color: #b4bcc9;
+}
+
+.lg-steps {
+  margin: 0 0 18px;
+  padding-left: 20px;
+  font-size: 12.5px;
+  line-height: 1.85;
+  color: #344054;
+}
+
+.lg-steps code {
+  background: #f2f4f7;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11.5px;
+  /* A redirect URI is long and must be copied exactly; wrapping mid-string is
+     better than a line the user has to scroll to read. */
+  word-break: break-all;
+}
+
+.lg-fine {
+  margin: 14px 0 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #667085;
+}
+
+.lg-error {
+  margin: 14px 0 0;
+  padding: 9px 11px;
+  border: 1px solid #f0c4c4;
+  background: #fdf3f3;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #8a2a2a;
+}
+
+/* Boot state, while MSAL decides whether we are returning from a redirect. */
+.lg-booting {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: #667085;
+  font-size: 13px;
+  background: #f4f6fa;
+}

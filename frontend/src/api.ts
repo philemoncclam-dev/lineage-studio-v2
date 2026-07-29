@@ -49,6 +49,39 @@ export interface LineageGraph {
 // baked into the bundle and is not a runtime secret.
 const BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '')
 
+/**
+ * How to get the signed-in user's Fabric token, installed by `AuthProvider`.
+ *
+ * A module variable rather than a parameter because these are plain async
+ * functions called from loaders, effects and event handlers alike; threading a
+ * hook result through every one of them would put auth in the signature of
+ * code that has no other reason to know about it.
+ *
+ * Null means nobody is signed in, and that is a supported state — the backend
+ * falls back to its service principal. It is also the safe default: a missing
+ * source sends no header rather than a stale one.
+ */
+let tokenSource: (() => Promise<string | null>) | null = null
+
+export function setTokenSource(source: (() => Promise<string | null>) | null): void {
+  tokenSource = source
+}
+
+/**
+ * A `/fabric/*` request carrying the caller's identity when there is one.
+ *
+ * The token is fetched per request, not cached here: MSAL already caches it
+ * and renews it near expiry, so asking each time is how a long-lived tab keeps
+ * working instead of failing an hour in with a token it decided to hold onto.
+ */
+export async function fabricFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const token = tokenSource ? await tokenSource() : null
+  if (!token) return fetch(url, init)
+  const headers = new Headers(init.headers)
+  headers.set('Authorization', `Bearer ${token}`)
+  return fetch(url, { ...init, headers })
+}
+
 export async function fetchSample(): Promise<LineageGraph> {
   const res = await fetch(`${BASE}/sample`)
   if (!res.ok) throw new Error(`sample failed: ${res.status}`)
@@ -434,19 +467,19 @@ export interface FabricTable {
 }
 
 export async function fetchFabricStatus(): Promise<{ configured: boolean }> {
-  const res = await fetch(`${BASE}/fabric/status`)
+  const res = await fabricFetch(`${BASE}/fabric/status`)
   if (!res.ok) return detail(res, 'fabric status')
   return res.json()
 }
 
 export async function fetchFabricWorkspaces(): Promise<FabricWorkspace[]> {
-  const res = await fetch(`${BASE}/fabric/workspaces`)
+  const res = await fabricFetch(`${BASE}/fabric/workspaces`)
   if (!res.ok) return detail(res, 'fabric workspaces')
   return res.json()
 }
 
 export async function fetchFabricItems(workspaceId: string): Promise<FabricWorkspaceItems> {
-  const res = await fetch(`${BASE}/fabric/workspaces/${workspaceId}/items`)
+  const res = await fabricFetch(`${BASE}/fabric/workspaces/${workspaceId}/items`)
   if (!res.ok) return detail(res, 'fabric items')
   return res.json()
 }
@@ -455,7 +488,7 @@ export async function fetchFabricTables(
   workspaceId: string,
   lakehouseId: string,
 ): Promise<FabricTable[]> {
-  const res = await fetch(`${BASE}/fabric/workspaces/${workspaceId}/lakehouses/${lakehouseId}/tables`)
+  const res = await fabricFetch(`${BASE}/fabric/workspaces/${workspaceId}/lakehouses/${lakehouseId}/tables`)
   if (!res.ok) return detail(res, 'fabric tables')
   return res.json()
 }
@@ -474,7 +507,7 @@ export interface FabricCatalogEntry {
 }
 
 export async function fetchFabricCatalog(): Promise<FabricCatalogEntry[]> {
-  const res = await fetch(`${BASE}/fabric/catalog`)
+  const res = await fabricFetch(`${BASE}/fabric/catalog`)
   if (!res.ok) return detail(res, 'fabric catalog')
   return res.json()
 }
@@ -519,7 +552,7 @@ export async function fetchFabricPipelineDefinition(
   workspaceId: string,
   itemId: string,
 ): Promise<FabricPipelineActivity[]> {
-  const res = await fetch(`${BASE}/fabric/workspaces/${workspaceId}/pipelines/${itemId}/definition`)
+  const res = await fabricFetch(`${BASE}/fabric/workspaces/${workspaceId}/pipelines/${itemId}/definition`)
   if (!res.ok) return detail(res, 'pipeline definition')
   return res.json()
 }
@@ -806,7 +839,7 @@ export async function runSandbox(body: {
   workspace?: string
   lakehouse?: string
 }): Promise<SandboxRunResult> {
-  const res = await fetch(`${BASE}/fabric/sandbox/run`, {
+  const res = await fabricFetch(`${BASE}/fabric/sandbox/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

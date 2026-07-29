@@ -18,7 +18,9 @@ Phase-2 sandbox stands up. The tree stops at tables until that lands.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from ..config import get_settings
@@ -88,10 +90,30 @@ class Column(BaseModel):
     type: str | None = None
 
 
-def _client() -> FabricClient:
+def user_token(authorization: Annotated[str | None, Header()] = None) -> str | None:
+    """The signed-in user's Fabric token, if the browser sent one.
+
+    Optional by design. A request without it falls back to the service
+    principal, so every non-interactive caller — the sandbox, the lineage
+    build, a curl during development — keeps working exactly as before.
+
+    Only the `Bearer` scheme is read, and nothing here validates or inspects
+    the token: it is forwarded to Fabric, which is the only party that can
+    meaningfully judge it. Parsing claims to make a local access decision would
+    be a second, weaker authority disagreeing with the real one — Fabric
+    answers 401 for a bad token and 403 for a real one that lacks the
+    permission, and both are the honest answer.
+    """
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    return token.strip() if scheme.lower() == "bearer" and token.strip() else None
+
+
+def _client(token: str | None = None) -> FabricClient:
     """A configured client, or a 503 the UI can show as 'not connected'."""
     try:
-        return FabricClient()
+        return FabricClient(user_token=token)
     except FabricError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -107,8 +129,8 @@ def fabric_status() -> dict[str, bool]:
 
 
 @router.get("/workspaces", response_model=list[Workspace])
-def list_workspaces() -> list[Workspace]:
-    client = _client()
+def list_workspaces(token: Annotated[str | None, Depends(user_token)] = None) -> list[Workspace]:
+    client = _client(token)
     try:
         raw = client.list_workspaces()
     except FabricError as exc:
@@ -121,7 +143,7 @@ def list_workspaces() -> list[Workspace]:
 
 
 @router.get("/catalog", response_model=list[CatalogEntry])
-def catalog() -> list[CatalogEntry]:
+def catalog(token: Annotated[str | None, Depends(user_token)] = None) -> list[CatalogEntry]:
     """A flat index of every discoverable asset, for palette search.
 
     Walks workspaces → items → lakehouse tables. Per-workspace and
@@ -129,7 +151,7 @@ def catalog() -> list[CatalogEntry]:
     doesn't blank the whole index — but the top-level workspace list refusal is
     still an error (empty-means-no-permission trap).
     """
-    client = _client()
+    client = _client(token)
     try:
         workspaces = client.list_workspaces()
     except FabricError as exc:
@@ -188,8 +210,8 @@ def catalog() -> list[CatalogEntry]:
 
 
 @router.get("/workspaces/{workspace_id}/items", response_model=WorkspaceItems)
-def list_workspace_items(workspace_id: str) -> WorkspaceItems:
-    client = _client()
+def list_workspace_items(workspace_id: str, token: Annotated[str | None, Depends(user_token)] = None) -> WorkspaceItems:
+    client = _client(token)
     try:
         raw_items = client.list_items(workspace_id)
         raw_folders = client.list_folders(workspace_id)
@@ -236,8 +258,8 @@ def list_workspace_items(workspace_id: str) -> WorkspaceItems:
     "/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/tables",
     response_model=list[Table],
 )
-def list_lakehouse_tables(workspace_id: str, lakehouse_id: str) -> list[Table]:
-    client = _client()
+def list_lakehouse_tables(workspace_id: str, lakehouse_id: str, token: Annotated[str | None, Depends(user_token)] = None) -> list[Table]:
+    client = _client(token)
     try:
         raw = client.list_lakehouse_tables(workspace_id, lakehouse_id)
     except FabricError as exc:
@@ -254,14 +276,14 @@ def list_lakehouse_tables(workspace_id: str, lakehouse_id: str) -> list[Table]:
     response_model=NotebookSourceResponse,
 )
 def get_notebook_source(
-    workspace_id: str, item_id: str, name: str = "notebook"
+    workspace_id: str, item_id: str, name: str = "notebook", token: Annotated[str | None, Depends(user_token)] = None
 ) -> NotebookSourceResponse:
     """The decoded code cells of one notebook, read-only, for the detail panel.
 
     Reuses the same `fetch_notebook_source` the sandbox relies on; a refused
     call or an undecodable definition is a 502 the UI shows as "couldn't read".
     """
-    client = _client()
+    client = _client(token)
     try:
         src = fetch_notebook_source(client, workspace_id, item_id, name)
     except (FabricError, NotebookDecodeError) as exc:
@@ -276,7 +298,7 @@ def get_notebook_source(
     response_model=list[Column],
 )
 def get_table_schema(
-    workspace_id: str, lakehouse_id: str, table_name: str
+    workspace_id: str, lakehouse_id: str, table_name: str, token: Annotated[str | None, Depends(user_token)] = None
 ) -> list[Column]:
     """Column list for one lakehouse table, from its OneLake Delta log.
 
@@ -284,7 +306,7 @@ def get_table_schema(
     table's `_delta_log` couldn't be read or carried no schema — not that the
     table has no columns.
     """
-    client = _client()
+    client = _client(token)
     try:
         dirs = table_dirs_for_lakehouse(client, workspace_id, lakehouse_id)
     except FabricError as exc:
@@ -307,7 +329,7 @@ def get_table_schema(
     "/workspaces/{workspace_id}/pipelines/{item_id}/definition",
     response_model=list[PipelineActivity],
 )
-def get_pipeline_definition(workspace_id: str, item_id: str) -> list[PipelineActivity]:
+def get_pipeline_definition(workspace_id: str, item_id: str, token: Annotated[str | None, Depends(user_token)] = None) -> list[PipelineActivity]:
     """The activity graph of one Data Pipeline, for the detail panel's canvas.
 
     Reads the item's `getDefinition` and parses `pipeline-content.json`'s
@@ -315,7 +337,7 @@ def get_pipeline_definition(workspace_id: str, item_id: str) -> list[PipelineAct
     draws — plus the table and column lineage a Copy activity declares inline.
     A refused read is a 502; an empty list means no activities.
     """
-    client = _client()
+    client = _client(token)
     try:
         definition = client.get_item_definition(workspace_id, item_id)
     except FabricError as exc:

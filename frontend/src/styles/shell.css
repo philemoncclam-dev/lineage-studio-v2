@@ -439,3 +439,35 @@
 .rail-more-icon { display: grid; place-items: center; width: 16px; height: 16px; flex: none; }
 .rail-more-icon svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .rail-more-sep { height: 1px; margin: var(--spacing-1) 0; background: var(--color-border); }
+
+/* Identity in the rail bottom. The signed-out state is deliberately the
+   attention-getting one: on the service-principal fallback, Explore lists a
+   shared robot account's workspaces, and a user who reads them as their own
+   access is drawing conclusions from somebody else's permissions. */
+.rail-identity {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #475467;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.rail-identity[data-signed-in='true'] {
+  border-color: #b6c9ec;
+  background: #eaf0fb;
+  color: #2f5fc0;
+}
+.rail-identity[data-signed-in='false'] {
+  border-color: #e4c07a;
+  background: #fdf6e7;
+  color: #8a6116;
+}
+.rail-identity:hover {
+  filter: brightness(0.97);
+}

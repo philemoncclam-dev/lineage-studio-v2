@@ -20,7 +20,7 @@ import {
   InteractionRequiredAuthError,
   type AccountInfo,
 } from '@azure/msal-browser'
-import { FABRIC_SCOPES, LOGIN_SCOPES, isConfigured, msal } from './msal'
+import { FABRIC_SCOPES, LOGIN_SCOPES, ONELAKE_SCOPES, isConfigured, msal } from './msal'
 import { setTokenSource } from '../api'
 
 export type AuthPhase = 'starting' | 'signed-out' | 'signed-in' | 'skipped'
@@ -57,16 +57,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * expired — earns a popup, and a popup fired on any other failure is a
    * blocked-popup bug that reads to the user as the app freezing.
    */
-  const getToken = useCallback(async (): Promise<string | null> => {
+  const forScopes = useCallback(async (scopes: string[]): Promise<string | null> => {
     const current = msal.getActiveAccount()
     if (!current) return null
     try {
-      const result = await msal.acquireTokenSilent({ scopes: FABRIC_SCOPES, account: current })
+      const result = await msal.acquireTokenSilent({ scopes, account: current })
       return result.accessToken
     } catch (err) {
       if (err instanceof InteractionRequiredAuthError) {
         try {
-          const result = await msal.acquireTokenPopup({ scopes: FABRIC_SCOPES })
+          const result = await msal.acquireTokenPopup({ scopes })
           return result.accessToken
         } catch {
           return null
@@ -75,6 +75,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return null
     }
   }, [])
+
+  /**
+   * Both tokens a Fabric request may need.
+   *
+   * Two, not one, because OneLake is a different audience: the Fabric REST API
+   * and the ADLS-Gen2 storage endpoint each reject the other's token. Table
+   * schemas come from the Delta log in OneLake, so a signed-in user who only
+   * held a Fabric token would browse the tree fine and then fail on every
+   * schema with a 401 that reads like a permissions problem.
+   *
+   * Requested in parallel and independently: OneLake consent can be missing
+   * (it is a separate grant an admin may not have made) without taking the
+   * whole tree down with it. A null there degrades one feature, not the app.
+   */
+  const getToken = useCallback(async () => {
+    const [fabric, onelake] = await Promise.all([
+      forScopes(FABRIC_SCOPES),
+      forScopes(ONELAKE_SCOPES),
+    ])
+    return { fabric, onelake }
+  }, [forScopes])
 
   useEffect(() => {
     if (booted.current) return

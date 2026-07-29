@@ -37,15 +37,34 @@ const TENANT = import.meta.env.VITE_ENTRA_TENANT_ID ?? 'organizations'
 export const isConfigured = Boolean(CLIENT_ID)
 
 /**
- * Delegated Fabric access — "act as the signed-in user".
+ * Delegated Fabric access — read-only, granular.
  *
- * NOT `.default`: that is the client-credentials shape and asks for whatever
- * the app registration was granted, which for a public client is both wrong
- * and rejected. `user_impersonation` is the delegated permission the tenant
- * admin consents to, and it is what makes Fabric answer with the caller's
- * workspaces rather than the app's.
+ * Fabric does NOT expose `user_impersonation`; that scope belongs to Azure
+ * Storage and Azure Data Explorer. Fabric's delegated scopes are granular
+ * (`Workspace.Read.All`, `Item.Read.All`, …) and — confusingly — they are
+ * registered under **Power BI Service** in the portal, not under anything
+ * called Fabric. Asking for a scope the API does not define fails at consent
+ * with an error that names the scope but not the reason.
+ *
+ * Read-only on purpose. This app never writes to Fabric, so requesting
+ * `.ReadWrite.All` would ask an admin to consent to more than it can use, and
+ * consent prompts are where a reviewer decides whether to trust you.
  */
-export const FABRIC_SCOPES = ['https://api.fabric.microsoft.com/user_impersonation']
+export const FABRIC_SCOPES = [
+  'https://api.fabric.microsoft.com/Workspace.Read.All',
+  'https://api.fabric.microsoft.com/Item.Read.All',
+]
+
+/**
+ * OneLake is a SEPARATE audience — it speaks the ADLS Gen2 storage API, not
+ * the Fabric REST API, so a Fabric token is rejected there and vice versa.
+ * Table schemas are read from the Delta log in OneLake, which is why one
+ * signed-in user needs two tokens.
+ *
+ * `user_impersonation` IS right here: it is Azure Storage's delegated scope,
+ * which is where that name actually lives.
+ */
+export const ONELAKE_SCOPES = ['https://storage.azure.com/user_impersonation']
 
 /** Enough for a name and an avatar; no directory read, no Graph call. */
 export const LOGIN_SCOPES = ['openid', 'profile', 'email']

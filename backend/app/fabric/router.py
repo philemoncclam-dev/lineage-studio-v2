@@ -110,10 +110,25 @@ def user_token(authorization: Annotated[str | None, Header()] = None) -> str | N
     return token.strip() if scheme.lower() == "bearer" and token.strip() else None
 
 
-def _client(token: str | None = None) -> FabricClient:
+def onelake_token(x_onelake_authorization: Annotated[str | None, Header()] = None) -> str | None:
+    """The user's OneLake token, in its own header.
+
+    A second header rather than a second scheme on the first, because these are
+    tokens for DIFFERENT audiences — `api.fabric.microsoft.com` and
+    `storage.azure.com` — and each is rejected by the other's API. Collapsing
+    them into one field would produce a 401 that reads as a permissions problem
+    rather than the wrong-audience mistake it actually is.
+    """
+    if not x_onelake_authorization:
+        return None
+    scheme, _, token = x_onelake_authorization.partition(" ")
+    return token.strip() if scheme.lower() == "bearer" and token.strip() else None
+
+
+def _client(token: str | None = None, lake: str | None = None) -> FabricClient:
     """A configured client, or a 503 the UI can show as 'not connected'."""
     try:
-        return FabricClient(user_token=token)
+        return FabricClient(user_token=token, onelake_token=lake)
     except FabricError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -129,8 +144,9 @@ def fabric_status() -> dict[str, bool]:
 
 
 @router.get("/workspaces", response_model=list[Workspace])
-def list_workspaces(token: Annotated[str | None, Depends(user_token)] = None) -> list[Workspace]:
-    client = _client(token)
+def list_workspaces(token: Annotated[str | None, Depends(user_token)] = None,
+    lake: Annotated[str | None, Depends(onelake_token)] = None) -> list[Workspace]:
+    client = _client(token, lake)
     try:
         raw = client.list_workspaces()
     except FabricError as exc:
@@ -143,7 +159,8 @@ def list_workspaces(token: Annotated[str | None, Depends(user_token)] = None) ->
 
 
 @router.get("/catalog", response_model=list[CatalogEntry])
-def catalog(token: Annotated[str | None, Depends(user_token)] = None) -> list[CatalogEntry]:
+def catalog(token: Annotated[str | None, Depends(user_token)] = None,
+    lake: Annotated[str | None, Depends(onelake_token)] = None) -> list[CatalogEntry]:
     """A flat index of every discoverable asset, for palette search.
 
     Walks workspaces → items → lakehouse tables. Per-workspace and
@@ -151,7 +168,7 @@ def catalog(token: Annotated[str | None, Depends(user_token)] = None) -> list[Ca
     doesn't blank the whole index — but the top-level workspace list refusal is
     still an error (empty-means-no-permission trap).
     """
-    client = _client(token)
+    client = _client(token, lake)
     try:
         workspaces = client.list_workspaces()
     except FabricError as exc:
@@ -210,8 +227,9 @@ def catalog(token: Annotated[str | None, Depends(user_token)] = None) -> list[Ca
 
 
 @router.get("/workspaces/{workspace_id}/items", response_model=WorkspaceItems)
-def list_workspace_items(workspace_id: str, token: Annotated[str | None, Depends(user_token)] = None) -> WorkspaceItems:
-    client = _client(token)
+def list_workspace_items(workspace_id: str, token: Annotated[str | None, Depends(user_token)] = None,
+    lake: Annotated[str | None, Depends(onelake_token)] = None) -> WorkspaceItems:
+    client = _client(token, lake)
     try:
         raw_items = client.list_items(workspace_id)
         raw_folders = client.list_folders(workspace_id)
@@ -258,8 +276,9 @@ def list_workspace_items(workspace_id: str, token: Annotated[str | None, Depends
     "/workspaces/{workspace_id}/lakehouses/{lakehouse_id}/tables",
     response_model=list[Table],
 )
-def list_lakehouse_tables(workspace_id: str, lakehouse_id: str, token: Annotated[str | None, Depends(user_token)] = None) -> list[Table]:
-    client = _client(token)
+def list_lakehouse_tables(workspace_id: str, lakehouse_id: str, token: Annotated[str | None, Depends(user_token)] = None,
+    lake: Annotated[str | None, Depends(onelake_token)] = None) -> list[Table]:
+    client = _client(token, lake)
     try:
         raw = client.list_lakehouse_tables(workspace_id, lakehouse_id)
     except FabricError as exc:
@@ -276,14 +295,15 @@ def list_lakehouse_tables(workspace_id: str, lakehouse_id: str, token: Annotated
     response_model=NotebookSourceResponse,
 )
 def get_notebook_source(
-    workspace_id: str, item_id: str, name: str = "notebook", token: Annotated[str | None, Depends(user_token)] = None
+    workspace_id: str, item_id: str, name: str = "notebook", token: Annotated[str | None, Depends(user_token)] = None,
+    lake: Annotated[str | None, Depends(onelake_token)] = None
 ) -> NotebookSourceResponse:
     """The decoded code cells of one notebook, read-only, for the detail panel.
 
     Reuses the same `fetch_notebook_source` the sandbox relies on; a refused
     call or an undecodable definition is a 502 the UI shows as "couldn't read".
     """
-    client = _client(token)
+    client = _client(token, lake)
     try:
         src = fetch_notebook_source(client, workspace_id, item_id, name)
     except (FabricError, NotebookDecodeError) as exc:
@@ -298,7 +318,8 @@ def get_notebook_source(
     response_model=list[Column],
 )
 def get_table_schema(
-    workspace_id: str, lakehouse_id: str, table_name: str, token: Annotated[str | None, Depends(user_token)] = None
+    workspace_id: str, lakehouse_id: str, table_name: str, token: Annotated[str | None, Depends(user_token)] = None,
+    lake: Annotated[str | None, Depends(onelake_token)] = None
 ) -> list[Column]:
     """Column list for one lakehouse table, from its OneLake Delta log.
 
@@ -306,7 +327,7 @@ def get_table_schema(
     table's `_delta_log` couldn't be read or carried no schema — not that the
     table has no columns.
     """
-    client = _client(token)
+    client = _client(token, lake)
     try:
         dirs = table_dirs_for_lakehouse(client, workspace_id, lakehouse_id)
     except FabricError as exc:
@@ -329,7 +350,8 @@ def get_table_schema(
     "/workspaces/{workspace_id}/pipelines/{item_id}/definition",
     response_model=list[PipelineActivity],
 )
-def get_pipeline_definition(workspace_id: str, item_id: str, token: Annotated[str | None, Depends(user_token)] = None) -> list[PipelineActivity]:
+def get_pipeline_definition(workspace_id: str, item_id: str, token: Annotated[str | None, Depends(user_token)] = None,
+    lake: Annotated[str | None, Depends(onelake_token)] = None) -> list[PipelineActivity]:
     """The activity graph of one Data Pipeline, for the detail panel's canvas.
 
     Reads the item's `getDefinition` and parses `pipeline-content.json`'s
@@ -337,7 +359,7 @@ def get_pipeline_definition(workspace_id: str, item_id: str, token: Annotated[st
     draws — plus the table and column lineage a Copy activity declares inline.
     A refused read is a 502; an empty list means no activities.
     """
-    client = _client(token)
+    client = _client(token, lake)
     try:
         definition = client.get_item_definition(workspace_id, item_id)
     except FabricError as exc:

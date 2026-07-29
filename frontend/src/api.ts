@@ -61,9 +61,16 @@ const BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(
  * falls back to its service principal. It is also the safe default: a missing
  * source sends no header rather than a stale one.
  */
-let tokenSource: (() => Promise<string | null>) | null = null
+export interface FabricTokens {
+  /** For `api.fabric.microsoft.com` — workspaces, items, tables. */
+  fabric: string | null
+  /** For `storage.azure.com` — the OneLake Delta log behind table schemas. */
+  onelake: string | null
+}
 
-export function setTokenSource(source: (() => Promise<string | null>) | null): void {
+let tokenSource: (() => Promise<FabricTokens>) | null = null
+
+export function setTokenSource(source: (() => Promise<FabricTokens>) | null): void {
   tokenSource = source
 }
 
@@ -75,10 +82,15 @@ export function setTokenSource(source: (() => Promise<string | null>) | null): v
  * working instead of failing an hour in with a token it decided to hold onto.
  */
 export async function fabricFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const token = tokenSource ? await tokenSource() : null
-  if (!token) return fetch(url, init)
+  const tokens = tokenSource ? await tokenSource() : null
+  if (!tokens?.fabric && !tokens?.onelake) return fetch(url, init)
   const headers = new Headers(init.headers)
-  headers.set('Authorization', `Bearer ${token}`)
+  if (tokens.fabric) headers.set('Authorization', `Bearer ${tokens.fabric}`)
+  // A separate header, because this is a token for a DIFFERENT audience —
+  // `storage.azure.com`, not `api.fabric.microsoft.com`. Each API rejects the
+  // other's token, so folding them into one field would surface as a 401 that
+  // reads like a permissions problem rather than the wrong-audience bug it is.
+  if (tokens.onelake) headers.set('X-OneLake-Authorization', `Bearer ${tokens.onelake}`)
   return fetch(url, { ...init, headers })
 }
 

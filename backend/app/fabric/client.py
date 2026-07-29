@@ -71,7 +71,12 @@ class FabricError(RuntimeError):
 class FabricClient:
     """Thin wrapper over the slice of the Fabric REST surface we need."""
 
-    def __init__(self, settings: Settings | None = None, user_token: str | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        user_token: str | None = None,
+        onelake_token: str | None = None,
+    ) -> None:
         """Read Fabric as a signed-in USER, or as the service principal.
 
         `user_token` is an Entra ID access token the browser acquired for the
@@ -94,6 +99,7 @@ class FabricClient:
         """
         self.settings = settings or get_settings()
         self._user_token = user_token
+        self._onelake_token = onelake_token
         self._session = requests.Session()
         if user_token:
             self._credential = None
@@ -222,7 +228,20 @@ class FabricClient:
             raise
 
     def _onelake_headers(self) -> dict[str, str]:
-        token = self._credential.get_token(ONELAKE_SCOPE).token
+        # OneLake is a different AUDIENCE from the Fabric REST API — it speaks
+        # the ADLS Gen2 storage API, and a Fabric token is rejected here. So a
+        # signed-in user brings two tokens, and reusing the Fabric one would
+        # fail with a 401 that looks like a permissions problem rather than the
+        # wrong-audience bug it is.
+        if self._onelake_token:
+            token = self._onelake_token
+        elif self._credential is not None:
+            token = self._credential.get_token(ONELAKE_SCOPE).token
+        else:
+            raise FabricError(
+                "Reading table schemas needs OneLake access. Sign in again to "
+                "grant it, or configure the Purview service principal."
+            )
         return {"Authorization": f"Bearer {token}"}
 
     def onelake_list(

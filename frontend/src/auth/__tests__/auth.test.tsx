@@ -102,7 +102,7 @@ describe('the sign-in gate', () => {
 
     await waitFor(() => expect(mockMsal.loginRedirect).toHaveBeenCalled())
     const { scopes } = mockMsal.loginRedirect.mock.calls[0][0]
-    expect(scopes).toContain('https://api.fabric.microsoft.com/user_impersonation')
+    expect(scopes).toContain('https://api.fabric.microsoft.com/Workspace.Read.All')
   })
 
   it('shows the gate rather than a blank page when MSAL itself fails', async () => {
@@ -159,11 +159,13 @@ describe('carrying identity to the backend', () => {
 
   it('sends the bearer token when there is one', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('[]'))
-    setTokenSource(async () => 'tok-123')
+    setTokenSource(async () => ({ fabric: 'tok-123', onelake: 'lake-456' }))
     await fabricFetch('http://api.test/fabric/workspaces')
 
     const init = fetchSpy.mock.calls[0][1] as RequestInit
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer tok-123')
+    // OneLake is a different audience and rides in its own header.
+    expect(new Headers(init.headers).get('X-OneLake-Authorization')).toBe('Bearer lake-456')
     fetchSpy.mockRestore()
   })
 
@@ -171,7 +173,7 @@ describe('carrying identity to the backend', () => {
     // An expired session should degrade to the service principal rather than
     // send `Bearer null` and turn a readable tree into a 401.
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('[]'))
-    setTokenSource(async () => null)
+    setTokenSource(async () => ({ fabric: null, onelake: null }))
     await fabricFetch('http://api.test/fabric/workspaces')
 
     const init = fetchSpy.mock.calls[0][1] as RequestInit | undefined

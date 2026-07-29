@@ -56,10 +56,24 @@ export function LoginPage() {
               <li>
                 Add this exact redirect URI: <code>{redirectUri}</code>
               </li>
+              {/* There is no "Fabric" entry under API permissions — Fabric's
+                  delegated scopes are registered under Power BI Service, and
+                  there is no `user_impersonation` among them (that one belongs
+                  to Azure Storage, which OneLake needs separately). Both of
+                  those are easy half-hours to lose, so the steps name the
+                  exact tiles. */}
               <li>
-                Grant the delegated permission{' '}
-                <code>Fabric&nbsp;→&nbsp;user_impersonation</code>, then consent.
+                API permissions → Add a permission →{' '}
+                <strong>Power BI Service</strong> → Delegated. Add{' '}
+                <code>Workspace.Read.All</code> and <code>Item.Read.All</code>.
               </li>
+              <li>
+                Add a permission → <strong>Azure Storage</strong> → Delegated →{' '}
+                <code>user_impersonation</code>. This is for OneLake, where
+                table schemas live — skip it and the tree works but schemas
+                don't.
+              </li>
+              <li>Grant admin consent for both.</li>
               <li>
                 Put the application (client) ID in{' '}
                 <code>frontend/.env</code> as{' '}

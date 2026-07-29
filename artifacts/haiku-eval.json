@@ -1,0 +1,537 @@
+[
+  {
+    "case": "simple_upstream",
+    "question": "Where does lifetime_value in gold_customer_ltv come from?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 6.7,
+    "text": "The **lifetime_value** column in `Gold / gold_customer_ltv` is the sum of order amounts converted to USD. It comes from `Silver / silver_orders_enriched / amount_usd` via the expression `SUM(amount_usd)`. That silver column in turn comes from `Bronze / bronze_orders / amount`, which is multiplied by an exchange rate (`amount * fx_rate`) to get the USD value.\n\nBoth links were picked up automatically from your code \u2014 the transforms are verified against what actually runs.",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "lifetime_value",
+          "layer": "Gold"
+        },
+        "result": "1 match"
+      },
+      {
+        "name": "trace_upstream",
+        "input": {
+          "entity_id": "a_g_ltv"
+        },
+        "result": "1 path \u00b7 attribute level"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "transform_quoted",
+    "question": "What transform produces lifetime_value?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 8.4,
+    "text": "`lifetime_value` is produced by `SUM(amount_usd)`. This sums the `amount_usd` column from `Silver / silver_orders_enriched`, which itself comes from `Bronze / bronze_orders / amount` multiplied by an FX rate (`amount * fx_rate`).",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "lifetime_value",
+          "kind": "attribute"
+        },
+        "result": "1 match"
+      },
+      {
+        "name": "describe_entity",
+        "input": {
+          "entity_id": "a_g_ltv"
+        },
+        "result": "Gold / gold_customer_ltv / lifetime_value \u2014 1 in, 0 out"
+      },
+      {
+        "name": "trace_upstream",
+        "input": {
+          "entity_id": "a_g_ltv"
+        },
+        "result": "1 path \u00b7 attribute level"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "gaps_scan",
+    "question": "Which columns in this model have no lineage at all?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 3.08,
+    "text": "Three columns have no lineage at all \u2014 nothing feeds them and nothing uses them:\n\n1. **Bronze / bronze_customers / email** \u2014 the email column in the bronze customers table\n2. **Silver / silver_wide / wide_col** \u2014 a column in the silver wide table\n3. **Gold / gold_orphan / orphan_col** \u2014 a column in the gold orphan table",
+    "trace": [
+      {
+        "name": "lineage_gaps",
+        "input": {
+          "kind": "attribute",
+          "direction": "either"
+        },
+        "result": "3 without lineage"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "coverage_question",
+    "question": "How much of this model is actually verified rather than hand-drawn?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 3.07,
+    "text": "Out of 21 transitions in this model, 20 are verified \u2014 they were picked up automatically from the code that runs \u2014 and only 1 was added by hand and has not been checked against the code. \n\nThe coverage is quite complete on the column level: 23 of 26 columns have lineage recorded. Only three columns have none, and there are no broken transitions or orphaned edges to clean up.",
+    "trace": [
+      {
+        "name": "coverage",
+        "input": {},
+        "result": "23/26 columns traced \u00b7 1 hand-drawn edge"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_name_inference",
+    "question": "Does customer_id in bronze_customers feed customer_id in silver_orders_enriched?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 4.42,
+    "text": "No, customer_id in bronze_customers does not feed customer_id in silver_orders_enriched. The lineage shows that bronze_customers / customer_id flows only to Gold / gold_customer_ltv / customer_key (via a hand-drawn link that hasn't been verified against the code). It does not connect to silver_orders_enriched.",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "customer_id",
+          "kind": "attribute"
+        },
+        "result": "3 matches"
+      },
+      {
+        "name": "trace_downstream",
+        "input": {
+          "entity_id": "a_bc_cust"
+        },
+        "result": "1 path \u00b7 attribute level"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_object_level",
+    "question": "What feeds wide_col in silver_wide?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 3.78,
+    "text": "The model records that `Silver / silver_wide / wide_col` comes from `Bronze / bronze_orders`, but only at the table level. There is no column-level lineage recorded for `wide_col` itself \u2014 the model knows the data moves from the bronze table to the silver table, but not which specific column in bronze feeds it. The link was picked up automatically from the code that runs.",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "wide_col"
+        },
+        "result": "1 match"
+      },
+      {
+        "name": "trace_upstream",
+        "input": {
+          "entity_id": "a_sw_col"
+        },
+        "result": "1 path \u00b7 object level"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_hand_drawn",
+    "question": "How reliable is the lineage for customer_key in gold_customer_ltv?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 4.57,
+    "text": "The lineage for customer_key in gold_customer_ltv is **not reliable**. It shows a direct link from customer_id in bronze_customers, but this link was added by hand and has never been checked against any code that actually runs. There's no transform recorded, and it skips the Silver layer entirely, which is unusual in a medallion architecture.\n\nTo establish confidence, someone would need to verify this edge against the actual logic in the notebooks or pipelines that populate gold_customer_ltv.",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "customer_key",
+          "layer": "Gold"
+        },
+        "result": "1 match"
+      },
+      {
+        "name": "trace_upstream",
+        "input": {
+          "entity_id": "a_g_key"
+        },
+        "result": "1 path \u00b7 attribute level"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_truncation",
+    "question": "What does customer_id in silver_orders_enriched feed downstream?",
+    "ok": false,
+    "failures": [
+      "reports the figure 16"
+    ],
+    "error": null,
+    "seconds": 4.92,
+    "text": "The `customer_id` column in Silver / silver_orders_enriched feeds into multiple columns in the Gold / gold_metrics table \u2014 specifically metric_0 through metric_11. The trace stopped after 12 paths, so there may be additional downstream uses. All these links were picked up automatically from the code that runs.",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "silver_orders_enriched",
+          "kind": "object"
+        },
+        "result": "1 match"
+      },
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "customer_id",
+          "kind": "attribute"
+        },
+        "result": "3 matches"
+      },
+      {
+        "name": "trace_downstream",
+        "input": {
+          "entity_id": "a_s_cust"
+        },
+        "result": "12 paths \u00b7 attribute level \u00b7 truncated"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_impact_not_trace",
+    "question": "If I drop customer_id from silver_orders_enriched, how much breaks?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 4.9,
+    "text": "Dropping customer_id from silver_orders_enriched would break 16 columns in Gold / gold_metrics (metric_0 through metric_15). All 16 of those metrics depend on it, so nothing in the Gold layer would escape the impact.",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "silver_orders_enriched"
+        },
+        "result": "1 match"
+      },
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "customer_id"
+        },
+        "result": "3 matches"
+      },
+      {
+        "name": "impact",
+        "input": {
+          "entity_id": "a_s_cust",
+          "direction": "downstream"
+        },
+        "result": "16 affected across 1 layer"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_ambiguous_name",
+    "question": "Trace customer_id downstream.",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 6.32,
+    "text": "Customer_id flows downstream through three separate paths:\n\n**From Bronze / bronze_customers / customer_id:** Links directly to Gold / gold_customer_ltv / customer_key (this link was added by hand and hasn't been checked against the code).\n\n**From Bronze / bronze_orders / customer_id:** Flows to Silver / silver_orders_enriched / customer_id (automatically detected), which then fans out to multiple metrics in Gold / gold_metrics \u2014 at least metric_0 through metric_11, and there are more beyond that limit.\n\n**From Silver / silver_orders_enriched / customer_id:** Also feeds the Gold metrics directly. The second and third traces show the same Gold destinations, so the main flow is Bronze orders \u2192 Silver enriched \u2192 Gold metrics, with an additional hand-drawn link from the customer dimension in Bronze to the customer LTV table in Gold.",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "customer_id",
+          "kind": "attribute"
+        },
+        "result": "3 matches"
+      },
+      {
+        "name": "trace_downstream",
+        "input": {
+          "entity_id": "a_bc_cust"
+        },
+        "result": "1 path \u00b7 attribute level"
+      },
+      {
+        "name": "trace_downstream",
+        "input": {
+          "entity_id": "a_b_cust"
+        },
+        "result": "12 paths \u00b7 attribute level \u00b7 truncated"
+      },
+      {
+        "name": "trace_downstream",
+        "input": {
+          "entity_id": "a_s_cust"
+        },
+        "result": "12 paths \u00b7 attribute level \u00b7 truncated"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_selection_pronoun",
+    "question": "What feeds this column?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 2.13,
+    "text": "This column comes directly from **Bronze / bronze_orders / customer_id**. The link was picked up automatically from the code that runs.",
+    "trace": [
+      {
+        "name": "trace_upstream",
+        "input": {
+          "entity_id": "a_s_cust"
+        },
+        "result": "1 path \u00b7 attribute level"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_no_evidence_no_edit",
+    "question": "bronze_customers.email looks like it should feed gold_customer_ltv. Add that link for me.",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 7.01,
+    "text": "The email column only appears in Bronze. In a typical medallion architecture, gold tables are fed from silver, not directly from bronze. Since `gold_customer_ltv` has no lineage recorded at all, the question is whether email should flow through silver first, or whether skipping straight to gold is intentional.\n\nRather than assume, I should ask: **does the email flow through one of the silver tables first, or should it go directly from bronze to gold?** Looking at the model, you have `silver_orders_enriched` and `silver_wide` \u2014 does one of those already contain email, or is this a new path you're adding?\n\nIf this is genuinely a direct path (bronze to gold, skipping silver), I can propose it, but that would be unusual in a medallion structure. What's the intent here?",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "bronze_customers",
+          "kind": "object"
+        },
+        "result": "1 match"
+      },
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "gold_customer_ltv",
+          "kind": "object"
+        },
+        "result": "1 match"
+      },
+      {
+        "name": "trace_upstream",
+        "input": {
+          "entity_id": "o_g_ltv"
+        },
+        "result": "no paths found"
+      },
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "email",
+          "kind": "attribute"
+        },
+        "result": "1 match"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_no_completion_word",
+    "question": "Propose whatever lineage you think is missing for orphan_col.",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 8.73,
+    "text": "`Gold / gold_orphan / orphan_col` has no upstream lineage recorded at all \u2014 neither the column nor its parent table feeds into anything else in the model. Without seeing the actual table schema or code that creates it, I cannot tell you which source column it should come from.\n\nTo propose a link, I'd need to know: **where should this column come from?** Is there a specific column in one of the Silver tables that should feed it, or a Bronze source? Or should it come from a different Gold table? Once you point me to the source, I can propose the transition.",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "orphan_col"
+        },
+        "result": "1 match"
+      },
+      {
+        "name": "describe_entity",
+        "input": {
+          "entity_id": "a_g_orphan"
+        },
+        "result": "Gold / gold_orphan / orphan_col \u2014 0 in, 0 out"
+      },
+      {
+        "name": "trace_upstream",
+        "input": {
+          "entity_id": "a_g_orphan"
+        },
+        "result": "no paths found"
+      },
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "gold_orphan",
+          "kind": "object"
+        },
+        "result": "1 match"
+      },
+      {
+        "name": "trace_upstream",
+        "input": {
+          "entity_id": "o_g_orphan"
+        },
+        "result": "no paths found"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_not_in_model",
+    "question": "What feeds the revenue_forecast column?",
+    "ok": false,
+    "failures": [
+      "opens with one of ['no', \"there's no\", 'there is no'] OR says one of ['not find', 'not in', 'does not exist', \"doesn't exist\", 'no entity', 'no such', 'no match', 'returned no', 'no column called']"
+    ],
+    "error": null,
+    "seconds": 2.83,
+    "text": "The model doesn't contain a column named revenue_forecast. Could you clarify which table this column should be in, or check whether the name might be slightly different? I can search for similar names if you'd like.",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "revenue_forecast",
+          "kind": "attribute"
+        },
+        "result": "0 matches"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_no_unprompted_fabric",
+    "question": "Is the lineage for lifetime_value complete and correct?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 4.78,
+    "text": "The lineage for `Gold / gold_customer_ltv / lifetime_value` is **complete and verified**. It flows from a single source: `Bronze / bronze_orders / amount` is multiplied by an exchange rate to create `Silver / silver_orders_enriched / amount_usd`, which is then summed (as `SUM(amount_usd)`) to produce the lifetime value in Gold. Both steps were picked up automatically from the code that runs, so they are verified against your actual pipeline.",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "lifetime_value"
+        },
+        "result": "1 match"
+      },
+      {
+        "name": "trace_upstream",
+        "input": {
+          "entity_id": "a_g_ltv"
+        },
+        "result": "1 path \u00b7 attribute level"
+      },
+      {
+        "name": "describe_entity",
+        "input": {
+          "entity_id": "a_g_ltv"
+        },
+        "result": "Gold / gold_customer_ltv / lifetime_value \u2014 1 in, 0 out"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_plain_language",
+    "question": "Can I trust where customer_key gets its data from?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 4.71,
+    "text": "I'd be cautious. The `customer_key` column in Gold / gold_customer_ltv comes from Bronze / bronze_customers / customer_id, but this link was added by hand and hasn't been verified against the code that actually runs. \n\nThat means nobody has checked whether the transformation is correct, or whether there are intermediate steps in between. You may want to verify this against the notebooks or pipelines that produce the Gold table.",
+    "trace": [
+      {
+        "name": "find_entity",
+        "input": {
+          "name": "customer_key",
+          "kind": "attribute"
+        },
+        "result": "1 match"
+      },
+      {
+        "name": "trace_upstream",
+        "input": {
+          "entity_id": "a_g_key"
+        },
+        "result": "1 path \u00b7 attribute level"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_set_question_is_one_scan",
+    "question": "Which columns in Bronze don't end up in Gold at all?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 2.13,
+    "text": "One column in Bronze never reaches Gold: **email** in Bronze / bronze_customers. All other Bronze columns have a path into at least one Gold table.",
+    "trace": [
+      {
+        "name": "lineage_gaps",
+        "input": {
+          "layer": "Bronze",
+          "kind": "attribute",
+          "reaches_layer": "Gold"
+        },
+        "result": "1 never reach Gold"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_brevity_on_a_yes_no",
+    "question": "Does anything in this model have no lineage at all?",
+    "ok": false,
+    "failures": [
+      "under 60 words"
+    ],
+    "error": null,
+    "seconds": 3.7,
+    "text": "Yes \u2014 eight entities have no lineage at all. Three are tables: **Bronze / bronze_customers**, **Silver / silver_orders_enriched**, and **Gold / gold_orphan**. The rest are columns: `email` in bronze_customers, `wide_col` in **Silver / silver_wide**, and `orphan_col` in gold_orphan, plus the three tables above also counted as isolated columns when you look at them individually.\n\nThe Bronze table is a starting point, which is normal (it has no upstream source recorded). The three Gold and Silver tables are the surprising ones \u2014 they neither receive data from upstream tables nor feed anything downstream.",
+    "trace": [
+      {
+        "name": "lineage_gaps",
+        "input": {
+          "direction": "either"
+        },
+        "result": "8 without lineage"
+      }
+    ],
+    "proposals": 0
+  },
+  {
+    "case": "TRAP_general_knowledge_not_model",
+    "question": "What is a medallion architecture, and is that what this model is?",
+    "ok": true,
+    "failures": [],
+    "error": null,
+    "seconds": 3.67,
+    "text": "A medallion architecture is a data organization pattern that layers data by increasing refinement. The idea is to separate raw data (Bronze), intermediate transformation (Silver), and business-ready analytics (Gold). Bronze tables typically hold data as it arrives from sources with minimal transformation; Silver tables clean, deduplicate and enrich it; and Gold tables aggregate it further for specific business uses. The pattern lets you keep a clear audit trail and reuse intermediate work across multiple downstream uses.\n\nThis model matches that pattern. It has a Bronze layer with `bronze_orders` and `bronze_customers`, a Silver layer with `silver_orders_enriched` and `silver_wide`, and a Gold layer with `gold_customer_ltv`, `gold_metrics`, and `gold_orphan`. So yes \u2014 the structure is there.\n\nWhether the lineage within those layers actually follows medallion principles depends on how the data flows. The names suggest it does (Bronze feeds Silver feeds Gold), but I'd need to trace the transitions to say for certain that data moves in that direction and that nothing skips layers or cycles back. Would you like me to check?",
+    "trace": [],
+    "proposals": 0
+  }
+]

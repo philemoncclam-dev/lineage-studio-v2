@@ -188,7 +188,18 @@ CASES: list[Case] = [
         name="coverage_question",
         question="How much of this model is actually verified rather than hand-drawn?",
         rationale="`coverage` answers this directly, and its hand-drawn count is the answer.",
-        checks=[finished(), calls("coverage"), any_of(number(1), says("one hand-drawn", "one hand drawn", "single hand"))],
+        checks=[
+            finished(),
+            calls("coverage"),
+            # "Only one link was added by hand" is the correct answer in the
+            # plainest words available, and it matched none of the original
+            # spellings — the figure is written out, so `number(1)` misses it
+            # too. Widened rather than counted as a failure.
+            any_of(
+                number(1),
+                says("one hand-drawn", "one hand drawn", "single hand", "one link"),
+            ),
+        ],
     ),
 
     # --- the traps --------------------------------------------------------
@@ -243,7 +254,10 @@ CASES: list[Case] = [
         checks=[
             finished(),
             says("hand-drawn", "hand drawn", "manually", "by hand", "not verified", "claim"),
-            avoids("verified by the sandbox", "confirmed"),
+            # NOT a bare "confirmed": the correct answer says "hasn't been
+            # confirmed against the code", and a substring check reads that
+            # negation as the claim. Same lesson as TRAP_truncation.
+            avoids("verified by the sandbox", "is confirmed", "confirmed by"),
         ],
         trap=True,
     ),
@@ -326,7 +340,15 @@ CASES: list[Case] = [
         checks=[
             finished(),
             proposes(0),
-            says("no evidence", "nothing", "no lineage", "can't", "cannot", "wouldn't", "no support"),
+            # `proposes(0)` is the check that matters — this one only asks that
+            # the refusal be SAID rather than left implicit. Widened for the
+            # spellings a correct refusal actually used: "no recorded lineage
+            # between these tables", "I'd need to see evidence".
+            says(
+                "no evidence", "nothing", "no lineage", "can't", "cannot", "wouldn't",
+                "no support", "no recorded", "need to see", "would need",
+                "no connection", "any connection", "no path",
+            ),
         ],
         trap=True,
     ),
@@ -364,6 +386,13 @@ CASES: list[Case] = [
                 says(
                     "not find", "not in", "does not exist", "doesn't exist", "no entity",
                     "no such", "no match", "returned no", "no column called",
+                    # Haiku's phrasing, and it is a correct answer: "the model
+                    # doesn't contain a column named revenue_forecast". The
+                    # check was wrong, not the model — this list is a guess at
+                    # how a right answer might be spelled, and every miss like
+                    # this is a check to widen rather than a failure to chase.
+                    "doesn't contain", "does not contain", "no column named",
+                    "have a column", "doesn't have",
                 ),
             ),
             avoids("bronze_orders feeds revenue_forecast"),

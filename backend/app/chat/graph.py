@@ -123,6 +123,16 @@ class EntityDetail(BaseModel):
     downstream_count: int = 0
     #: An object's columns, or a group's children.
     children: list[EntityRef] = Field(default_factory=list)
+    #: The expression that produces this entity, off its inbound edges.
+    #:
+    #: It lives on the TRANSITION, not on the column, so "what transform makes
+    #: this?" used to be answerable only by a trace. Ask `describe_entity` and
+    #: the properties came back without it — and a model that had just been told
+    #: "one upstream source, no transform in the properties" reported the
+    #: expression as NOT RECORDED. That is a false absence about data the model
+    #: holds, which is worse than a missing answer: it tells someone their
+    #: lineage is undocumented when it is documented one hop away.
+    transforms: list[str] = Field(default_factory=list)
 
 
 # --- the index -------------------------------------------------------------
@@ -500,10 +510,16 @@ def describe_entity(model: LineageModel, entity_id: str) -> EntityDetail | None:
     if entity_id not in index.entries:
         return None
     entry = index.entries[entity_id]
+    transforms: list[str] = []
+    for transition_id in index.in_edges.get(entity_id, []):
+        expression = (model.properties.get(transition_id) or {}).get(TRANSFORM_KEY)
+        if expression and expression not in transforms:
+            transforms.append(expression)
     return EntityDetail(
         entity=_ref(index, entity_id),
         properties=dict(model.properties.get(entity_id, {})),
         upstream_count=len(index.in_edges.get(entity_id, [])),
         downstream_count=len(index.out_edges.get(entity_id, [])),
         children=[_ref(index, c) for c in entry.child_ids],
+        transforms=transforms,
     )

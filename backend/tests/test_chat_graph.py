@@ -322,3 +322,20 @@ def test_a_search_limit_is_never_reported_as_an_absence_of_lineage():
     genuinely_absent = trace_downstream(model, "a_b_amount", to_layer="Gold")
     assert genuinely_absent.truncated is False
     assert "No downstream lineage" in (genuinely_absent.note or "")
+
+
+def test_describe_entity_carries_the_transform_off_its_inbound_edge():
+    """A false absence is worse than a missing answer.
+
+    The expression lives on the TRANSITION, so `describe_entity` used to return
+    properties without it — and a model told "one upstream source, no transform
+    in the properties" reported the transform as NOT RECORDED. That tells
+    someone their lineage is undocumented when it is documented one hop away.
+    Caught by the eval: `transform_quoted` failed on exactly that sentence.
+    """
+    from app.chat.graph import describe_entity
+
+    model = _model()
+    detail = describe_entity(model, "a_g_ltv")
+    assert detail is not None
+    assert any("SUM" in t.upper() for t in detail.transforms), detail.transforms

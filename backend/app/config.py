@@ -52,7 +52,13 @@ class Settings(BaseSettings):
     #: Fabric: the app serves every other path without it, and `/chat/status`
     #: lets the UI hide the assistant rather than offer a failing button.
     anthropic_api_key: str | None = None
-    anthropic_model: str = "claude-opus-5"
+    #: Haiku by default — an assistant that costs little enough to leave on is
+    #: worth more than a sharper one nobody can afford to ask. The tool layer is
+    #: where the accuracy lives (every fact comes back through a deterministic
+    #: graph walk), so the model's job is choosing the walk and saying the
+    #: result, and a small model does both. Set ANTHROPIC_MODEL=claude-opus-5
+    #: for the harder judgment calls; `evals/run.py --model` grades either.
+    anthropic_model: str = "claude-haiku-4-5-20251001"
 
     #: `anthropic` or `openai_compatible`. The second is the common dialect
     #: spoken by Gemini, Groq, OpenRouter and Ollama alike — which one you get

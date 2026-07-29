@@ -252,3 +252,75 @@ def test_coverage_of_an_empty_model_does_not_divide_by_anything():
     result = coverage(LineageModel())
     assert result.objects.total == 0
     assert result.attributes.without_lineage == 0
+
+
+# --- gaps by direction, and by destination ----------------------------------
+#
+# The question that produced these: "which attributes in this layer don't end up
+# in the data product?" Nothing answered it. `lineage_gaps` said zero — true, and
+# useless, because it means "no edges at all" and these had edges. So the
+# assistant hand-rolled it: seventeen tool calls, one trace per attribute, to
+# assemble an answer one scan can return whole.
+
+
+def test_a_leaf_is_a_dead_end_but_not_a_gap():
+    """The default and `downstream` must disagree, or the new mode is decoration.
+
+    `a_ltv` has an inbound edge and no outbound one. It is NOT a lineage gap —
+    calling it one buries the real gaps under every terminal column in Gold —
+    and it IS a dead end, which is a different question with a different answer.
+    """
+    either = {e.id for e in unconnected(_model(), kind="attribute").entities}
+    dead = {e.id for e in unconnected(_model(), kind="attribute", direction="downstream").entities}
+    assert "a_ltv" not in either
+    assert "a_ltv" in dead
+
+
+def test_roots_are_found_by_direction_upstream():
+    """`a_amount` feeds the whole model and nothing feeds it."""
+    roots = {e.id for e in unconnected(_model(), kind="attribute", direction="upstream").entities}
+    assert "a_amount" in roots
+    assert "a_net" not in roots
+
+
+def test_what_never_reaches_a_layer_is_one_scan():
+    """The actual question: which columns don't end up in Gold.
+
+    `a_amount`, `a_net` and `a_tax` all do, several hops apart. `a_orphan` does
+    not — and it has to be found by REACHABILITY, not by counting its edges.
+    """
+    result = unconnected(_model(), kind="attribute", reaches_layer="Gold")
+    assert {e.id for e in result.entities} == {"a_orphan"}
+
+
+def test_having_edges_does_not_mean_arriving():
+    """The case the edge-count test gets wrong.
+
+    A column with lineage that leads somewhere else entirely is exactly what
+    "isn't used in the data product" means, and it is invisible to any check
+    that only asks whether an entity has edges.
+    """
+    model = _model()
+    model.layers[0].objects[0].children.append(
+        type(model.layers[0].objects[0].children[-1])(
+            id="a_sidetrack", name="sidetrack", children=[]
+        )
+    )
+    model.transitions.append(
+        type(model.transitions[0])(id="t_side", source="a_sidetrack", target="a_orphan")
+    )
+    stranded = {e.id for e in unconnected(model, kind="attribute", reaches_layer="Gold").entities}
+    assert "a_sidetrack" in stranded, "an edge that goes nowhere near Gold is not arrival"
+
+
+def test_an_empty_result_says_which_question_it_answered():
+    """"0 without lineage" under an answer about reaching Gold is a contradiction."""
+    note = unconnected(_model(), kind="attribute", layer="Gold", reaches_layer="Gold").note
+    assert "reaches Gold" in note
+
+
+def test_a_bad_direction_is_refused_rather_than_guessed():
+    import pytest as _pytest
+
+    with _pytest.raises(TypeError):
+        unconnected(_model(), direction="sideways")

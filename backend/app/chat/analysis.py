@@ -147,15 +147,68 @@ def coverage(model: LineageModel) -> Coverage:
     return result
 
 
+def _reaching_layer(index, layer: str) -> set[str]:
+    """Every entity with a path INTO `layer`, by one reverse sweep.
+
+    The alternative — walk downstream from each candidate and look for the
+    layer — is a full traversal per candidate, and it is what an assistant does
+    by hand when no tool offers this: one `trace_downstream` per entity, a
+    dozen rounds, and an answer assembled from a dozen partial results. One
+    reverse BFS from the destination answers it for every candidate at once.
+    """
+    wanted = layer.strip().lower()
+    seen = {
+        e.id
+        for e in index.entries.values()
+        if e.layer_name.strip().lower() == wanted or (e.kind == "layer" and e.name.strip().lower() == wanted)
+    }
+    queue: deque[str] = deque(seen)
+    while queue:
+        node = queue.popleft()
+        for transition_id in index.in_edges.get(node, []):
+            src, _tgt = index.edges[transition_id]
+            if src not in seen:
+                seen.add(src)
+                queue.append(src)
+    return seen
+
+
 def unconnected(
     model: LineageModel,
     kind: EntityKind | None = None,
     layer: str | None = None,
     limit: int = MAX_LISTED,
+    direction: str | None = None,
+    reaches_layer: str | None = None,
 ) -> UnconnectedResult:
-    """Entities with no transition at either end — the actual lineage gaps."""
+    """The lineage gaps — by default, entities with no transition at either end.
+
+    `direction` narrows what counts as a gap, because "no lineage" is three
+    different questions and only one of them is symmetric:
+
+    - `None`/`either` — nothing in AND nothing out. The strict default: a column
+      with an inbound edge is a leaf, not a gap, and reporting it as one buries
+      the real gaps under every terminal column in Gold.
+    - `downstream` — nothing OUT. Dead ends: the data arrives and stops.
+    - `upstream` — nothing IN. Roots, or columns nobody has traced back yet.
+
+    `reaches_layer` asks the stronger question: which of these never REACH a
+    given layer, however many hops it takes. "Which of these don't end up in
+    the data product" is the everyday form of it, and without this the answer
+    can only be assembled from one trace per entity — a dozen rounds for one
+    question, which is exactly what it cost before this existed.
+
+    An entity already inside the destination layer counts as having arrived, so
+    a Gold column with no lineage is not "failing to reach Gold" — it is a gap,
+    which is the default scan's question. Pair `reaches_layer` with `layer` to
+    say where you are asking FROM.
+    """
     index = build_index(model)
     wanted_layer = layer.strip().lower() if layer else None
+    wants = (direction or "either").strip().lower()
+    if wants not in ("either", "downstream", "upstream"):
+        raise TypeError("direction must be 'either', 'downstream' or 'upstream'")
+    reaching = _reaching_layer(index, reaches_layer) if reaches_layer else None
 
     found: list[EntityRef] = []
     for entry in index.entries.values():
@@ -176,12 +229,32 @@ def unconnected(
             continue
         if wanted_layer and entry.layer_name.strip().lower() != wanted_layer:
             continue
-        if index.out_edges.get(entry.id) or index.in_edges.get(entry.id):
+        if reaching is not None:
+            # The destination question wins outright: an entity WITH edges that
+            # still never arrives is the interesting answer here, and the
+            # edge-count test would have excluded it.
+            if entry.id in reaching:
+                continue
+        elif wants == "downstream":
+            if index.out_edges.get(entry.id):
+                continue
+        elif wants == "upstream":
+            if index.in_edges.get(entry.id):
+                continue
+        elif index.out_edges.get(entry.id) or index.in_edges.get(entry.id):
             continue
         found.append(ref_of(index, entry.id))
 
     found.sort(key=lambda r: r.path)
     truncated = len(found) > limit
+    if reaches_layer:
+        empty_note = f"Everything listed reaches {reaches_layer}."
+    elif wants == "downstream":
+        empty_note = "Everything of that kind feeds something."
+    elif wants == "upstream":
+        empty_note = "Everything of that kind is fed by something."
+    else:
+        empty_note = "Every entity of that kind has at least one transition."
     return UnconnectedResult(
         entities=found[:limit],
         count=len(found),
@@ -189,7 +262,7 @@ def unconnected(
         note=(
             f"Showing {limit} of {len(found)}."
             if truncated
-            else ("Every entity of that kind has at least one transition." if not found else None)
+            else (empty_note if not found else None)
         ),
     )
 

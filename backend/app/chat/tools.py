@@ -138,11 +138,13 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "lineage_gaps",
         "description": (
-            "List entities with NO transition at either end — the actual gaps "
-            "in this model's lineage. A column with an inbound edge and none "
-            "outbound is a leaf, not a gap, and is excluded; so are layers and "
-            "groups, which are containers rather than data. Use this for "
-            "'which columns have no lineage', not a trace."
+            "The gaps in this model's lineage, as ONE scan — never a trace per "
+            "entity. By default: entities with no transition at either end "
+            "(layers and groups are containers, and are excluded). Narrow it "
+            "with `direction` for dead ends or roots, and with `reaches_layer` "
+            "for 'which of these never end up in X'. Any question of the form "
+            "'which ones don't reach / aren't used in / don't feed <layer>' is "
+            "this tool with `reaches_layer` set — one call, complete answer."
         ),
         "input_schema": {
             "type": "object",
@@ -153,6 +155,26 @@ TOOLS: list[dict[str, Any]] = [
                     "description": "Restrict to one level. 'attribute' means columns.",
                 },
                 "layer": {"type": "string", "description": "Restrict to one layer."},
+                "direction": {
+                    "type": "string",
+                    "enum": ["either", "downstream", "upstream"],
+                    "description": (
+                        "What counts as a gap. 'either' (default) is nothing in "
+                        "AND nothing out; 'downstream' is dead ends — the data "
+                        "arrives and stops; 'upstream' is entities nothing feeds."
+                    ),
+                },
+                "reaches_layer": {
+                    "type": "string",
+                    "description": (
+                        "Return only entities with NO path into this layer, at "
+                        "any number of hops. Overrides `direction`: an entity "
+                        "with plenty of edges that still never arrives is "
+                        "exactly what this asks for. Entities already IN that "
+                        "layer count as arrived — set `layer` to where you are "
+                        "asking FROM."
+                    ),
+                },
             },
         },
     },
@@ -265,6 +287,8 @@ def run_tool(
             model,
             kind=_str(args, "kind"),  # type: ignore[arg-type]
             layer=_str(args, "layer"),
+            direction=_str(args, "direction"),
+            reaches_layer=_str(args, "reaches_layer"),
         ).model_dump()
 
     if name == "impact":

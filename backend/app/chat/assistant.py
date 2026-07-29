@@ -155,6 +155,26 @@ the answer:
 - For "which columns have no lineage", use `lineage_gaps`, not a series of \
   traces. For "how complete is this model" or "how much of this is verified", \
   use `coverage` — its hand-drawn count is the answer to the second one.
+- For "which of these never reach X", "what isn't used in X", "what doesn't end \
+  up in X" — `lineage_gaps` with `reaches_layer` set to X (and `layer` set to \
+  where you are looking from). ONE call answers it completely.
+
+# One scan, not a trace each
+
+A question about a SET is answered by a scan. Tracing the members one at a time \
+is slower and answers worse, and it is the most common way a turn is wasted \
+here: a dozen rounds to rebuild by hand, and partially, what one call returns \
+whole.
+
+So before tracing, ask whether this is one entity or a set. "Which \
+attributes…", "what isn't…", "how many…", "anything that…" are sets. Trace when \
+the user asks HOW something flows, or when they named the single thing they \
+mean.
+
+Then stop. A scan that returned everything has answered the question — do not \
+confirm it entity by entity afterwards, and do not run the mirror-image query \
+to check. If a result surprises you, report it; re-deriving it is spending the \
+user's turn to reassure yourself.
 
 # The model versus live Fabric
 
@@ -226,9 +246,31 @@ internals. Two questions cover most of what they want: "where does this number \
 come from" and "what breaks if I change this". Answer those plainly.
 
 Lead with the answer in the first sentence — the thing they would repeat to a \
-colleague. Supporting detail comes after, for whoever wants it. Answer in \
-prose. Keep it short: a few sentences for a simple question, and never a wall \
-of text for one they can act on in a line.
+colleague. Supporting detail comes after, for whoever wants it. Answer in prose.
+
+**BE SHORT. Most answers are one to three sentences.** A yes/no question gets \
+the yes or no and the one fact behind it. Length is not thoroughness; it is the \
+reader's time, and the second paragraph is usually where a good answer starts \
+going wrong.
+
+Concretely, and these are the habits to break:
+
+- **Do not list what you can count.** "None of the eight reach it" beats eight \
+  bullets. List items only when the user asked which ones, or when there are \
+  few enough that naming them IS the answer — roughly five. Above that, give \
+  the count and offer the list.
+- **Answer the question that was asked, not the neighbouring ones.** If you \
+  noticed something else worth knowing, one clause is the whole budget for it. \
+  Resist "looked at from the other end", "two of those also", "which suggests".
+- **Do not restate the question, narrate your search, or summarise your own \
+  answer at the end.** No "let me check", no "in summary".
+- **Do not offer to do the next thing** unless you genuinely cannot proceed \
+  without an answer from them.
+- No headings. No bold labels on every line. Prose, and at most one short list.
+
+Say more only when the user asks for detail, or when a caveat changes what they \
+would do. A caveat is never what you cut to save room — cut the elaboration \
+instead.
 
 Name entities by their path (`Gold / customer_ltv / lifetime_value`) so they \
 can find them on the canvas. Walk a path hop by hop only when the user asked \
@@ -385,7 +427,9 @@ def ask(
                 payload = {"error": str(exc) or f"bad call to {call.name}"}
                 is_error = True
             trace.append(
-                ToolCall(name=call.name, input=args, result=_summarize(call.name, payload))
+                ToolCall(
+                    name=call.name, input=args, result=_summarize(call.name, payload, args)
+                )
             )
             results.append(
                 {
@@ -502,7 +546,7 @@ def _selection_lines(model: LineageModel, selection: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _summarize(name: str, payload: Any) -> str:
+def _summarize(name: str, payload: Any, args: dict[str, Any] | None = None) -> str:
     """One line describing a tool result, for the UI's trace.
 
     Deliberately reports the traversal's own qualifiers — level, truncation —
@@ -547,7 +591,20 @@ def _summarize(name: str, payload: Any) -> str:
     if name == "lineage_gaps":
         count = payload.get("count", 0)
         listed = len(payload.get("entities") or [])
-        return f"{count} without lineage" + (f" (showing {listed})" if listed < count else "")
+        # The scan answers three different questions now, and "3 without
+        # lineage" beside an answer about what never reaches Gold is a trace
+        # line that contradicts the prose it sits under.
+        target = (args or {}).get("reaches_layer")
+        direction = (args or {}).get("direction")
+        if target:
+            what = f"{count} never reach {target}"
+        elif direction == "downstream":
+            what = f"{count} dead end"
+        elif direction == "upstream":
+            what = f"{count} with nothing upstream"
+        else:
+            what = f"{count} without lineage"
+        return what + (f" (showing {listed})" if listed < count else "")
     if name == "impact":
         count = payload.get("count", 0)
         layers = len(payload.get("by_layer") or {})

@@ -116,6 +116,29 @@ def proposes(n: int) -> Check:
     return Check(f"proposes exactly {n} edit(s)", lambda a: len(a.proposals) == n)
 
 
+def brief(max_words: int) -> Check:
+    """The answer fits in a reader's attention.
+
+    Graded because length is a real failure and an invisible one: nothing in a
+    long answer is WRONG, so no fidelity check fires, and the user quietly stops
+    reading. The prompt asks for one to three sentences; this is the backstop.
+    """
+    def run(a: Answer) -> bool:
+        return len(a.text.split()) <= max_words
+    return Check(f"under {max_words} words", run)
+
+
+def at_most_calls(n: int) -> Check:
+    """The set question was answered by a scan, not by tracing each member.
+
+    Counts calls rather than naming them: there are many ways to hand-roll a
+    scan and only the cost is common to all of them.
+    """
+    def run(a: Answer) -> bool:
+        return len(a.trace) <= n
+    return Check(f"at most {n} tool calls", run)
+
+
 def finished() -> Check:
     """Not stopped by the round bound or a refusal."""
     return Check("finished cleanly", lambda a: a.stop_reason == "end_turn")
@@ -378,6 +401,47 @@ CASES: list[Case] = [
             # The flag names and the internal vocabulary are ours, not theirs.
             avoids("derived: false", "derived=false", "attribute-level", "entity_id",
                    "transition id", "level: object", "truncated: true"),
+        ],
+        trap=True,
+    ),
+    Case(
+        name="TRAP_set_question_is_one_scan",
+        question=(
+            "Which columns in Bronze don't end up in Gold at all?"
+        ),
+        rationale=(
+            "The question that exposed this: asked about a layer's attributes "
+            "reaching a data product, the assistant ran SEVENTEEN calls — "
+            "lineage_gaps, then describe_entity and trace_downstream on each "
+            "member in turn — and wrote 250 words for a one-word answer. "
+            "`lineage_gaps` with `reaches_layer` returns it whole in one call. "
+            "Graded on cost, because the prose was not wrong, only wasteful."
+        ),
+        checks=[
+            finished(),
+            calls("lineage_gaps"),
+            at_most_calls(4),
+            brief(90),
+            # `bronze_customers.email` is the one Bronze column with no path
+            # into Gold. Ground truth, from the same scan the tool runs.
+            says("email"),
+        ],
+        trap=True,
+    ),
+    Case(
+        name="TRAP_brevity_on_a_yes_no",
+        question="Does anything in this model have no lineage at all?",
+        rationale=(
+            "A yes/no question gets the yes or no and the fact behind it. The "
+            "failure is the essay: the count, then every entity listed, then "
+            "the mirror-image query 'looked at from the other end', then an "
+            "offer to propose edges nobody asked for."
+        ),
+        checks=[
+            finished(),
+            calls("lineage_gaps"),
+            at_most_calls(3),
+            brief(60),
         ],
         trap=True,
     ),

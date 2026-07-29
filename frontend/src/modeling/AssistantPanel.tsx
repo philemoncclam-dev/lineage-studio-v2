@@ -21,6 +21,7 @@
 //     table-level walk is a visible contradiction instead of a silent one.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { askAssistant, fetchChatStatus } from '../api'
+import { useOptionalAuth } from '../auth/auth'
 import type { AssistantAnswer, ChatMessage, ProposedEdit } from '../api'
 import type { EntityId, LineageModel } from '../model/types'
 import { BarsSpinner } from '../shell/BarsSpinner'
@@ -77,6 +78,13 @@ export function AssistantPanel({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [configured, setConfigured] = useState<boolean | null>(null)
+  // A backend that refuses anonymous questions is CONFIGURED — the key is
+  // there, it just will not spend it on a stranger. Tracked separately so the
+  // panel can say "sign in" rather than "not available", which would send
+  // somebody looking for a missing key that is not missing.
+  const [needsAuth, setNeedsAuth] = useState(false)
+  const auth = useOptionalAuth()
+  const signedIn = auth?.phase === 'signed-in'
 
   const paths = useMemo(() => entityPaths(model), [model])
   const scroller = useRef<HTMLDivElement | null>(null)
@@ -85,7 +93,9 @@ export function AssistantPanel({
     let cancelled = false
     void fetchChatStatus()
       .then((s) => {
-        if (!cancelled) setConfigured(s.configured)
+        if (cancelled) return
+        setConfigured(s.configured)
+        setNeedsAuth(Boolean(s.requires_auth))
       })
       // An unreachable backend is indistinguishable from an unconfigured one
       // from here, and both mean the same thing to the user: not available.
@@ -232,6 +242,14 @@ export function AssistantPanel({
         <div className="as-off">
           The assistant isn’t available on this backend. It needs an
           <code> ANTHROPIC_API_KEY</code> in the environment.
+        </div>
+      ) : needsAuth && !signedIn ? (
+        /* Configured, but it will not answer an anonymous question — asking
+           costs money, and the answer is scoped to the asker's own Fabric.
+           Said here rather than discovered as a 401 on a typed-out question. */
+        <div className="as-off">
+          Sign in to use the assistant. This backend answers as the signed-in
+          user, so its Fabric answers match the workspaces you can open.
         </div>
       ) : (
         <>

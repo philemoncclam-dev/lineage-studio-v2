@@ -19,7 +19,7 @@
 // something is the sign-in button.
 
 import { useState, type ReactNode } from 'react'
-import { ExcelMark, FabricMark, OneLakeMark } from './SourceMarks'
+import { ExcelMark, FabricMark } from './SourceMarks'
 
 interface Chip {
   label: string
@@ -56,7 +56,7 @@ const ORBITS: Orbit[] = [
     duration: 60,
     reverse: true,
     chips: [
-      { label: 'Yardi', angle: 25, file: 'yardi' },
+      { label: 'Bloomberg', angle: 25, file: 'bloomberg' },
       { label: 'Excel', angle: 205, file: 'excel', fallback: <ExcelMark /> },
     ],
   },
@@ -65,7 +65,7 @@ const ORBITS: Orbit[] = [
     duration: 78,
     chips: [
       { label: 'Advent Portfolio Exchange', angle: -105, file: 'apx' },
-      { label: 'OneLake', angle: 75, file: 'onelake', fallback: <OneLakeMark /> },
+      { label: 'Rimes', angle: 75, file: 'rimes' },
     ],
   },
 ]
@@ -110,9 +110,14 @@ function ChipBody({ chip, style }: { chip: Chip; style: React.CSSProperties }) {
           onError={() => setAttempt((n) => n + 1)}
           onLoad={(e) => {
             const img = e.currentTarget
+            // An SVG with a viewBox and no width/height reports naturalWidth 0
+            // — the same file shape that used to render blank. Fall back to the
+            // laid-out box, which the CSS height guarantees is non-zero.
+            const w = img.naturalWidth || img.clientWidth
+            const h = img.naturalHeight || img.clientHeight
             // A wordmark squeezed into a circle is either cropped or shrunk to
             // an illegible smudge. Past 1.6:1 it gets a pill instead.
-            setWide(img.naturalWidth / (img.naturalHeight || 1) > 1.6)
+            setWide(h > 0 && w / h > 1.6)
           }}
         />
       )}

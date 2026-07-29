@@ -7,12 +7,16 @@ change, no rebuild wiring** — the file name is the whole contract.
 
 | File | Chip |
 | --- | --- |
-| `fabric.svg` | Microsoft Fabric |
-| `onelake.svg` | OneLake |
-| `excel.svg` | Excel |
-| `yardi.svg` | Yardi |
-| `apx.svg` | Advent Portfolio Exchange |
-| `kdb.svg` | kdb+ |
+| `fabric.*` | Microsoft Fabric |
+| `excel.*` | Excel |
+| `kdb.*` | kdb+ |
+| `apx.*` | Advent Portfolio Exchange |
+| `bloomberg.*` | Bloomberg |
+| `rimes.*` | Rimes |
+
+`yardi.svg` and `1631348963813.jpeg` sit here unused — no chip points at them.
+Add one in `src/auth/SourceOrbits.tsx` (a label, an angle and the file's
+basename) and they are back on a ring.
 
 `.png` works too — try `.svg` first, since these are drawn small and again at 2x
 on a retina screen, and a raster logo goes soft at exactly the size a login
@@ -26,6 +30,13 @@ how `Fabric_final_x256.svg` arrived here — a 256×256 PNG — and it is now
 Square icon or wide wordmark, either is fine. The chip measures the file when
 it loads and becomes a circle or a pill accordingly, so you do not have to say
 which you dropped in.
+
+**An SVG with no `width`/`height` used to render blank**, which is most brand-kit
+SVGs — `yardi.svg` is one, carrying only a `viewBox`. An `<img>` given only
+`max-*` constraints has nothing to resolve that against and lays out at zero.
+The CSS now sets a real height, so a dimensionless file is fine; noted because
+"I dropped it in and nothing appeared" has exactly one other cause (the wrong
+extension, above) and both look identical from the outside.
 
 ## What happens if a file is missing
 

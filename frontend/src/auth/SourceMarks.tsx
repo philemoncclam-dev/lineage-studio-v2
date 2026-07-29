@@ -52,16 +52,7 @@ export function ExcelMark({ size = 22 }: MarkProps) {
   )
 }
 
-/** OneLake — a droplet over the lake's layers. */
-export function OneLakeMark({ size = 22 }: MarkProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path
-        d="M12 2.5c3.4 4 5.3 6.7 5.3 9a5.3 5.3 0 11-10.6 0c0-2.3 1.9-5 5.3-9z"
-        fill="#2f8fd0"
-      />
-      <path d="M4 17.6c2.7 1.5 5.3 1.5 8 0s5.3-1.5 8 0" stroke="#9fd0ee" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-      <path d="M4 20.8c2.7 1.5 5.3 1.5 8 0s5.3-1.5 8 0" stroke="#cfe7f7" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-    </svg>
-  )
-}
+// The OneLake droplet lived here and is gone: it was a shape invented for a
+// product whose real mark we do not have, and it read as exactly that. The
+// lesson is the one at the top of this file — when there is no asset, a name is
+// honest and a drawing is a guess wearing a brand's authority.

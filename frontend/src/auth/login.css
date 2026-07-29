@@ -125,7 +125,7 @@
 }
 
 .lg-chip-wordmark .lg-logo {
-  max-height: 18px;
+  height: 18px;
   max-width: 104px;
 }
 
@@ -204,10 +204,17 @@
   border: 0;
 }
 
+/* An EXPLICIT height, not just a max.
+   `yardi.svg` carried a viewBox and no width/height — normal for a brand-kit
+   SVG — and an <img> with only max-* constraints has nothing to resolve that
+   against, so it laid out at zero and the chip rendered blank. A real height
+   with `width: auto` gives every image a box whether or not the file states
+   its own size. */
 .lg-logo {
   display: block;
+  height: 26px;
+  width: auto;
   max-width: 100%;
-  max-height: 26px;
   object-fit: contain;
 }
 

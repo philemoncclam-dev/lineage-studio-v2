@@ -6,7 +6,8 @@ notebooks, lakehouses, tables, and columns.
 - **Phase 1 (current):** metadata + static notebook parsing → visual lineage graph.
 - **Phase 2:** sandbox Spark execution for accurate column-level lineage.
 
-See [`CLAUDE.md`](./CLAUDE.md) for architecture and commands.
+See [`CLAUDE.md`](./CLAUDE.md) for architecture and commands, and
+[`DEPLOYMENT.md`](./DEPLOYMENT.md) for where prod runs and what is still open.
 
 ## Quick start
 

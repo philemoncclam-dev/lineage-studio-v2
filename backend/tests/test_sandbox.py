@@ -9,15 +9,25 @@ child, and the child reports that back as `saw_credentials`.
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.sandbox import runner as _runner
 from app.sandbox._refs import make_ref
 from app.sandbox.protocol import RunRequest
 from app.sandbox.runner import run_sandbox
+
+# The child modules are launched by path and import each other as siblings, so
+# the sandbox directory has to lead sys.path to import them here too.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app" / "sandbox"))
+import _isolation  # noqa: E402
 
 CELLS = [
     "from pyspark.sql import Row",  # import — must not invent a 'sql' read
@@ -89,6 +99,69 @@ def test_child_cannot_see_a_parent_credential(monkeypatch):
     monkeypatch.setenv("PURVIEW_CLIENT_SECRET", "super-secret-value")
     result = run_sandbox(RunRequest(notebook_name="nb", cells=["df = spark.table('t')"]), engine="stub")
     assert result.saw_credentials is False
+
+
+def test_the_child_gets_a_throwaway_home_not_the_real_one():
+    """The hole the env scrub never covered.
+
+    `DefaultAzureCredential` needs no environment variable at all — it reads
+    `~/.azure/msal_token_cache.json`. So passing the real `USERPROFILE` through
+    handed the child a working Azure token while the credential probe, which
+    only looked at `os.environ`, truthfully reported having seen none. Every
+    variable that resolves to a home must therefore land inside the run's own
+    temp tree.
+    """
+    workdir = tempfile.mkdtemp(prefix="lsbx_test_")
+    try:
+        env = _runner._scrubbed_env(workdir)
+        real_home = str(Path.home()).lower()
+        for var in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP"):
+            value = env[var].lower()
+            assert value != real_home, f"{var} still points at the real profile"
+            assert value.startswith(workdir.lower()), f"{var} escaped the workdir"
+        # Spark writes `.ivy2`/`derby.log` into it, so it has to actually exist.
+        assert Path(env["HOME"]).is_dir()
+        # The Windows fallback pair resolves to the same fake home, not the real
+        # one — leaving it behind would reopen the door the rest of this closes.
+        assert (env["HOMEDRIVE"] + env["HOMEPATH"]).lower().startswith(workdir.lower())
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def test_no_secret_env_var_survives_the_scrub():
+    """The half that always worked, kept honest alongside the new half."""
+    os.environ["PURVIEW_CLIENT_SECRET"] = "super-secret-value"
+    try:
+        workdir = tempfile.mkdtemp(prefix="lsbx_test_")
+        env = _runner._scrubbed_env(workdir)
+        shutil.rmtree(workdir, ignore_errors=True)
+    finally:
+        os.environ.pop("PURVIEW_CLIENT_SECRET", None)
+    assert not [k for k in env if "SECRET" in k.upper() or k.upper().startswith("PURVIEW_")]
+
+
+def test_the_credential_probe_notices_a_reachable_token_cache(tmp_path, monkeypatch):
+    """The probe's own regression test.
+
+    It reported False in exactly the case that mattered, because it only read
+    `os.environ`. Given a home with an `.azure` cache in it, it must now say so
+    — otherwise the redirection above could regress silently and the assertion
+    would keep claiming everything was fine.
+    """
+    (tmp_path / ".azure").mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    assert _isolation.saw_credentials() is True
+    assert any("azure" in item.lower() for item in _isolation.reachable_credentials())
+
+    # A clean home is clean — the probe must not cry wolf on every run.
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    monkeypatch.setenv("HOME", str(clean))
+    monkeypatch.setenv("USERPROFILE", str(clean))
+    monkeypatch.setenv("HOMEDRIVE", "")
+    monkeypatch.setenv("HOMEPATH", "")
+    assert _isolation.saw_credentials() is False
 
 
 def test_a_cell_that_reads_and_writes_the_same_table_is_a_write():

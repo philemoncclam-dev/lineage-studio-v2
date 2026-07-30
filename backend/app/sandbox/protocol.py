@@ -100,9 +100,11 @@ class Coverage(BaseModel):
     #: Cells that hand at least one SQL statement to Spark, and the statement count.
     sql_cells: int = 0
     sql_statements: int = 0
-    #: Cells that write through the DataFrame API and issue no SQL. On the stub
-    #: engine — which is production — these are precisely the writes that cannot
-    #: get column lineage, because that needs a plan and a plan needs Spark.
+    #: Cells that write through the DataFrame API and issue no SQL. These used
+    #: to be precisely the writes the stub engine — which is production — could
+    #: never give column lineage to. `_dflineage` reads those chains now, so the
+    #: count is no longer a blind-spot tally: cross it with
+    #: `writes_without_column_lineage` to see which of them actually abstained.
     dataframe_write_cells: int = 0
     #: Cells building SQL from an f-string or a variable. Skipped deliberately:
     #: the text is unknowable without running the cell.
@@ -141,12 +143,14 @@ class ColumnFlow(BaseModel):
     `transform` is the SQL of the producing expression when the column is
     computed rather than passed through unchanged.
 
-    `from_table` is the source column's OWNING table when the deriving engine
-    knew it. The Spark path resolves attributes by name and cannot say (so the
-    frontend matches on the column name and drops the edge when two candidates
-    tie); the sqlglot path qualifies every column against the schemas and knows
-    exactly. Optional rather than required because that asymmetry is real — an
-    absent value means "not known", never "no table".
+    `from_table` is the source column's OWNING table. Both engines fill it: the
+    Spark path matches each referenced attribute's Catalyst exprId against the
+    relation that produced it, the sqlglot path qualifies every column against
+    the schemas. It stays optional because some columns are genuinely unowned —
+    one resolving to a CTE or a subquery rather than a base table, or an
+    unqualified column in a MERGE that could belong to either side. An absent
+    value means "not known", never "no table", and the frontend then falls back
+    to matching on the column name (dropping the edge when two candidates tie).
     """
 
     to_table: str
@@ -189,9 +193,10 @@ class RunResult(BaseModel):
     #: WRITTEN tables need an analyzer, so only those are missing there. Feeds
     #: attribute-level model creation.
     table_schemas: dict[str, list[ColumnSchema]] = Field(default_factory=dict)
-    #: Column-level lineage. The spark engine derives it from analyzed plans
-    #: (all cells, no source table); the stub engine derives it from the SQL
-    #: text with sqlglot (SQL cells only, source table resolved).
+    #: Column-level lineage, source table resolved on both engines. The spark
+    #: engine derives it from Catalyst's analyzed plans; the stub engine from
+    #: the SQL text with sqlglot, plus a bounded reading of DataFrame chains
+    #: (`_dflineage`) for the cells that issue no SQL.
     column_lineage: list[ColumnFlow] = Field(default_factory=list)
     #: ref → its parts, for every ref named in `reads`, `writes` or
     #: `table_schemas`. Lets the UI group tables by workspace without parsing

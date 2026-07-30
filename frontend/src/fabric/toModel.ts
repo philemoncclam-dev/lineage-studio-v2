@@ -165,16 +165,18 @@ function layerName(inColumn: Node[], col: number, lastCol: number): string {
 /**
  * Which read table a source column came from.
  *
- * Prefer what the engine SAID. The sqlglot path qualifies every column against
- * the schemas and reports `from_table` outright, so there is nothing to infer —
- * and it is right in exactly the case the fallback below cannot be: a join
- * where both sides carry the same column name.
+ * Prefer what the engine SAID. Both engines now report `from_table` outright —
+ * sqlglot qualifies every column against the schemas, and Spark matches each
+ * referenced attribute's Catalyst exprId to the relation that produced it — so
+ * there is usually nothing to infer, and what they say is right in exactly the
+ * case the fallback below cannot be: a join where both sides carry the same
+ * column name.
  *
- * Spark's plan analysis names the column but not its table, so for that engine
- * we still resolve against the schemas of the tables this run read. An ambiguous
- * name (two inputs both have `id`) stays unresolved rather than guessed — a
- * wrong column edge is worse than a missing one, and the table-level edge still
- * carries the lineage.
+ * The fallback survives for the columns that are genuinely unowned (one
+ * resolving to a CTE or subquery rather than a base table) and for models saved
+ * before the engines filled the field. An ambiguous name (two inputs both have
+ * `id`) stays unresolved rather than guessed — a wrong column edge is worse
+ * than a missing one, and the table-level edge still carries the lineage.
  */
 function resolveSourceTable(
   flow: SandboxColumnFlow,

@@ -1,0 +1,617 @@
+"""Column-level lineage from DataFrame code, with no Spark session and no JVM.
+
+The counterpart to `_sqllineage`, and it exists for the same reason: **production
+has no JVM**. That module recovers columns from `spark.sql(...)` text; this one
+recovers them from the other half of a notebook — `spark.table(...).select(...)
+.withColumn(...).write.saveAsTable(...)` — which until now produced no column
+edges at all on the deployed app, however well the Spark executor handled it
+locally.
+
+It is a *symbolic reader*, not an interpreter: nothing is evaluated. Each cell is
+parsed to an AST and the chains are walked, carrying a set of columns and, per
+column, the source columns it came from. `spark.table("orders")` seeds that set
+from the schemas the backend fetched from OneLake — so the column names are real
+data, not inference, exactly as in `_sqllineage`.
+
+WHAT MAKES THIS SAFE TO DO AT ALL is the degradation rule, which is the same one
+`_sqllineage` follows and the same one the frontend follows: **a wrong column
+edge is worse than a missing one.** So anything not positively understood
+produces nothing rather than a guess —
+
+  * an unrecognised method makes the frame unknown, and an unknown frame writes
+    no lineage;
+  * a name assigned inside an `if`/`for`/`with`/`try`, or by anything other than
+    a plain `name = <chain>`, becomes unknown — the value depends on control
+    flow this module does not evaluate;
+  * a computed column with no `.alias(...)` is dropped, because Spark's
+    generated name for it (`upper(region)`) is a naming convention we would be
+    guessing at, and a card showing a column the table does not have is a lie;
+  * a `*`-style or dynamically built column list yields nothing.
+
+The honest summary: this covers the shapes medallion notebooks are actually
+written in, and abstains everywhere else. It is not Catalyst, and where the two
+disagree Catalyst is right — which is why the Spark engine still overrides it
+whenever a JVM is available.
+
+Pure stdlib. Imported by the stub child, which is launched by path with a
+scrubbed environment and must never reach `app`.
+"""
+
+from __future__ import annotations
+
+import ast
+
+import _refs
+
+#: Methods that change neither the column set nor any column's provenance.
+#: Row-level operations, ordering, caching, partitioning — a filter removes rows
+#: and a repartition moves them, and neither touches where a column came from.
+_PASSTHROUGH = {
+    "filter", "where", "orderBy", "sort", "sortWithinPartitions", "limit", "offset",
+    "distinct", "dropDuplicates", "drop_duplicates", "repartition", "coalesce",
+    "cache", "persist", "unpersist", "checkpoint", "localCheckpoint", "hint",
+    "sample", "alias", "as", "observe", "dropna", "fillna", "na", "replace",
+}
+
+#: Reader/writer format verbs — `.parquet(p)` is a read on `spark.read` and a
+#: write on `df.write`, so the receiver chain decides which.
+_FORMATS = {"parquet", "csv", "json", "orc", "text", "avro", "delta", "xml", "load", "save"}
+
+#: Write verbs that name their target directly.
+_TARGET_VERBS = {"saveAsTable", "insertInto"}
+
+#: Column constructors — `col("x")`, `column("x")`, `F.col("x")`.
+_COL_FUNCS = {"col", "column"}
+
+#: Expression methods that rename their result.
+_ALIAS_METHODS = {"alias", "name", "as_"}
+
+#: Expression methods that neither rename nor add a source.
+_EXPR_PASSTHROUGH = {
+    "cast", "astype", "desc", "asc", "desc_nulls_last", "desc_nulls_first",
+    "asc_nulls_last", "asc_nulls_first", "otherwise", "over", "isNotNull",
+    "isNull", "between", "substr", "when",
+}
+
+
+class Frame:
+    """A DataFrame's columns and, per column, where each came from.
+
+    `prov` maps an output column to the `(ref, column)` pairs feeding it — the
+    ref being a canonical workspace-qualified table, which is what makes the
+    resulting edge attributable instead of a bare column name.
+    """
+
+    __slots__ = ("columns", "prov", "transforms")
+
+    def __init__(
+        self,
+        columns: list[str],
+        prov: dict[str, set[tuple[str, str]]],
+        transforms: dict[str, str] | None = None,
+    ) -> None:
+        self.columns = columns
+        self.prov = prov
+        self.transforms = transforms or {}
+
+    def copy(self) -> Frame:
+        return Frame(
+            list(self.columns),
+            {k: set(v) for k, v in self.prov.items()},
+            dict(self.transforms),
+        )
+
+
+class Grouped:
+    """The intermediate `df.groupBy(...)` — only `.agg(...)` and the shorthand
+    aggregates are meaningful on it."""
+
+    __slots__ = ("frame", "keys")
+
+    def __init__(self, frame: Frame, keys: list[tuple[str, set[tuple[str, str]]]]) -> None:
+        self.frame = frame
+        self.keys = keys
+
+
+def _literal_str(node: ast.AST) -> str | None:
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _receiver_chain(node: ast.AST) -> list[str]:
+    """The attribute names leading up to a call, outermost last.
+
+    `df.write.mode('overwrite').saveAsTable` → `['write', 'mode']`. Mirrors the
+    helper in `_coverage`, kept local so this module stays independently usable.
+    """
+    names: list[str] = []
+    cur: ast.AST | None = node
+    while True:
+        if isinstance(cur, ast.Call):
+            cur = cur.func
+        elif isinstance(cur, ast.Attribute):
+            names.append(cur.attr)
+            cur = cur.value
+        else:
+            break
+    return list(reversed(names[1:])) if names else []
+
+
+def _root_name(node: ast.AST) -> str | None:
+    """The variable a chain starts from — `spark` in `spark.read.table(...)`."""
+    cur: ast.AST | None = node
+    while True:
+        if isinstance(cur, ast.Call):
+            cur = cur.func
+        elif isinstance(cur, ast.Attribute):
+            cur = cur.value
+        elif isinstance(cur, ast.Name):
+            return cur.id
+        elif isinstance(cur, ast.Subscript):
+            cur = cur.value
+        else:
+            return None
+
+
+class _Reader:
+    """Walks a notebook's cells, carrying variable state between them.
+
+    State persists across cells because a notebook does: the DataFrame built in
+    cell 3 is the one written in cell 7. A variable whose value stops being
+    understood is set to `None` (unknown) rather than removed, so a later write
+    through it abstains instead of silently reaching the stale frame it used to
+    hold.
+    """
+
+    def __init__(self, schemas: dict[str, list[dict]], ctx: dict) -> None:
+        self.schemas = schemas
+        self.ctx = ctx
+        self.env: dict[str, Frame | Grouped | None] = {}
+        self.flows: list[dict] = []
+        self.log: list[str] = []
+        #: Written targets, so the caller can tell a covered write from a
+        #: skipped one without re-deriving.
+        self.writes: set[str] = set()
+
+    # ---- sources -------------------------------------------------------
+
+    def _frame_for_ref(self, ref: str) -> Frame | None:
+        """A base frame for a table, from the schemas the backend fetched.
+
+        No schema means no columns, and no columns means no honest lineage —
+        inventing them from the query would be exactly the guess this module
+        refuses to make. `SchemaResolution` already reports why a table's
+        columns were unavailable.
+        """
+        columns = [c.get("name") for c in self.schemas.get(ref, []) if c.get("name")]
+        if not columns:
+            return None
+        return Frame(list(columns), {c: {(ref, c)} for c in columns})
+
+    def _read_source(self, call: ast.Call) -> Frame | None:
+        """A read call → its base frame, or None if this isn't a read."""
+        func = call.func
+        if not isinstance(func, ast.Attribute):
+            return None
+        chain = _receiver_chain(call)
+        root = _root_name(call)
+
+        raw: str | None = None
+        if func.attr == "table" and (root == "spark" or "read" in chain):
+            raw = _literal_str(call.args[0]) if call.args else None
+        elif func.attr in _FORMATS and "read" in chain:
+            raw = _literal_str(call.args[0]) if call.args else None
+        if raw is None:
+            return None
+        return self._frame_for_ref(_refs.as_ref(raw, **self.ctx))
+
+    # ---- column expressions --------------------------------------------
+
+    def _columns_of(self, node: ast.AST, frame: Frame) -> set[str]:
+        """Every column of `frame` an expression references.
+
+        Only names the frame actually has are returned. A string constant is a
+        column name in Spark's DataFrame API (`.select("a", "b")`), but it is
+        also every other kind of string — a mode, a join type, a format — so
+        membership in the frame is what distinguishes them, and an unknown
+        string contributes nothing rather than a phantom column.
+        """
+        found: set[str] = set()
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                if sub.value in frame.prov:
+                    found.add(sub.value)
+            elif isinstance(sub, ast.Attribute) and sub.attr in frame.prov:
+                # `df.region` — only when the receiver is a known frame, so an
+                # unrelated `.region` on some other object is not swept up.
+                if isinstance(sub.value, ast.Name) and isinstance(
+                    self.env.get(sub.value.id), Frame
+                ):
+                    found.add(sub.attr)
+        return found
+
+    def _output_name(self, node: ast.AST) -> str | None:
+        """The name a column expression produces, or None when Spark would
+        generate one.
+
+        A bare string or `col("x")` keeps its name; `.alias("y")` renames.
+        Anything computed and unaliased returns None and is dropped by the
+        caller — see the module note on why the generated name is not guessed.
+        """
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            if isinstance(self.env.get(node.value.id), Frame):
+                return node.attr
+        if isinstance(node, ast.Subscript):
+            return _literal_str(node.slice)
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Attribute):
+                if func.attr in _ALIAS_METHODS:
+                    return _literal_str(node.args[0]) if node.args else None
+                if func.attr in _EXPR_PASSTHROUGH:
+                    return self._output_name(func.value)
+                return None
+            if isinstance(func, ast.Name) and func.id in _COL_FUNCS:
+                return _literal_str(node.args[0]) if node.args else None
+            return None
+        return None
+
+    def _sources(
+        self, node: ast.AST, frame: Frame
+    ) -> tuple[set[tuple[str, str]], str | None]:
+        """What one column expression reads, and its transform text.
+
+        Separate from naming because the two are independently knowable: a
+        `withColumn("doubled", col("amount") * 2)` is named by its first
+        argument, so the expression need not name itself for its *inputs* to be
+        perfectly clear.
+        """
+        sources: set[tuple[str, str]] = set()
+        for column in self._columns_of(node, frame):
+            sources |= frame.prov.get(column, set())
+        computed = not (
+            isinstance(node, ast.Constant)
+            or (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name))
+            or (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in _COL_FUNCS
+            )
+        )
+        transform = None
+        if computed:
+            try:
+                transform = ast.unparse(node)
+            except Exception:  # noqa: BLE001 — a missing transform is cosmetic
+                transform = None
+        return sources, transform
+
+    def _resolve(
+        self, node: ast.AST, frame: Frame
+    ) -> tuple[str, set[tuple[str, str]], str | None] | None:
+        """One column expression → `(out name, source pairs, transform)`.
+
+        None when the expression has no knowable output name — see
+        `_output_name`. An expression that references no known column is still
+        valid: `lit(0).alias("flag")` is a real output column with no lineage,
+        and comes back with an empty source set.
+        """
+        name = self._output_name(node)
+        if not name:
+            return None
+        sources, transform = self._sources(node, frame)
+        return name, sources, transform
+
+    def _project(self, frame: Frame, args: list[ast.AST]) -> Frame | None:
+        """A `.select(...)`-style projection over a frame."""
+        columns: list[str] = []
+        prov: dict[str, set[tuple[str, str]]] = {}
+        transforms: dict[str, str] = {}
+        for arg in args:
+            if isinstance(arg, ast.Starred):
+                return None  # `select(*cols)` — the list is not knowable here.
+            resolved = self._resolve(arg, frame)
+            if resolved is None:
+                continue  # Unnamed computed column — dropped, not guessed.
+            name, sources, transform = resolved
+            if name not in prov:
+                columns.append(name)
+            prov[name] = sources
+            if transform:
+                transforms[name] = transform
+        if not columns:
+            return None
+        return Frame(columns, prov, transforms)
+
+    # ---- frame methods --------------------------------------------------
+
+    def _method(self, base: Frame, attr: str, call: ast.Call) -> Frame | Grouped | None:
+        args = list(call.args)
+        if attr in _PASSTHROUGH:
+            return base.copy()
+        if attr == "select":
+            return self._project(base, args)
+        # `selectExpr` takes SQL strings, not column expressions. Reading them
+        # would mean parsing SQL fragments against a frame — `_sqllineage`'s job,
+        # on a statement this is not — so it degrades instead.
+        if attr == "withColumn" and len(args) >= 2:
+            name = _literal_str(args[0])
+            if not name:
+                return None
+            sources, transform = self._sources(args[1], base)
+            out = base.copy()
+            if name not in out.prov:
+                out.columns.append(name)
+            out.prov[name] = sources
+            if transform:
+                out.transforms[name] = transform
+            return out
+        if attr == "withColumnRenamed" and len(args) >= 2:
+            old, new = _literal_str(args[0]), _literal_str(args[1])
+            if not old or not new or old not in base.prov:
+                return None
+            out = base.copy()
+            out.columns = [new if c == old else c for c in out.columns]
+            out.prov[new] = out.prov.pop(old)
+            if old in out.transforms:
+                out.transforms[new] = out.transforms.pop(old)
+            return out
+        if attr == "drop":
+            dropped: set[str] = set()
+            for arg in args:
+                dropped |= self._columns_of(arg, base)
+            out = base.copy()
+            out.columns = [c for c in out.columns if c not in dropped]
+            out.prov = {k: v for k, v in out.prov.items() if k not in dropped}
+            return out
+        if attr == "join":
+            return self._join(base, call)
+        if attr in ("union", "unionAll", "unionByName"):
+            return self._union(base, call)
+        if attr == "groupBy" or attr == "groupby":
+            keys: list[tuple[str, set[tuple[str, str]]]] = []
+            for arg in args:
+                resolved = self._resolve(arg, base)
+                if resolved is None:
+                    return None
+                keys.append((resolved[0], resolved[1]))
+            return Grouped(base, keys)
+        return None
+
+    def _join(self, left: Frame, call: ast.Call) -> Frame | None:
+        """`a.join(b, on, how)` — the case column ownership exists for.
+
+        Both sides' columns survive, each keeping its own provenance. Where the
+        two share a column name the left wins, matching Spark's own resolution
+        order for the ambiguous case; the *edge* is still attributed correctly
+        because provenance carries the owning table, which is precisely what a
+        name-matched edge could never say.
+        """
+        if not call.args:
+            return None
+        right = self._eval(call.args[0])
+        if not isinstance(right, Frame):
+            return None
+        out = left.copy()
+        for column in right.columns:
+            if column not in out.prov:
+                out.columns.append(column)
+                out.prov[column] = set(right.prov.get(column, set()))
+            else:
+                out.prov[column] |= right.prov.get(column, set())
+        return out
+
+    def _union(self, left: Frame, call: ast.Call) -> Frame | None:
+        """A union contributes both sides' provenance to the same output column.
+
+        Positional for `union`, by name for `unionByName` — but the column set
+        is the left's either way, so the distinction only changes which source
+        column pairs with which output, and only when the two sides disagree on
+        order. Rather than guess at that, a positional union whose sides differ
+        in column names abstains.
+        """
+        if not call.args:
+            return None
+        right = self._eval(call.args[0])
+        if not isinstance(right, Frame):
+            return None
+        by_name = isinstance(call.func, ast.Attribute) and call.func.attr == "unionByName"
+        out = left.copy()
+        if by_name:
+            for column in out.columns:
+                out.prov[column] |= right.prov.get(column, set())
+            return out
+        if len(right.columns) != len(out.columns):
+            return None
+        for mine, theirs in zip(out.columns, right.columns):
+            out.prov[mine] |= right.prov.get(theirs, set())
+        return out
+
+    def _agg(self, grouped: Grouped, call: ast.Call) -> Frame | None:
+        columns: list[str] = []
+        prov: dict[str, set[tuple[str, str]]] = {}
+        transforms: dict[str, str] = {}
+        for name, sources in grouped.keys:
+            columns.append(name)
+            prov[name] = sources
+        for arg in call.args:
+            if isinstance(arg, ast.Starred):
+                return None
+            resolved = self._resolve(arg, grouped.frame)
+            if resolved is None:
+                continue
+            name, sources, transform = resolved
+            if name not in prov:
+                columns.append(name)
+            prov[name] = sources
+            if transform:
+                transforms[name] = transform
+        # `agg({"amount": "sum"})` — the dict form names its output
+        # `sum(amount)`, a generated name, so it is skipped for the same reason
+        # an unaliased expression is.
+        if not columns:
+            return None
+        return Frame(columns, prov, transforms)
+
+    # ---- evaluation -----------------------------------------------------
+
+    def _eval(self, node: ast.AST) -> Frame | Grouped | None:
+        if isinstance(node, ast.Name):
+            value = self.env.get(node.id)
+            return value.copy() if isinstance(value, Frame) else value
+        if not isinstance(node, ast.Call):
+            return None
+
+        source = self._read_source(node)
+        if source is not None:
+            return source
+
+        func = node.func
+        if not isinstance(func, ast.Attribute):
+            return None
+
+        base = self._eval(func.value)
+        if isinstance(base, Grouped):
+            if func.attr == "agg":
+                return self._agg(base, node)
+            return None
+        if not isinstance(base, Frame):
+            return None
+        return self._method(base, func.attr, node)
+
+    # ---- writes ---------------------------------------------------------
+
+    def _write_target(self, call: ast.Call) -> tuple[str, ast.AST] | None:
+        """A write call → `(raw target name, the node holding the frame)`.
+
+        The frame is whatever `.write` was reached on, which is not the call's
+        immediate receiver: `df.write.mode('overwrite').saveAsTable(t)` chains
+        two more nodes in between.
+        """
+        func = call.func
+        if not isinstance(func, ast.Attribute):
+            return None
+        chain = _receiver_chain(call)
+        if func.attr in _TARGET_VERBS:
+            pass
+        elif func.attr in _FORMATS and ("write" in chain or "writeTo" in chain):
+            pass
+        else:
+            return None
+
+        raw = _literal_str(call.args[0]) if call.args else None
+        if raw is None:
+            for kw in call.keywords:
+                if kw.arg in ("path", "name", "tableName"):
+                    raw = _literal_str(kw.value)
+        if raw is None:
+            return None
+
+        # Walk back down the chain to whatever `.write` hangs off.
+        cur: ast.AST = func.value
+        while True:
+            if isinstance(cur, ast.Call):
+                cur = cur.func
+            elif isinstance(cur, ast.Attribute):
+                if cur.attr in ("write", "writeTo"):
+                    return raw, cur.value
+                cur = cur.value
+            else:
+                return None
+
+    def _record_write(self, call: ast.Call) -> None:
+        target = self._write_target(call)
+        if target is None:
+            return
+        raw, frame_node = target
+        ref = _refs.as_ref(raw, **self.ctx)
+        if not _refs.table_of(ref):
+            return
+        frame = self._eval(frame_node)
+        if not isinstance(frame, Frame):
+            return
+        self.writes.add(ref)
+        emitted = 0
+        for column in frame.columns:
+            transform = frame.transforms.get(column)
+            for from_table, from_column in sorted(frame.prov.get(column, set())):
+                self.flows.append(
+                    {
+                        "to_table": ref,
+                        "to_column": column,
+                        "from_column": from_column,
+                        "from_table": from_table,
+                        "transform": transform,
+                    }
+                )
+                emitted += 1
+        if emitted:
+            self.log.append(
+                f"[stub] {emitted} column edge(s) into {_refs.table_of(ref)} "
+                "read from the DataFrame chain."
+            )
+
+    # ---- statements -----------------------------------------------------
+
+    def _assign(self, stmt: ast.Assign | ast.AnnAssign) -> None:
+        targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+        if len(targets) != 1 or not isinstance(targets[0], ast.Name):
+            return
+        if stmt.value is None:
+            return
+        name = targets[0].id
+        value = self._eval(stmt.value)
+        # An unrecognised right-hand side makes the name unknown rather than
+        # leaving the previous frame in place — a stale frame is how you get a
+        # confidently wrong edge two cells later.
+        self.env[name] = value
+
+    def _invalidate(self, node: ast.AST) -> None:
+        """Every name a statement could rebind becomes unknown.
+
+        Used for control flow, which is walked for writes but not evaluated: a
+        frame built inside a loop depends on the iteration, and this module does
+        not iterate.
+        """
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Name) and isinstance(sub.ctx, (ast.Store, ast.Del)):
+                self.env[sub.id] = None
+
+    def run_cell(self, cell: str) -> None:
+        try:
+            tree = ast.parse(cell or "")
+        except SyntaxError:
+            return
+
+        for stmt in tree.body:
+            if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
+                self._assign(stmt)
+            elif isinstance(stmt, ast.Expr):
+                if isinstance(stmt.value, ast.Call):
+                    self._record_write(stmt.value)
+            else:
+                # Control flow, function bodies, imports: names they bind are
+                # unknown from here on. Writes nested inside are deliberately
+                # not recorded — whether they run at all is not knowable.
+                self._invalidate(stmt)
+
+
+def analyze_cells(
+    cells: list[str],
+    schemas: dict[str, list[dict]],
+    ctx: dict,
+) -> tuple[list[dict], set[str], list[str]]:
+    """Every DataFrame write across a notebook → `(flows, written refs, log)`.
+
+    Never raises. The stub engine's whole contract is that a run degrades rather
+    than fails, and a notebook doing something this module has never seen is the
+    normal case, not an error.
+    """
+    reader = _Reader(schemas, ctx)
+    for cell in cells or []:
+        try:
+            reader.run_cell(cell)
+        except Exception as exc:  # noqa: BLE001
+            reader.log.append(f"[stub] DataFrame read gave up on a cell: {type(exc).__name__}")
+    return reader.flows, reader.writes, reader.log

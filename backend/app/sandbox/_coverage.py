@@ -7,8 +7,8 @@ no SQL both came back as `column_lineage: []`. Exactly the same ambiguity lives
 on the *code* side, and it is bigger. A run reports no column lineage when:
 
   * the notebook genuinely moves no columns;
-  * the notebook is written against the DataFrame API and the engine was the stub
-    (production — there is no JVM there), which derives columns from SQL only;
+  * the notebook is written against the DataFrame API in a shape the stub engine
+    (production — there is no JVM there) reads its chains but abstains on;
   * a table name arrived as an f-string or a variable, so the statement was
     skipped rather than guessed at;
   * the cell held something the parser could not read at all.
@@ -158,12 +158,19 @@ def notes(cov: dict, engine: str) -> list[str]:
     trying to work out why a table came back bare.
     """
     out: list[str] = []
-    if engine == "stub" and cov.get("dataframe_write_cells"):
+    missing = cov.get("writes_without_column_lineage") or []
+    # Only worth saying when a write actually came back bare. The stub reads
+    # DataFrame chains now (`_dflineage`), so "this cell uses the DataFrame API"
+    # is no longer a blind spot by itself — it is one only where the chain held
+    # something the reader would not guess at, and then the uncovered write below
+    # is the honest evidence for it.
+    if engine == "stub" and cov.get("dataframe_write_cells") and missing:
         n = cov["dataframe_write_cells"]
         out.append(
-            f"[coverage] {n} cell(s) write through the DataFrame API — the stub engine "
-            "derives column lineage from SQL only, so those writes have no column edges. "
-            "This is an engine limit, not an empty notebook."
+            f"[coverage] {n} cell(s) write through the DataFrame API. The stub engine reads "
+            "those chains symbolically and abstains on anything it cannot resolve exactly, "
+            "so an uncovered write below is a chain it would not guess at — not an empty "
+            "notebook. Spark's analyzer resolves these fully where a JVM is available."
         )
     if cov.get("dynamic_sql_cells"):
         n = cov["dynamic_sql_cells"]
@@ -173,7 +180,6 @@ def notes(cov: dict, engine: str) -> list[str]:
         )
     if cov.get("unparsable_cells"):
         out.append(f"[coverage] {cov['unparsable_cells']} cell(s) could not be parsed as Python.")
-    missing = cov.get("writes_without_column_lineage") or []
     if missing:
         out.append(
             f"[coverage] {len(missing)} of {cov.get('writes', 0)} written table(s) got no "

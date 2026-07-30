@@ -20,11 +20,12 @@ write in a gold notebook; without it a whole Delta-upsert pipeline produced no
 lineage at all.
 
 What it does NOT cover is the DataFrame API — `df.select(...)`,
-`df.withColumn(...)`. That needs a plan, and a plan needs Spark. Cells written
-that way yield nothing here, deliberately: a hand-rolled approximation of
-Catalyst would fail silently on anything dynamic, and a wrong column edge is
-worse than a missing one (the same rule the frontend already applies when it
-drops ambiguous edges).
+`df.withColumn(...)`. That is `_dflineage`'s job: a sibling module reading those
+chains symbolically, under the same rule this one follows — a wrong column edge
+is worse than a missing one, so anything not positively understood yields
+nothing (the same rule the frontend applies when it drops ambiguous edges).
+Neither module is Catalyst, and the Spark engine still overrides both wherever
+a JVM exists.
 
 TABLES ARE FLATTENED BEFORE QUALIFYING. A notebook names tables at three
 different depths — `t`, `lakehouse.t`, `workspace.lakehouse.t` — and

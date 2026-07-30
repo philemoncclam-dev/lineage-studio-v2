@@ -196,10 +196,14 @@ def test_a_schema_the_backend_sent_is_never_overwritten_by_a_projection():
     assert [c.name for c in result.table_schemas[ORDERS]] == ["customer_id", "total"]
 
 
-def test_a_dataframe_only_notebook_yields_no_column_lineage_rather_than_a_guess():
-    """The DataFrame API needs a plan, and a plan needs Spark. A hand-rolled
-    approximation would fail silently, and a wrong column edge is worse than a
-    missing one."""
+def test_a_dataframe_only_notebook_now_yields_column_lineage():
+    """This used to assert `column_lineage == []`.
+
+    The DataFrame API needed a plan and a plan needed Spark, so on production —
+    which has no JVM — a notebook written this way produced no column edges at
+    all. `_dflineage` reads the chain symbolically instead, and a straight copy
+    is the simplest thing it must get right.
+    """
     result = run_sandbox(
         RunRequest(
             notebook_name="nb",
@@ -210,9 +214,13 @@ def test_a_dataframe_only_notebook_yields_no_column_lineage_rather_than_a_guess(
         ),
         engine="stub",
     )
-    assert result.column_lineage == []
-    # ...but the table-level answer is unaffected.
-    assert make_ref("out", "Bronze", "Analytics") in result.writes
+    out = make_ref("out", "Bronze", "Analytics")
+    assert out in result.writes
+    # Every column carried through, each attributed to the table it came from.
+    assert {(f.to_column, f.from_column, f.from_table) for f in result.column_lineage} == {
+        ("customer_id", "customer_id", ORDERS),
+        ("total", "total", ORDERS),
+    }
 
 
 @pytest.mark.parametrize("missing", [True, False])

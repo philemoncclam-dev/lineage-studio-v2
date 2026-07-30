@@ -31,6 +31,7 @@ from pathlib import Path
 # `app`, so the isolation contract in the docstring above still holds.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _coverage  # noqa: E402
+import _isolation  # noqa: E402
 import _refs  # noqa: E402
 
 # Loopback binding + a Python interpreter for the driver — set before Spark
@@ -69,18 +70,107 @@ def _scala_seq(seq) -> list:  # noqa: ANN001
         return []
 
 
-def _column_flows(df, target_ref: str) -> list[dict]:
+def _attr(a) -> tuple[str, int] | None:  # noqa: ANN001
+    """A Catalyst attribute → `(name, exprId)`, or None if it isn't one.
+
+    The exprId is the whole point. Catalyst gives every attribute a globally
+    unique id, so `region#12` from one relation and `region#37` from another are
+    distinguishable even though both are named "region" — which is exactly the
+    distinction a join needs and a name comparison destroys.
+    """
+    try:
+        return a.name(), int(a.exprId().id())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _attribute_owners(plan, views: dict[str, str]) -> dict[int, str]:
+    """`exprId → the ref that column came from`, over a whole analyzed plan.
+
+    Walks the plan for the aliases standing in for source tables. Reads in this
+    sandbox resolve to empty temp views, so a source appears as a
+    `SubqueryAlias` whose name is the view name — and `views` maps that back to
+    the workspace-qualified ref. Every attribute in that node's output belongs
+    to that ref, and keeps its exprId all the way up through the projections
+    above it. So one pass over the leaves answers ownership for the entire plan.
+
+    Aliases that are not registered views (`df.alias("o")`, a subquery name) are
+    skipped rather than guessed at: their attributes are already attributed to
+    the real relation underneath, which is the answer we want anyway.
+    """
+    owners: dict[int, str] = {}
+
+    def visit(node) -> None:  # noqa: ANN001
+        try:
+            children = _scala_seq(node.children())
+        except Exception:  # noqa: BLE001
+            children = []
+        for child in children:
+            visit(child)
+        # Depth-first, parents last: an outer alias that IS a known view wins
+        # over anything an inner node claimed, which is what a table read
+        # wrapped in a projection should resolve to.
+        try:
+            name = node.alias()
+        except Exception:  # noqa: BLE001
+            return
+        ref = views.get(str(name).strip("`"), "")
+        if not ref:
+            return
+        for a in _scala_seq(node.output()):
+            parsed = _attr(a)
+            if parsed is not None:
+                owners[parsed[1]] = ref
+
+    try:
+        visit(plan)
+    except Exception:  # noqa: BLE001 — ownership is a bonus, never a failure
+        pass
+    return owners
+
+
+def _column_flows(df, target_ref: str, views: dict[str, str]) -> list[dict]:
     """Per-output-column source columns, from the write's analyzed plan.
 
-    Each output NamedExpression exposes its input `references()` (attributes by
-    name); passthrough columns reference just themselves, computed ones
-    reference the inputs they derive from. Anything we can't map falls back to
-    an identity (same-named) source so a copy still draws an edge.
+    Each output NamedExpression exposes the attributes it `references()`:
+    passthrough columns reference just themselves, computed ones reference the
+    inputs they derive from. Each of those attributes is then matched **by
+    exprId** against the relation that produced it, so every edge names its
+    source table.
+
+    That ownership is why this is not the cosmetic field it looks like. Without
+    it the frontend has only a column name to match on and drops the edge
+    whenever two source tables both have a column by that name — i.e. on every
+    join, the one case where column lineage is worth having. Catalyst knew the
+    answer all along; the old code compared `a.name()` and threw it away.
+
+    A column whose source cannot be identified is **omitted**. The previous
+    identity fallback ("assume a same-named source") invented an edge for every
+    output column it failed to map, including aggregates and literals that have
+    no such source at all. Passthroughs still draw their edge — they come out of
+    the output-attribute pass below, where the exprId proves the column really
+    did come straight from that relation, rather than being assumed to.
     """
     out_names = [f.name for f in df.schema.fields]
-    flows: dict[str, tuple[list[str], str | None]] = {}
+    flows: dict[str, tuple[list[tuple[str, str | None]], str | None]] = {}
     try:
         plan = df._jdf.queryExecution().analyzed()
+        owners = _attribute_owners(plan, views)
+
+        # Pass 1 — columns carried through unchanged. The output attribute still
+        # carries the exprId of the source column, which is proof of provenance
+        # rather than an inference from its name.
+        for a in _scala_seq(plan.output()):
+            parsed = _attr(a)
+            if parsed is None:
+                continue
+            name, expr_id = parsed
+            if name in out_names and expr_id in owners:
+                flows[name] = ([(name, owners[expr_id])], None)
+
+        # Pass 2 — computed columns, which name their inputs explicitly. Runs
+        # second so it wins: an output that is both in the plan output and a
+        # named expression is the expression's, and it knows more.
         for expr in _scala_seq(plan.expressions()):
             try:
                 name = expr.name()
@@ -88,9 +178,18 @@ def _column_flows(df, target_ref: str) -> list[dict]:
                 continue
             if name not in out_names:
                 continue
-            refs = list(dict.fromkeys(a.name() for a in _scala_seq(expr.references().toSeq())))
+            refs: list[tuple[str, str | None]] = []
+            for a in _scala_seq(expr.references().toSeq()):
+                parsed = _attr(a)
+                if parsed is None:
+                    continue
+                pair = (parsed[0], owners.get(parsed[1]))
+                if pair not in refs:
+                    refs.append(pair)
+            if not refs:
+                continue
             transform = None
-            if not (len(refs) == 1 and refs[0] == name):
+            if not (len(refs) == 1 and refs[0][0] == name):
                 try:
                     transform = expr.sql()
                 except Exception:  # noqa: BLE001
@@ -101,20 +200,20 @@ def _column_flows(df, target_ref: str) -> list[dict]:
 
     result: list[dict] = []
     for out_col in out_names:
-        refs, transform = flows.get(out_col, ([out_col], None))
-        for src in refs:
+        refs, transform = flows.get(out_col, ([], None))
+        for src, from_table in refs:
             result.append(
-                {"to_table": target_ref, "to_column": out_col, "from_column": src, "transform": transform}
+                {
+                    "to_table": target_ref,
+                    "to_column": out_col,
+                    "from_column": src,
+                    # None, never "", when the plan could not attribute it — the
+                    # contract says absent means "not known".
+                    "from_table": from_table or None,
+                    "transform": transform,
+                }
             )
     return result
-
-
-def _saw_credentials() -> bool:
-    for key in os.environ:
-        up = key.upper()
-        if up.startswith(("PURVIEW_", "AZURE_")) or "SECRET" in up or "TOKEN" in up:
-            return True
-    return False
 
 
 def _ddl(cols: list[dict]) -> str:
@@ -125,7 +224,8 @@ def main() -> None:
     req = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     cells: list[str] = req.get("cells", [])
     schemas: dict[str, list[dict]] = req.get("schemas", {})
-    creds = _saw_credentials()
+    reachable = _isolation.reachable_credentials()
+    creds = bool(reachable)
     # The notebook's own workspace/lakehouse — what a bare table name means.
     ctx = {
         "default_workspace": req.get("workspace", ""),
@@ -150,7 +250,11 @@ def main() -> None:
 
     log: list[str] = ["[spark] engine=spark — plan analysis only, no actions executed."]
     if creds:
-        log.append("[spark] WARNING: credential env visible to child — isolation breach.")
+        # Named, not valued — this log is rendered in the UI.
+        log.append(
+            "[spark] WARNING: credential reachable from child — isolation breach: "
+            + ", ".join(reachable[:8])
+        )
 
     # Empty temp views carrying the real schema, so reads resolve with zero data.
     # `views` maps a Spark view name back to the ref it stands for, which is how
@@ -211,7 +315,7 @@ def main() -> None:
             table_schemas[ref] = [
                 {"name": f.name, "type": f.dataType.simpleString()} for f in df.schema.fields
             ]
-            column_lineage.extend(_column_flows(df, ref))
+            column_lineage.extend(_column_flows(df, ref, views))
         except Exception as exc:  # noqa: BLE001 — a capture failure must not abort the run
             log.append(f"[spark] could not analyze write to {_refs.table_of(ref)}: {exc}")
         _register_written(ref, df)

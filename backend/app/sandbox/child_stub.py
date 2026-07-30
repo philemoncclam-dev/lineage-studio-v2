@@ -17,13 +17,15 @@ from Spark's logical plans, sharing no code with this analog).
 It is NOT a degraded engine that only matters in CI. It is what production runs
 — the deployed backend has no JVM — so anything it cannot produce is missing
 from the deployed app, however good the Spark path is locally. The schemas below
-are the first consequence of taking that seriously.
+are the first consequence of taking that seriously; `_sqllineage` (columns from
+SQL text) and `_dflineage` (columns from DataFrame chains) are the second and
+third, and between them they are why a model built on prod now has attributes
+rather than bare table cards.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -33,6 +35,8 @@ from pathlib import Path
 # isolation contract above still holds.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _coverage  # noqa: E402
+import _dflineage  # noqa: E402
+import _isolation  # noqa: E402
 import _refs  # noqa: E402
 import _sqllineage  # noqa: E402
 
@@ -88,24 +92,12 @@ def _table_refs(refs: set[str]) -> dict:
     return _refs.table_refs(sorted(refs))
 
 
-def _saw_credentials() -> bool:
-    """Whether any Fabric/Azure credential is reachable from this process.
-
-    Must be False: the runner scrubs the environment before spawning us. This is
-    the observable half of the safety guarantee, not a functional need.
-    """
-    for key in os.environ:
-        up = key.upper()
-        if up.startswith(("PURVIEW_", "AZURE_")) or "SECRET" in up or "TOKEN" in up:
-            return True
-    return False
-
-
 def main() -> None:
     req = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     cells = req.get("cells", [])
     schemas: dict = req.get("schemas", {})
-    creds = _saw_credentials()
+    reachable = _isolation.reachable_credentials()
+    creds = bool(reachable)
     # The notebook's own workspace/lakehouse — what a bare table name means.
     ctx = {
         "default_workspace": req.get("workspace", ""),
@@ -115,7 +107,11 @@ def main() -> None:
 
     log = ["[stub] engine=stub — static analysis only, no Spark session started."]
     if creds:
-        log.append("[stub] WARNING: credential env visible to child — isolation breach.")
+        # Named, not valued — this log is rendered in the UI.
+        log.append(
+            "[stub] WARNING: credential reachable from child — isolation breach: "
+            + ", ".join(reachable[:8])
+        )
 
     # The schemas the backend already fetched from OneLake, echoed back.
     #
@@ -165,6 +161,34 @@ def main() -> None:
     all_writes |= sql_writes
     all_reads |= sql_reads - all_writes
     log.extend(sql_log)
+
+    # Column-level lineage for the DataFrame half (see _dflineage).
+    #
+    # The other half of production's blind spot, and the larger one: a notebook
+    # written against `spark.table(...).select(...).write.saveAsTable(...)` gave
+    # this engine nothing at all to work with, so every such model came out with
+    # tables and edges but no attributes. The chains are read symbolically —
+    # nothing runs — and anything not positively understood yields nothing
+    # rather than a guess.
+    #
+    # SQL wins on conflict: where both passes describe the same write, sqlglot
+    # resolved a real statement while this one reasoned about a chain, and the
+    # former is the stronger evidence.
+    df_flows, df_writes, df_log = _dflineage.analyze_cells(cells, table_schemas, ctx)
+    all_writes |= df_writes
+    log.extend(df_log)
+    sql_targets = {flow["to_table"] for flow in column_lineage}
+    seen = {
+        (f["to_table"], f["to_column"], f["from_table"], f["from_column"]) for f in column_lineage
+    }
+    for flow in df_flows:
+        if flow["to_table"] in sql_targets:
+            continue
+        key = (flow["to_table"], flow["to_column"], flow["from_table"], flow["from_column"])
+        if key in seen:
+            continue
+        seen.add(key)
+        column_lineage.append(flow)
 
     # A written table's columns, from the projection that produced it. The Spark
     # path gets these from the analyzer complete with types; here the names come

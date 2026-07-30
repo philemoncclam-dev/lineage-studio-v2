@@ -122,6 +122,61 @@ def test_a_write_is_readable_by_a_later_cell():
     assert {c.name for c in result.table_schemas[final]} == {"region_up"}
 
 
+def test_a_join_attributes_each_column_to_its_own_source_table():
+    """The gap this engine existed to close, and used to reopen.
+
+    `_column_flows` compared attribute *names*, so every Spark-derived edge came
+    back with `from_table=None`. The frontend then matched on the column name
+    and dropped the edge whenever two source tables tied — which is exactly what
+    a join is. Catalyst knew the answer the whole time: each reference carries an
+    exprId identifying the relation that produced it.
+
+    Both tables here have an `id`, so name matching cannot tell them apart and
+    ownership is the only thing that can.
+    """
+    customers = make_ref("customers", LH, WS)
+    orders = make_ref("orders", LH, WS)
+    joined = make_ref("joined", LH, WS)
+    result = run_sandbox(
+        RunRequest(
+            notebook_name="nb",
+            cells=[
+                "c = spark.table('customers')",
+                "o = spark.table('orders')",
+                "c.join(o, c['id'] == o['id']).select(c['id'], c['name'], o['amount'])"
+                ".write.saveAsTable('joined')",
+            ],
+            schemas={
+                customers: [ColumnSchema(name="id", type="long"), ColumnSchema(name="name", type="string")],
+                orders: [ColumnSchema(name="id", type="long"), ColumnSchema(name="amount", type="long")],
+            },
+            workspace=WS,
+            lakehouse=LH,
+        ),
+        engine="spark",
+    )
+    assert result.ok, result.error
+    owned = {(f.to_column, f.from_column, f.from_table) for f in result.column_lineage}
+    assert ("id", "id", customers) in owned  # ...and NOT from orders
+    assert ("name", "name", customers) in owned
+    assert ("amount", "amount", orders) in owned
+    assert all(f.from_table for f in result.column_lineage), "every edge must name its source"
+
+
+def test_no_edge_is_invented_for_a_column_with_no_source():
+    """The identity fallback claimed a same-named source for any output column
+    it failed to map — including a literal, which has no source at all."""
+    result = _run(
+        [
+            "from pyspark.sql.functions import lit",
+            "spark.table('raw_orders').select(lit(1).alias('constant'))"
+            ".write.saveAsTable('gold_const')",
+        ]
+    )
+    assert result.ok, result.error
+    assert [f for f in result.column_lineage if f.to_column == "constant"] == []
+
+
 def test_cross_workspace_tables_stay_distinct():
     """Two same-named tables in different workspaces must not collapse into one."""
     finance = make_ref("customers", "Gold", "Finance")

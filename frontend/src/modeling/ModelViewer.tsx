@@ -937,6 +937,39 @@ export default function ModelViewer({
         doCopy(selection)
         return
       }
+      // Bare C — connect from the selected entity: the keyboard's way into the
+      // very gesture the ports already do by pointer. It only ARMS the
+      // connection; the second entity is picked by clicking it, and `select`
+      // already routes a click to `completeConnect` whenever one is pending.
+      // So there is no second key to press and no second-key case to handle
+      // here: selecting anything else lands the line by definition.
+      //
+      // Which is also why a press while one is pending can only mean cancel.
+      // The source is necessarily still the selection (moving it would have
+      // completed the line), so C is a toggle on one entity, the way T is.
+      //
+      // Layers are excluded. They are band segments with no ports, so they
+      // cannot start a connection by pointer either, and `c` should not invent
+      // a second way to author something the canvas otherwise cannot.
+      //
+      // readOnly is checked even though `onChange` already no-ops there: what
+      // this sets is UI mode, not model state, and arming a connection that can
+      // never land would leave a shared link stuck in crosshair with a red mark
+      // on it and a status line asking for a target it will refuse.
+      if (e.key.toLowerCase() === 'c' && !mod && !e.shiftKey && !e.altKey) {
+        e.preventDefault()
+        if (readOnly) return
+        if (pending) {
+          setPending(null)
+          return
+        }
+        if (selection.size !== 1) return
+        const [id] = selection
+        const kind = index.entries.get(id)?.kind
+        if (kind !== 'object' && kind !== 'attribute') return
+        setPending(id)
+        return
+      }
       if (mod && e.key.toLowerCase() === 'x' && selection.size > 0) {
         e.preventDefault()
         doCopy(selection)
@@ -993,7 +1026,9 @@ export default function ModelViewer({
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- doCopy/doPaste are
     // recreated every render; the values they close over are listed instead.
-  }, [deleteSelected, onUndo, onRedo, model, onChange, selection])
+    // `pending` and `readOnly` are listed because C reads both: a stale
+    // `pending` would make the cancel press re-arm instead of clearing.
+  }, [deleteSelected, onUndo, onRedo, model, onChange, selection, pending, readOnly])
 
   // World-space rect currently on screen, used to cull cards and rows.
   const view = useMemo(
@@ -1495,6 +1530,7 @@ function Card({
       data-selected={selection.has(card.id) || undefined}
       data-traced={highlighted.has(card.id) || undefined}
       data-trace-origin={traceOrigin.has(card.id) || undefined}
+      data-connect-source={pending === card.id || undefined}
     >
       <div
         className="mv-card-header"
@@ -1565,6 +1601,7 @@ function Card({
               data-selected={selection.has(row.id) || undefined}
               data-traced={highlighted.has(row.id) || undefined}
               data-trace-origin={traceOrigin.has(row.id) || undefined}
+              data-connect-source={pending === row.id || undefined}
               onClick={(e) => onSelect(row.id, { additive: e.ctrlKey || e.metaKey, range: e.shiftKey })}
               onDoubleClick={() => onEdit(row.id)}
               onContextMenu={(e) => onContextMenu(e, row.id)}

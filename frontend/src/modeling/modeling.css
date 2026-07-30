@@ -1135,15 +1135,24 @@
    so it cannot shift a row by a pixel or reflow a card whose height the layout
    has already fixed. Negative offset pulls it just inside the edge so a row's
    mark is not clipped by the card that holds it. */
+/* `data-connect-source` — the entity C has armed a connection from — wears the
+   SAME mark, deliberately. Both answer the one question "which one did I press
+   the key on", both are transient, and both are cleared by Esc; giving the
+   second a colour of its own would make the canvas teach two marks that mean
+   the same thing. They cannot collide in practice either — arming a connection
+   does not trace, and the status line says which mode is running. */
 .mv-card[data-trace-origin],
-.mv-row[data-trace-origin] {
+.mv-row[data-trace-origin],
+.mv-card[data-connect-source],
+.mv-row[data-connect-source] {
   outline: 2px solid #d92d20;
   outline-offset: -2px;
 }
 /* Rows are already `position: relative`; the card is `position: absolute` and
    must stay that way, so only the row is lifted. Without it the next row's
    background paints over the mark's lower edge. */
-.mv-row[data-trace-origin] {
+.mv-row[data-trace-origin],
+.mv-row[data-connect-source] {
   z-index: 1;
 }
 /* The tint is for an origin that is NOT currently selected.
@@ -1153,13 +1162,20 @@
    background and left the white text on top of it, which is how the origin row
    went blank the moment it was traced (you select a row, then press the key, so
    it is always both). The outline already marks the origin; selection keeps its
-   own colours, and the two read fine together. */
-.mv-row[data-trace-origin]:not([data-selected]) {
+   own colours, and the two read fine together.
+
+   The armed connect source is ALWAYS selected — you select a row, then press C
+   — so in practice this tint never paints for it and the outline is the whole
+   mark. It is written to match anyway rather than special-cased: the port-drag
+   path can arm a source without selecting it, and that one does get the tint. */
+.mv-row[data-trace-origin]:not([data-selected]),
+.mv-row[data-connect-source]:not([data-selected]) {
   background: rgb(217 45 32 / 0.06);
 }
 /* The card's own mark sits on the whole card; when the ORIGIN is a row inside
    it, the card keeps its ordinary border and only the row is marked. */
-.mv-card[data-trace-origin] .mv-card-header {
+.mv-card[data-trace-origin] .mv-card-header,
+.mv-card[data-connect-source] .mv-card-header {
   background: rgb(217 45 32 / 0.07);
 }
 

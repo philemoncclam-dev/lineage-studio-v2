@@ -875,6 +875,29 @@ export default function ModelViewer({
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
         deleteSelected()
+        return
+      }
+      // Enter on a selected row starts the NEXT one — which is why naming an
+      // attribute and hitting Enter twice reads as "and another": the first
+      // Enter commits the rename field (that keystroke never reaches here, the
+      // input owns it), the second lands on the row it just named and opens a
+      // fresh sibling below it. Typing a column list is then one pass of
+      // name-Enter-Enter with no trip to the context menu.
+      if (e.key === 'Enter' && !mod && !e.shiftKey && selection.size === 1) {
+        const [id] = selection
+        const entry = index.entries.get(id)
+        if (!entry) return
+        e.preventDefault()
+        if (entry.kind === 'attribute') {
+          // A sibling, not a child: nesting on Enter would make every list
+          // typed this way a staircase.
+          applyAdd(
+            addAttribute(model, entry.parentId ?? '', { relativeTo: id, side: 'after' }),
+          )
+        } else if (entry.kind === 'object') {
+          // An empty-ish card's first attribute — the same gesture one level up.
+          applyAdd(addAttribute(model, id))
+        }
       }
     }
     window.addEventListener('keydown', onKey)

@@ -1,18 +1,29 @@
-// Regression test for CR-01 (SHELL-07 / ROADMAP SC#6 / Gap #1): the router's
-// pendingComponent (RootPending in ../__root) must never mount anything that
-// reads router match context (useMatch/useSearch/useLoaderData) — TanStack
-// Router's Suspense fallback slot is a sibling of matchContext.Provider, not a
-// descendant of it, so any such call throws "Could not find a nearest match!"
-// synchronously and blank-screens the app. This test drives the REAL root
-// Route into its pending state (fetchGraph() never resolves) and asserts the
-// render survives and shows the loading skeleton — the test that would have
-// caught the crash before it shipped.
+// Regression test for CR-01 (SHELL-07 / ROADMAP SC#6 / Gap #1): RootPending
+// (in ../__root) must never mount anything that reads router match context
+// (useMatch/useSearch/useLoaderData) — TanStack Router's Suspense fallback
+// slot is a sibling of matchContext.Provider, not a descendant of it, so any
+// such call throws "Could not find a nearest match!" synchronously and
+// blank-screens the app.
+//
+// This used to be reachable through the app's OWN root route, whose loader
+// blocked first paint on fetchGraph(). That loader is gone — nothing read its
+// result, and it made every cold visit wait on the backend before painting —
+// so the app's root can no longer BE pending, and the test can no longer drive
+// the fallback through it.
+//
+// What it drives instead: a synthetic root route carrying the REAL RootPending
+// as its pendingComponent, with a loader that never settles. The component
+// under test and the slot it renders into are both the real thing; only the
+// route holding them is local. A second assertion pins the app's actual root
+// to that same component, so the wiring this protects can't silently drift.
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createMemoryHistory,
+  createRootRoute,
   createRoute,
   createRouter,
+  Outlet,
   RouterProvider,
 } from '@tanstack/react-router'
 
@@ -31,36 +42,35 @@ vi.mock('../../api', async () => {
   const actual = await vi.importActual<typeof import('../../api')>('../../api')
   return {
     ...actual,
-    // Never resolves — forces the router to stay in the pending state for
-    // the lifetime of the test, so RootPending is what's on screen.
-    fetchGraph: () => new Promise(() => {}),
     fetchPurviewStatus: () => Promise.resolve({ configured: false, write_enabled: false }),
   }
 })
 
-describe('root route pending state (CR-01 / SHELL-07)', () => {
+describe('root pending fallback (CR-01 / SHELL-07)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   it('renders the pending fallback without throwing the router match-context invariant', async () => {
-    // Import the real root Route fresh per-test (its module-level api mock
-    // above must already be in place) and build a minimal router from it: the
-    // actual Route this app ships, plus one trivial index child so an Outlet
-    // target exists.
-    const { Route: RootRoute } = await import('../__root')
+    const { RootPending } = await import('../__root')
+
+    const rootRoute = createRootRoute({
+      // Never resolves — holds the root in its pending state for the lifetime
+      // of the test, so RootPending is what's on screen and the root's own
+      // component never mounts (exactly the shipped arrangement).
+      loader: () => new Promise(() => {}),
+      component: () => <Outlet />,
+      pendingComponent: RootPending,
+    })
 
     const indexRoute = createRoute({
-      getParentRoute: () => RootRoute,
+      getParentRoute: () => rootRoute,
       path: '/',
       component: () => null,
     })
 
-    const routeTree = RootRoute.addChildren([indexRoute])
-
     const router = createRouter({
-      routeTree,
-      context: { graph: null, fetchedAt: null },
+      routeTree: rootRoute.addChildren([indexRoute]),
       history: createMemoryHistory({ initialEntries: ['/'] }),
       // Render the pending fallback synchronously instead of after the
       // default 1s/500ms delay, so the test doesn't need fake timers.
@@ -73,5 +83,10 @@ describe('root route pending state (CR-01 / SHELL-07)', () => {
     expect(() => render(<RouterProvider router={router} />)).not.toThrow()
 
     expect(await screen.findByText(/Loading/i)).toBeInTheDocument()
+  })
+
+  it('keeps the app root wired to that same safe fallback', async () => {
+    const { Route, RootPending } = await import('../__root')
+    expect(Route.options.pendingComponent).toBe(RootPending)
   })
 })

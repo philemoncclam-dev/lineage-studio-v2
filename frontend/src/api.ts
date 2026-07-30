@@ -113,11 +113,20 @@ export async function fetchSample(): Promise<LineageGraph> {
   return res.json()
 }
 
+/**
+ * The whole lineage graph, in one request.
+ *
+ * NO CALLER TODAY. The root route used to await this before first paint and
+ * hand the result down through RouterContext; nothing ever read it, so the
+ * call was removed (see routes/__root.tsx) and boot no longer waits on the
+ * backend at all. Kept because `/graph` is a live backend endpoint and this is
+ * the client for it — but it is unreferenced, so treat it as unproven against
+ * the current backend until something calls it again.
+ *
+ * The timeout is what kept the old boot bounded: an unreachable or
+ * cold-starting backend would otherwise hang the loader indefinitely.
+ */
 export async function fetchGraph(): Promise<LineageGraph> {
-  // The root loader awaits this before first paint, so an unreachable or
-  // cold-starting backend would otherwise hang boot on the "Loading graph…"
-  // skeleton indefinitely. Bound it: on timeout the loader's catch falls back
-  // to the bundled sample model, so the app always paints quickly.
   const res = await fetch(`${BASE}/graph`, { signal: AbortSignal.timeout(4000) })
   if (!res.ok) throw new Error(`graph failed: ${res.status}`)
   return res.json()

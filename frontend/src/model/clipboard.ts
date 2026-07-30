@@ -306,18 +306,28 @@ export function paste(
   // Transitions. Internal edges are duplicated between the clones; boundary
   // edges re-attach to the outside entity, but only if it still exists.
   //
-  // EXCEPT FOR ATTRIBUTES, which arrive with no transitions at all. Pasting a
-  // column duplicates a STRUCTURE, not a fact: the new column has not been
-  // derived from anything, nobody has run a notebook that produces it, and no
-  // sandbox has verified it. Cloning its edges would mint lineage claims by
-  // copy-paste, and the clones would be indistinguishable on the canvas from
-  // edges the parser or the sandbox derived. Properties still copy: a data
-  // type or a tag describes the column itself and stays true of a duplicate,
-  // while an edge describes a relationship that does not yet exist.
+  // ONLY FOR LAYERS. An object or an attribute arrives with no transitions at
+  // all, because pasting one duplicates a STRUCTURE, not a fact: the new
+  // entity has not been derived from anything, nobody has run a notebook that
+  // produces it, and no sandbox has verified it. Cloning its edges would mint
+  // lineage claims by copy-paste, and the clones would be indistinguishable on
+  // the canvas from edges the parser or the sandbox derived. Dropping them
+  // says the honest thing — this copy is not wired yet — and leaves the
+  // mapping to the person who knows where it should go.
   //
-  // This holds for cut-and-paste too, which is copy + delete + paste: moving a
-  // column re-parents it, and the edges it had under its old parent are not
-  // claims about the new one.
+  // Properties still copy either way: a data type or a tag describes the
+  // entity itself and stays true of a duplicate, while an edge describes a
+  // relationship that does not yet exist.
+  //
+  // This holds for cut-and-paste too, which is copy + delete + paste: moving
+  // an object into another layer re-parents it, and the edges it had in the
+  // layer it came from are not claims about the one it landed in.
+  //
+  // A LAYER still carries its edges, and the difference is deliberate. Pasting
+  // a layer is "another copy of this whole subgraph", where the internal edges
+  // are part of the shape being duplicated rather than assertions about a new
+  // entity's provenance. Pasting an object into a layer is "put this here",
+  // and its old neighbourhood does not come with it.
   const alive = buildIndex(next).entries
   const transitions = [...next.transitions]
   const add = (source: EntityId, target_: EntityId) => {
@@ -326,7 +336,7 @@ export function paste(
     transitions.push({ id: newId('t'), source, target: target_ })
   }
 
-  if (kind !== 'attribute') {
+  if (kind === 'layer') {
     for (const edge of clip.internal) {
       const from = made.idMap.get(edge.source)
       const to = made.idMap.get(edge.target)

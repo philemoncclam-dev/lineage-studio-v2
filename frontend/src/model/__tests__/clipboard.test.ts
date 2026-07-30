@@ -157,8 +157,49 @@ describe('paste', () => {
     expect(next.transitions.length).toBe(afterCut.transitions.length)
   })
 
-  it('keeps carrying transitions for layers and objects', () => {
+  it('gives a pasted object no transitions at all', () => {
     const model = sampleModel()
+    // Targets is wired on both sides: Mappings feeds its columns, and it feeds
+    // Mortgage's. None of that is a claim about a copy dropped somewhere else.
+    const source = idOf(model, 'Targets')
+    const clip = copyEntities(model, [source])!
+    expect(clip.inbound.length + clip.outbound.length).toBeGreaterThan(0)
+
+    const next = paste(model, clip, { mode: 'into', id: idOf(model, 'Origination System') })
+    expect(namesOf(next, 'Targets')).toHaveLength(2)
+    expect(next.transitions.length).toBe(model.transitions.length)
+  })
+
+  it('still copies an object\'s properties even though it drops its edges', () => {
+    const model = sampleModel()
+    const source = idOf(model, 'Targets')
+    const withProps = { ...model, properties: { ...model.properties, [source]: { Source: 'Fabric' } } }
+    const next = paste(withProps, copyEntities(withProps, [source])!, {
+      mode: 'into',
+      id: idOf(model, 'Origination System'),
+    })
+    const clone = namesOf(next, 'Targets').find((id) => id !== source)!
+    expect(next.properties[clone]).toEqual({ Source: 'Fabric' })
+  })
+
+  it('does not restore an object\'s transitions when it is moved between layers', () => {
+    const model = sampleModel()
+    const source = idOf(model, 'Targets')
+    // A cut is copy + delete; the delete takes the edges with it and the paste
+    // does not bring them back, so a moved object lands unwired in its new
+    // layer for the user to map.
+    const clip = copyEntities(model, [source])!
+    const afterCut = deleteEntities(model, [source])
+    expect(afterCut.transitions.length).toBeLessThan(model.transitions.length)
+
+    const next = paste(afterCut, clip, { mode: 'into', id: idOf(model, 'Origination System') })
+    expect(next.transitions.length).toBe(afterCut.transitions.length)
+  })
+
+  it('keeps carrying transitions for a pasted layer', () => {
+    const model = sampleModel()
+    // Onto blank canvas the roots become LAYERS, which still duplicate their
+    // wiring — a layer paste copies a subgraph, not a single new entity.
     const clip = copyEntities(model, [idOf(model, 'OUTPUT1')])!
     const next = paste(model, clip, { mode: 'canvas' })
     expect(next.transitions.length).toBeGreaterThan(model.transitions.length)

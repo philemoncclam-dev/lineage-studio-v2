@@ -1,0 +1,62 @@
+# Build the backend image (Spark sandbox included) and deploy it to Azure
+# Container Apps.
+#
+# Why here and not locally: the image needs a JVM, so it can only be built by
+# Docker — and ACR Tasks (`az acr build`) is blocked on Azure for Students
+# subscriptions. GitHub's runners have Docker, and the build minutes are free
+# for public repos, so the build lives here.
+#
+# The app scales to zero: an idle deployment costs nothing, and the first
+# request after idle pays a cold start (image pull + JVM + SparkSession).
+
+name: deploy-backend
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:
+
+env:
+  REGISTRY: lineagestudio22108.azurecr.io
+  IMAGE: lineage-api
+  RESOURCE_GROUP: lineage-studio
+  CONTAINERAPP: lineage-api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Pushing needs a registry login; the service principal is Contributor on
+      # the resource group, which covers the registry that lives in it.
+      - name: Log in to ACR
+        run: az acr login -n lineagestudio22108
+
+      - name: Build and push
+        run: |
+          docker build -t "$REGISTRY/$IMAGE:${{ github.sha }}" -t "$REGISTRY/$IMAGE:latest" .
+          docker push "$REGISTRY/$IMAGE:${{ github.sha }}"
+          docker push "$REGISTRY/$IMAGE:latest"
+
+      # Deploy the immutable SHA tag, never `latest` — otherwise a revision
+      # can silently change meaning underneath a rollback.
+      - name: Deploy to Container Apps
+        run: |
+          az containerapp update \
+            -g "$RESOURCE_GROUP" -n "$CONTAINERAPP" \
+            --image "$REGISTRY/$IMAGE:${{ github.sha }}"
+
+      - name: Show URL
+        run: |
+          az containerapp show -g "$RESOURCE_GROUP" -n "$CONTAINERAPP" \
+            --query "properties.configuration.ingress.fqdn" -o tsv

@@ -19,6 +19,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -78,52 +80,88 @@ def spark_available() -> bool:
 Engine = str  # "auto" | "spark" | "stub"
 
 
-def _executor_cmd(request_file: str, engine: Engine) -> list[str]:
-    """The command that runs one sandbox request.
+def _executor_cmd(request_file: str, engine: Engine) -> tuple[list[str], str]:
+    """The command that runs one sandbox request, and the engine it is.
 
     The Spark executor (pinned venv locally, or the current interpreter in a
     container) when chosen and available; otherwise the stub under the backend
     interpreter. This is the whole M2a → M2b seam.
+
+    The engine is returned alongside the command because every failure path below
+    has to name it. Reporting a Spark crash or timeout as `engine="stub"` — which
+    is what a hardcoded literal did — sends whoever reads the error to the wrong
+    executor entirely.
     """
     spark_python = _spark_python()
     use_spark = spark_python is not None and _CHILD_SPARK.exists() and engine in ("spark", "auto")
     if use_spark:
-        return [spark_python, str(_CHILD_SPARK), request_file]
-    return [sys.executable, str(_CHILD_STUB), request_file]
+        return [spark_python, str(_CHILD_SPARK), request_file], "spark"
+    return [sys.executable, str(_CHILD_STUB), request_file], "stub"
+
+
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """Kill the child AND everything it spawned.
+
+    `Popen.kill()` reaches only the direct child, and the Spark child's real
+    weight is the JVM it starts underneath. Killing just the Python parent on
+    timeout therefore left a multi-hundred-megabyte JVM running with nothing
+    holding its stdout — one orphan per timed-out run, until the box ran out.
+    """
+    if sys.platform == "win32":
+        # `/T` is the whole point: terminate the tree rooted at this pid.
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, check=False
+        )
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+    proc.kill()  # Harmless if already dead; guarantees the direct child is gone.
 
 
 def run_sandbox(req: RunRequest, timeout: int = _TIMEOUT, engine: Engine = "auto") -> RunResult:
     workdir = tempfile.mkdtemp(prefix="lsbx_")
     request_file = Path(workdir) / "request.json"
     request_file.write_text(req.model_dump_json(), encoding="utf-8")
+    cmd, ran_as = _executor_cmd(str(request_file), engine)
     try:
-        proc = subprocess.run(
-            _executor_cmd(str(request_file), engine),
+        proc = subprocess.Popen(  # noqa: S603 — fixed argv, no shell
+            cmd,
             cwd=workdir,
             env=_scrubbed_env(),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
+            # Its own session on POSIX so the whole group can be signalled; on
+            # Windows `taskkill /T` walks the tree by pid and needs nothing here.
+            start_new_session=sys.platform != "win32",
         )
-    except subprocess.TimeoutExpired:
-        return RunResult(ok=False, engine="stub", error=f"sandbox run exceeded {timeout}s")
-    finally:
-        request_file.unlink(missing_ok=True)
         try:
-            os.rmdir(workdir)
-        except OSError:
-            pass  # Spark (M2b) will leave a warehouse here; cleaned separately.
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc)
+            # Drain after the kill — without this the pipes are never closed and
+            # the reader threads keep the handles (and the workdir) alive.
+            proc.communicate()
+            return RunResult(ok=False, engine=ran_as, error=f"sandbox run exceeded {timeout}s")
+    finally:
+        # `rmdir` only ever removed an EMPTY directory, so every Spark run — which
+        # leaves spark-warehouse/ and metastore_db/ behind — leaked its whole
+        # temp tree permanently. Nothing cleaned them up later; this is that
+        # "cleaned separately".
+        shutil.rmtree(workdir, ignore_errors=True)
 
     if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "executor exited non-zero").strip()
-        return RunResult(ok=False, engine="stub", error=detail[:1000])
+        detail = (stderr or stdout or "executor exited non-zero").strip()
+        return RunResult(ok=False, engine=ran_as, error=detail[:1000])
     try:
-        return RunResult.model_validate_json(_result_json(proc.stdout))
+        return RunResult.model_validate_json(_result_json(stdout))
     except Exception as exc:  # noqa: BLE001
         return RunResult(
             ok=False,
-            engine="stub",
-            error=f"could not parse executor output: {exc}; raw={proc.stdout[:400]!r}",
+            engine=ran_as,
+            error=f"could not parse executor output: {exc}; raw={stdout[:400]!r}",
         )
 
 

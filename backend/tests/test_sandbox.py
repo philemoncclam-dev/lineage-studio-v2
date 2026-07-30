@@ -9,6 +9,7 @@ child, and the child reports that back as `saw_credentials`.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -208,6 +209,52 @@ def test_a_path_write_is_captured_not_discarded():
         engine="stub",
     )
     assert make_ref("out_table", "Gold", "Finance") in result.writes
+
+
+# --- the run leaves nothing behind ----------------------------------------
+# `os.rmdir` removed only an EMPTY working directory, so every Spark run — which
+# leaves a spark-warehouse and a metastore_db in there — leaked its whole tree
+# into temp, permanently. The stub leaks nothing by itself, but it goes through
+# the same cleanup, so it can hold the guarantee under test.
+
+def _sandbox_workdirs() -> set[str]:
+    import tempfile
+
+    return {p.name for p in Path(tempfile.gettempdir()).glob("lsbx_*")}
+
+
+def test_a_run_removes_its_working_directory():
+    before = _sandbox_workdirs()
+    run_sandbox(RunRequest(notebook_name="nb", cells=CELLS), engine="stub")
+    assert _sandbox_workdirs() - before == set()
+
+
+def test_a_non_empty_working_directory_is_still_removed(monkeypatch):
+    """What Spark actually does: leave files behind. `rmdir` refused those."""
+    from app.sandbox import runner
+
+    before = _sandbox_workdirs()
+    real_cmd = runner._executor_cmd
+
+    def litter(request_file: str, engine: str):
+        # Stand in for the warehouse Spark writes into its cwd.
+        (Path(request_file).parent / "spark-warehouse").mkdir(exist_ok=True)
+        return real_cmd(request_file, engine)
+
+    monkeypatch.setattr(runner, "_executor_cmd", litter)
+    runner.run_sandbox(RunRequest(notebook_name="nb", cells=CELLS), engine="stub")
+    assert _sandbox_workdirs() - before == set()
+
+
+def test_a_timed_out_run_is_cleaned_up_and_names_its_engine():
+    """The engine was hardcoded to "stub" on every failure path, so a Spark
+    timeout sent whoever read the error to the wrong executor."""
+    before = _sandbox_workdirs()
+    result = run_sandbox(RunRequest(notebook_name="nb", cells=CELLS), timeout=0, engine="stub")
+    assert result.ok is False
+    assert "exceeded" in (result.error or "")
+    assert result.engine == "stub"
+    assert _sandbox_workdirs() - before == set()
 
 
 def test_abfss_workspaces_are_collected_for_name_resolution():

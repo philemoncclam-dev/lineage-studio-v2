@@ -20,7 +20,7 @@
 import { useEffect, useRef } from 'react'
 import type { EntityId } from '../model/types'
 import type { Layout } from '../model/layout'
-import { curveFor, type TransitionLike } from './edgeGeometry'
+import { curveFor, isRolledUp, type TransitionLike } from './edgeGeometry'
 
 interface Props {
   layout: Layout
@@ -52,6 +52,17 @@ const EDGE_TRACED = 'rgba(22, 143, 92, 0.85)'
 const EDGE_SELECTED = 'rgba(31, 111, 235, 0.95)'
 /** Dim mode: still there, still tracing the shape, but well behind the matches. */
 const EDGE_DIMMED = 'rgba(60, 70, 90, 0.10)'
+/**
+ * An edge whose real endpoint is a row folded inside a collapsed card, so the
+ * line lands on the card instead.
+ *
+ * A lighter green than `EDGE_TRACED`, and deliberately not another grey: the
+ * point is that this line is making a WEAKER claim than the ones around it —
+ * it reaches the object, but which row inside is not on screen — and a reader
+ * who cannot tell the two apart will read a bundle converging on a card header
+ * as a bundle converging on one thing.
+ */
+const EDGE_ROLLED_UP = 'rgba(94, 198, 130, 0.78)'
 
 export default function TransitionLayer({
   layout,
@@ -84,6 +95,7 @@ export default function TransitionLayer({
     // on top, otherwise a picked line can be buried by the bundle around it.
     const faded: TransitionLike[] = []
     const plain: TransitionLike[] = []
+    const rolled: TransitionLike[] = []
     const traced: TransitionLike[] = []
     const picked: TransitionLike[] = []
     for (const t of transitions) {
@@ -92,6 +104,10 @@ export default function TransitionLayer({
       if (selected.has(t.id)) picked.push(t)
       else if (filtering && !(matched.has(t.source) && matched.has(t.target))) faded.push(t)
       else if (highlighted.has(t.source) || highlighted.has(t.target)) traced.push(t)
+      // Below the trace, above the plain edges: being on the trace is what the
+      // reader asked about, and folding is a standing property of the canvas
+      // that would otherwise repaint half the model every time a card shuts.
+      else if (isRolledUp(layout, t.source) || isRolledUp(layout, t.target)) rolled.push(t)
       else plain.push(t)
     }
 
@@ -142,6 +158,7 @@ export default function TransitionLayer({
 
     draw(faded, EDGE_DIMMED, 1, 5)
     draw(plain, EDGE, 1, 6)
+    draw(rolled, EDGE_ROLLED_UP, 1.4, 6.5)
     draw(traced, EDGE_TRACED, 1.8, 7.5)
     draw(picked, EDGE_SELECTED, 2.4, 8.5)
   }, [layout, transitions, parentOf, width, height, highlighted, selected, filtering, matched])

@@ -1116,6 +1116,12 @@
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
+/* The keystroke that ends a trace, set back from the count it follows. A trace
+   is the one narrowing with no panel to switch it off, so the way out has to be
+   on screen — quietly, since it is the same text every time. */
+.mv-hint {
+  opacity: 0.7;
+}
 
 /* ===== Auto-Mapper =====
    Docked to the right, not modal: two of its steps refer to the canvas (picking

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { curveFor, distanceToCurve, hitTestTransitions } from '../edgeGeometry'
+import { curveFor, distanceToCurve, hitTestTransitions, isRolledUp } from '../edgeGeometry'
 import { layoutModel } from '../../model/layout'
 import { buildIndex } from '../../model/index'
 import { sampleModel } from '../../model/sample'
@@ -119,5 +119,49 @@ describe('hitTestTransitions', () => {
     expect(c).not.toBeNull()
     // It resolved to an object header anchor, not the (now hidden) attribute.
     expect(layout.anchors.has(model.transitions[0].source)).toBe(false)
+  })
+})
+
+// --- edges into folded cards -----------------------------------------------
+// When an object is collapsed its rows lose their anchors, so an edge into one
+// resolves up to the card and lands on the header. The line is still true, but
+// it makes a WEAKER claim than it looks like it does — it reaches the object,
+// and which row inside is no longer on screen. The renderer colours those
+// differently, and this is the predicate it colours by.
+
+describe('isRolledUp', () => {
+  /** A transition whose endpoints are both attributes, and the object above one. */
+  function attributeEdge() {
+    const { model, layout } = setup()
+    const index = buildIndex(model)
+    const edge = model.transitions.find(
+      (t) => index.entries.get(t.target)?.kind === 'attribute',
+    )!
+    return { edge, owner: index.entries.get(edge.target)!.parentId as string, layout }
+  }
+
+  it('is false for every endpoint while nothing is collapsed', () => {
+    const { model, layout } = setup()
+    for (const t of model.transitions) {
+      expect(isRolledUp(layout, t.source)).toBe(false)
+      expect(isRolledUp(layout, t.target)).toBe(false)
+    }
+  })
+
+  it('is true for a row whose object is collapsed', () => {
+    const { edge, owner } = attributeEdge()
+    const folded = setup([owner]).layout
+    expect(isRolledUp(folded, edge.target)).toBe(true)
+    // The card itself is still anchored — it is on screen, just shut.
+    expect(isRolledUp(folded, owner)).toBe(false)
+  })
+
+  it('still yields a drawable curve, landing on the card', () => {
+    const { edge, owner } = attributeEdge()
+    const { layout, parentOf } = setup([owner])
+    const c = curveFor(layout, parentOf, edge)
+    expect(c).not.toBeNull()
+    // The endpoint is the object's own anchor, not the row's.
+    expect(c!.y1).toBe(layout.anchors.get(owner)!.cy)
   })
 })

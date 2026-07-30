@@ -23,6 +23,24 @@ export interface TransitionLike {
   target: EntityId
 }
 
+/**
+ * True when this endpoint is not itself on screen and the edge has had to land
+ * on an ancestor instead — i.e. the row it belongs to is inside a collapsed
+ * card.
+ *
+ * Worth distinguishing because the edge then says something weaker than it
+ * appears to: the line touches a card, but its real endpoint is one of the rows
+ * folded inside, and which one is not visible. Two edges into the same collapsed
+ * object are drawn identically whether they land on the same row or different
+ * ones.
+ *
+ * `resolveAnchor` already walks the chain; this only asks whether the walk had
+ * to take a step, so the two can never disagree about what is anchored.
+ */
+export function isRolledUp(layout: Layout, id: EntityId): boolean {
+  return !layout.anchors.has(id)
+}
+
 /** Null when either endpoint resolves to nothing (e.g. inside a collapsed layer). */
 export function curveFor(
   layout: Layout,

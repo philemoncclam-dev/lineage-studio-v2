@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ancestorsOf, buildIndex } from '../model/index'
+import { traceFrom } from '../model/trace'
 import { registerSearchHandler } from '../shell/searchBridge'
 import { registerRailAction } from '../shell/railActions'
 import ModelSearch from './ModelSearch'
@@ -73,6 +74,13 @@ import './modeling.css'
 
 /** Rows rendered above and below the visible slice, to hide scroll tearing. */
 const ROW_OVERSCAN = 6
+
+/** Whether two id sets hold the same members — for "is this the same trace?". */
+function sameSet(a: ReadonlySet<EntityId>, b: ReadonlySet<EntityId>): boolean {
+  if (a.size !== b.size) return false
+  for (const id of a) if (!b.has(id)) return false
+  return true
+}
 
 /**
  * Left padding every card header and row carries, holding the gutter the IN
@@ -188,6 +196,15 @@ export default function ModelViewer({
   const clipboard = useRef<Clipboard | null>(null)
   /** Entity to scroll into view once the layout reflects any expansion. */
   const [reveal, setReveal] = useState<EntityId | null>(null)
+  /**
+   * The active lineage trace, or null.
+   *
+   * Held as the RESULT rather than as the seeds it was taken from, so it
+   * survives the selection changing underneath it — you trace a column, then
+   * click through what came back, and the trace stays put instead of retracing
+   * from wherever you just clicked. Ctrl+T again, or Escape, ends it.
+   */
+  const [trace, setTrace] = useState<ReadonlySet<EntityId> | null>(null)
 
   const index = useMemo(() => buildIndex(model), [model])
   const layout = useMemo(() => layoutModel(model, collapsed), [model, collapsed])
@@ -220,8 +237,28 @@ export default function ModelViewer({
   }, [layout])
 
   /** Entities the Views filter matches; empty set means "no filter running". */
-  const matched = useMemo(() => applyFilter(model, filter), [model, filter])
-  const filtering = activeFilterCount(filter) > 0
+  const viewMatched = useMemo(() => applyFilter(model, filter), [model, filter])
+  const viewFiltering = activeFilterCount(filter) > 0
+
+  /**
+   * What the canvas is narrowed to, from either narrowing mechanism.
+   *
+   * A trace is expressed as a match set so it rides the path the Views filter
+   * already built — cards, rows, edges and the hit-tester all read `matched`,
+   * and none of them needs to know which of the two produced it. Running both
+   * INTERSECTS them, which is the only reading where adding a control cannot
+   * widen the result, matching how the filter's own fields combine.
+   *
+   * A trace always hides rather than dims: its whole purpose is to take the
+   * unrelated model off screen, and a dimmed trace is just the model again.
+   */
+  const matched = useMemo(() => {
+    if (!trace) return viewMatched
+    if (!viewFiltering) return trace
+    return new Set([...trace].filter((id) => viewMatched.has(id)))
+  }, [trace, viewMatched, viewFiltering])
+  const filtering = viewFiltering || trace !== null
+  const hideUnmatched = filter.hide || trace !== null
 
   /**
    * The transitions that exist as far as the canvas is concerned.
@@ -233,8 +270,8 @@ export default function ModelViewer({
    * agrees, or you could still click a line that isn't drawn.
    */
   const liveTransitions = useMemo(
-    () => visibleTransitions(model.transitions, matched, filtering, filter.hide),
-    [model.transitions, filtering, filter.hide, matched],
+    () => visibleTransitions(model.transitions, matched, filtering, hideUnmatched),
+    [model.transitions, filtering, hideUnmatched, matched],
   )
 
   // The trace: everything one hop from any selected entity. Highlighting both
@@ -844,6 +881,28 @@ export default function ModelViewer({
         onRedo()
         return
       }
+      // Trace what flows through the selection, and nothing else.
+      //
+      // Bound to BOTH ⌃T and a bare T, because Ctrl+T is a reserved browser
+      // shortcut: Chrome and Firefox open a new tab on it and the keydown never
+      // reaches the page, so `preventDefault` has nothing to prevent. ⌃T is
+      // what was asked for and works where the browser allows it (a PWA window,
+      // a packaged build); T is the one that always arrives. Both are safe —
+      // the handler has already returned for anything being typed into.
+      //
+      // Toggles, so the keystroke that narrows the canvas also restores it, but
+      // re-pressing with a NEW selection retraces from there rather than
+      // clearing — which is how you walk a chain hop by hop.
+      if (e.key.toLowerCase() === 't' && !e.shiftKey && !e.altKey) {
+        e.preventDefault()
+        if (selection.size === 0) {
+          setTrace(null)
+          return
+        }
+        const next = traceFrom(index, selection)
+        setTrace((prev) => (prev && sameSet(prev, next) ? null : next))
+        return
+      }
       if (mod && e.key.toLowerCase() === 'c' && selection.size > 0) {
         e.preventDefault()
         doCopy(selection)
@@ -870,6 +929,7 @@ export default function ModelViewer({
         setEditing(null)
         setSelection(new Set())
         setSelectedEdges(new Set())
+        setTrace(null)
         return
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -1206,7 +1266,7 @@ export default function ModelViewer({
             // "Hide non-matching" drops whole cards here rather than styling
             // them away, so the layout keeps their space but nothing paints —
             // a display:none card would still cost a mount per card.
-            .filter((card) => !(filtering && filter.hide) || matched.has(card.id))
+            .filter((card) => !(filtering && hideUnmatched) || matched.has(card.id))
             .map((card) => (
             <Card
               key={card.id}
@@ -1215,7 +1275,7 @@ export default function ModelViewer({
               selection={selection}
               filtering={filtering}
               matched={matched}
-              hideUnmatched={filter.hide}
+              hideUnmatched={hideUnmatched}
               highlighted={highlighted}
               pending={pending}
               pendingLayer={pendingLayer}
@@ -1242,11 +1302,21 @@ export default function ModelViewer({
             {model.transitions.length} transitions
             {/* The one always-visible sign that what is on screen is not the
                 whole model — the rail badge is easy to miss from the canvas. */}
-            {filtering && (
+            {/* Named separately from a Views filter: a trace is not something
+                you can find in the Views panel and turn off there, so the
+                status line has to say what ends it. */}
+            {trace && (
+              <>
+                {' '}
+                · <strong>Tracing</strong>: {matched.size} shown ·{' '}
+                <span className="mv-hint">T or Esc to clear</span>
+              </>
+            )}
+            {viewFiltering && (
               <>
                 {' '}
                 · <strong>{activeView(model, filter)?.name ?? 'Filtered'}</strong>:{' '}
-                {matched.size} shown
+                {viewMatched.size} shown
               </>
             )}
             {selection.size > 0 && <> · {selection.size} selected</>}

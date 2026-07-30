@@ -34,15 +34,16 @@ type FlowKind = 'notebook' | 'pipeline' | 'table'
 type RowTone = 'read' | 'write' | 'col' | 'run'
 /** The tone an edge can carry — a column row is never an edge endpoint. */
 type EdgeTone = 'read' | 'write'
-interface FlowRow {
+export interface FlowRow {
   key: string
   label: string
   tone: RowTone
   /** Column type, shown to the right of the name on a table card. */
   meta?: string
   /**
-   * Indent level. Only a pipeline card nests: its rows are its notebooks, and
-   * under each one the tables THAT notebook read and wrote.
+   * Indent level. A pipeline card nests deepest — its rows are its notebooks,
+   * under each the tables THAT notebook touched, and under each of those the
+   * table's own columns. A notebook card is the same minus the first level.
    *
    * A flat merge of every table the pipeline touched — which is what this was —
    * answers "what did this pipeline touch" but loses "which step touched it",
@@ -51,8 +52,21 @@ interface FlowRow {
    * accesses.
    */
   depth?: number
+  /**
+   * For a column row nested under a table row inside a STEP card: the key of
+   * that table row.
+   *
+   * It is what makes a column belong to an access rather than to the card. The
+   * same table read by two activities carries its schema twice, under each, and
+   * the two runs collapse and expand independently — so truncation state, and
+   * the edges that leave these rows, are both keyed by this.
+   *
+   * Absent on a table card's own columns: those are the card, not a group
+   * within it.
+   */
+  group?: string
 }
-interface FlowNode {
+export interface FlowNode {
   id: string
   kind: FlowKind
   label: string
@@ -84,6 +98,14 @@ interface FlowNode {
 
 /** How many columns a table card shows before it needs expanding. */
 const MAX_TABLE_ROWS = 8
+/**
+ * How many columns one nested group inside a step card shows before expanding.
+ *
+ * Lower than a table card's cap because a step card holds many such groups —
+ * one per access — and eight rows each turns a three-notebook pipeline into a
+ * card taller than the canvas.
+ */
+const MAX_NESTED_COLS = 5
 /** `row` is a row key on that node; omitted means "anchor to the header". */
 interface FlowEdge {
   from: string
@@ -92,6 +114,20 @@ interface FlowEdge {
   toRow?: string
   tone?: EdgeTone
   dashed?: boolean
+  /**
+   * `column` joins a column row to the same column on the other card; `table`
+   * is the whole-table access it belongs to. Undefined for the faint order
+   * edges, which join nothing in particular.
+   */
+  kind?: 'table' | 'column'
+  /**
+   * Ties one table-level edge to the column edges derived from it, so the
+   * canvas can show one OR the other and never both: the table edge stands in
+   * while the columns are collapsed or unresolved, and steps aside as soon as
+   * a single column edge is on screen. Without it a card would carry a line to
+   * its header and a line to each of its rows, all saying the same thing.
+   */
+  group?: string
 }
 
 const NW = 208
@@ -244,8 +280,12 @@ function sequenceEdges(edges: FlowEdge[], stepIds: ReadonlySet<string>): FlowEdg
   const out: FlowEdge[] = []
   for (const e of edges) {
     if (e.dashed) continue
+    // Flipped end to end, rows included: a column edge has to land back on the
+    // table's own column row, not on its header. For a table-level edge
+    // `fromRow` is undefined, so `toRow` stays undefined and the edge anchors
+    // to the header exactly as it did before.
     if (e.tone === 'read' && stepIds.has(e.to))
-      out.push({ from: e.to, fromRow: e.toRow, to: e.from, tone: 'read' })
+      out.push({ ...e, from: e.to, fromRow: e.toRow, to: e.from, toRow: e.fromRow, tone: 'read' })
     else out.push(e)
   }
   return out
@@ -304,6 +344,53 @@ function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
   return { pos, bands, groups: [], width: (maxCol + 1) * (NW + GX) - GX, height }
 }
 
+/** The expansion key for one collapsible run of columns on a card. */
+const groupKey = (nodeId: string, group?: string) => `${nodeId}::${group ?? ''}`
+
+/**
+ * Collapse each long run of column rows, independently.
+ *
+ * A table card's columns are one unnamed run; a step card holds one run per
+ * access, each keyed by the table row above it. Both need the same treatment
+ * for the same reason — a sixty-column table is a mile of card that pushes
+ * every other node off the canvas — but they must open and shut separately, or
+ * expanding one table's columns inside a pipeline expands all of them.
+ *
+ * Runs here rather than in `buildFlow` so expanding is a pure re-layout: the
+ * graph, and the edges derived from it, never change.
+ */
+export function truncateRows(n: FlowNode, expanded: ReadonlySet<string>): FlowRow[] {
+  const all = n.allRows ?? n.rows
+  const out: FlowRow[] = []
+  for (let i = 0; i < all.length; ) {
+    const row = all[i]
+    if (row.tone !== 'col') {
+      out.push(row)
+      i++
+      continue
+    }
+    const group = row.group
+    let end = i
+    while (end < all.length && all[end].tone === 'col' && all[end].group === group) end++
+    const run = all.slice(i, end)
+    const cap = group ? MAX_NESTED_COLS : MAX_TABLE_ROWS
+    if (run.length <= cap) out.push(...run)
+    else {
+      const open = expanded.has(groupKey(n.id, group))
+      const shown = open ? run : run.slice(0, cap)
+      out.push(...shown, {
+        key: `__more:${group ?? ''}`,
+        label: open ? 'Show less' : `+${run.length - shown.length} more`,
+        tone: 'col',
+        depth: row.depth,
+        group,
+      })
+    }
+    i = end
+  }
+  return out
+}
+
 function FlowCanvas({
   nodes: rawNodes,
   edges,
@@ -325,33 +412,33 @@ function FlowCanvas({
     })
 
   const nodes = useMemo(
-    () =>
-      rawNodes.map((n) => {
-        if (!n.allRows || n.allRows.length <= MAX_TABLE_ROWS) return n
-        const open = expanded.has(n.id)
-        const shown = open ? n.allRows : n.allRows.slice(0, MAX_TABLE_ROWS)
-        const rest = n.allRows.length - shown.length
-        return {
-          ...n,
-          rows: [
-            ...shown,
-            { key: '__more', label: open ? 'Show less' : `+${rest} more`, tone: 'col' as const },
-          ],
-        }
-      }),
+    () => rawNodes.map((n) => (n.allRows ? { ...n, rows: truncateRows(n, expanded) } : n)),
     [rawNodes, expanded],
   )
+  const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
 
   const shown = useMemo(() => {
-    if (view !== 'sequence') return edges
     const stepIds = new Set(rawNodes.filter((n) => n.kind !== 'table').map((n) => n.id))
-    return sequenceEdges(edges, stepIds)
-  }, [edges, rawNodes, view])
+    const base = view === 'sequence' ? sequenceEdges(edges, stepIds) : edges
+    // A column edge is only drawn when BOTH of its rows are actually on screen
+    // — a collapsed group would otherwise anchor every hidden column to the
+    // card header, which is a fan of identical lines saying nothing. Whenever
+    // no column edge survives for an access, its table-level edge stands in.
+    const onScreen = (id: string, rowKey?: string) =>
+      !rowKey || !!byId.get(id)?.rows.some((r) => r.key === rowKey)
+    const columns = base.filter(
+      (e) => e.kind === 'column' && onScreen(e.from, e.fromRow) && onScreen(e.to, e.toRow),
+    )
+    const covered = new Set(columns.map((e) => e.group).filter(Boolean))
+    return [
+      ...base.filter((e) => e.kind !== 'column' && !(e.group && covered.has(e.group))),
+      ...columns,
+    ]
+  }, [edges, rawNodes, view, byId])
   const { pos, bands, groups, width, height } = useMemo(
     () => (view === 'sequence' ? layoutSequence(nodes) : layoutFlow(nodes, edges)),
     [nodes, edges, view],
   )
-  const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
   const w = width + PAD * 2
   const h = height + PAD * 2
   return (
@@ -435,12 +522,12 @@ function FlowCanvas({
                   {!n.sub && n.rows.length > 0 && <span className="sbx-flow-count">{n.rows.length}</span>}
                 </div>
                 {n.rows.map((r) =>
-                  r.key === '__more' ? (
+                  r.key.startsWith('__more') ? (
                     <button
                       key={r.key}
                       className="sbx-flow-row sbx-flow-more"
-                      style={{ height: ROW_H }}
-                      onClick={() => toggle(n.id)}
+                      style={{ height: ROW_H, paddingLeft: 8 + (r.depth ?? 0) * 10 }}
+                      onClick={() => toggle(groupKey(n.id, r.group))}
                     >
                       {r.label}
                     </button>
@@ -574,6 +661,25 @@ export function buildFlow(steps: Step[], results: Map<string, StepResult>): { no
     const readAnchors: [string, string][] = []
     const writeAnchors: [string, string][] = []
 
+    /**
+     * The column rows that sit under one table row inside this step card.
+     *
+     * The same schema the table's own card carries, repeated under the access
+     * that touched it. That repetition is the point: it gives the edge a column
+     * to leave from and a column to land on, so a table's relationship to the
+     * step reads ACROSS to the tables layer instead of being implied by the
+     * indent underneath it.
+     */
+    const nestedCols = (ref: string, rowKey: string, depth: number): FlowRow[] =>
+      (schemas.get(ref) ?? []).map((c) => ({
+        key: `${rowKey}>c:${c.name}`,
+        label: c.name,
+        tone: 'col' as const,
+        meta: c.type ?? undefined,
+        depth,
+        group: rowKey,
+      }))
+
     const runs = res?.runs ?? []
     if (step.kind === 'pipeline' && runs.length) {
       // A pipeline's rows are its ACTIVITIES, each heading the tables it
@@ -595,35 +701,72 @@ export function buildFlow(steps: Step[], results: Map<string, StepResult>): { no
         })
         for (const r of runReads) {
           const row = io(r, 'read', { depth: 1, scope })
-          rows.push(row)
+          rows.push(row, ...nestedCols(r, row.key, 2))
           readAnchors.push([r, row.key])
         }
         for (const w of runWrites) {
           const row = io(w, 'write', { depth: 1, scope })
-          rows.push(row)
+          rows.push(row, ...nestedCols(w, row.key, 2))
           writeAnchors.push([w, row.key])
         }
       })
     } else {
-      // A notebook step IS the notebook, so there is nothing to nest under.
+      // A notebook step IS the notebook, so there is nothing to nest under —
+      // its tables sit at the top level, and their columns one level in.
       for (const r of stepReads(res)) {
         const row = io(r, 'read')
-        rows.push(row)
+        rows.push(row, ...nestedCols(r, row.key, 1))
         readAnchors.push([r, row.key])
       }
       for (const w of stepWrites(res)) {
         const row = io(w, 'write')
-        rows.push(row)
+        rows.push(row, ...nestedCols(w, row.key, 1))
         writeAnchors.push([w, row.key])
       }
     }
 
-    nodes.push({ id: stepId, kind: step.kind, label: step.name, sub, badge: String(i + 1), rows })
+    nodes.push({
+      id: stepId,
+      kind: step.kind,
+      label: step.name,
+      sub,
+      badge: String(i + 1),
+      rows,
+      // Every card carries its full row list; the canvas decides how much of
+      // each column run to show.
+      allRows: rows,
+    })
 
-    for (const [ref, key] of readAnchors)
-      edges.push({ from: ensureTable(ref), to: stepId, toRow: key, tone: 'read' })
-    for (const [ref, key] of writeAnchors)
-      edges.push({ from: stepId, fromRow: key, to: ensureTable(ref), tone: 'write' })
+    /**
+     * One access, as a table-level edge plus a column edge per resolved column.
+     *
+     * Both are emitted, tied by `group`, and the canvas picks: the column edges
+     * whenever their rows are on screen, the table edge otherwise. Deciding it
+     * here is not possible — which rows are visible depends on what the reader
+     * has expanded, which is canvas state.
+     */
+    const access = (ref: string, key: string, tone: EdgeTone) => {
+      const tableId = ensureTable(ref)
+      const group = `${tone}|${stepId}|${key}`
+      const read = tone === 'read'
+      edges.push(
+        read
+          ? { from: tableId, to: stepId, toRow: key, tone, kind: 'table', group }
+          : { from: stepId, fromRow: key, to: tableId, tone, kind: 'table', group },
+      )
+      for (const c of schemas.get(ref) ?? []) {
+        const onTable = `c:${c.name}`
+        const onStep = `${key}>c:${c.name}`
+        edges.push(
+          read
+            ? { from: tableId, fromRow: onTable, to: stepId, toRow: onStep, tone, kind: 'column', group }
+            : { from: stepId, fromRow: onStep, to: tableId, toRow: onTable, tone, kind: 'column', group },
+        )
+      }
+    }
+
+    for (const [ref, key] of readAnchors) access(ref, key, 'read')
+    for (const [ref, key] of writeAnchors) access(ref, key, 'write')
   })
 
   // Faint order edges between consecutive steps so the sequence reads clearly

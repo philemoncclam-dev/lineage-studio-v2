@@ -1066,6 +1066,28 @@
 .sbx-flow-edge[data-backward] {
   stroke-opacity: 0.75;
 }
+/* Column-to-column edges. One access draws as many of these as the table has
+   columns, so they have to sit UNDER the reading of the graph rather than
+   become it: thin, faded, and no arrowhead — the direction is already carried
+   by the colour and by the row the line leaves. Opacity rather than
+   stroke-opacity so the marker fades with the stroke.
+
+   `vector-effect` keeps them hairline-thin whatever the canvas is scaled to;
+   at 0.5px they would otherwise disappear entirely on a zoomed-out view. */
+.sbx-flow-edge[data-kind='column'] {
+  opacity: 0.4;
+  stroke-width: 0.9;
+  vector-effect: non-scaling-stroke;
+  marker-end: none;
+}
+/* A column row nested under an access inside a step card — the same schema the
+   table card shows, repeated where the access is. Set back from the table row
+   above it so the group reads as belonging to that access and not as more
+   accesses. */
+.sbx-flow-card:not([data-kind='table']) .sbx-flow-row[data-tone='col'] {
+  color: #5b6478;
+  background: rgb(28 35 51 / 0.015);
+}
 
 .sbx-flow-card {
   position: absolute;

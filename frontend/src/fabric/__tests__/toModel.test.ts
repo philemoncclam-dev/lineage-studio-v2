@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sequenceToModel, defaultModelName } from '../toModel'
+import { sequenceToModel, defaultModelName, DEFAULT_PORT_OPTIONS } from '../toModel'
 import { tagsOf } from '../../model/tags'
 import type { Step, StepResult } from '../sequence'
 import type { SandboxRunResult } from '../../api'
@@ -139,8 +139,12 @@ describe('sequenceToModel', () => {
     ])
     const { stats } = sequenceToModel([s], results, 'M')
     expect(stats.columnEdges).toBe(0)
-    // The object-level lineage still stands.
-    expect(stats.transitions).toBe(3)
+    // The object-level lineage still stands: 3 accesses, plus the mechanical
+    // access->table column edge each one draws for its single `id` column.
+    // Those are counted apart precisely so an unresolvable join still reads as
+    // zero resolved lineage above.
+    expect(stats.accessColumnEdges).toBe(3)
+    expect(stats.transitions).toBe(6)
   })
 
   it('uses from_table when the engine reported it, resolving the ambiguous join', () => {
@@ -284,12 +288,18 @@ describe('sequenceToModel', () => {
     expect(stats.attributes).toBe(6)
   })
 
-  it('leaves a notebook step flat — it IS the notebook', () => {
+  it('leaves a notebook step ungrouped — it IS the notebook', () => {
     const { steps, results } = simpleRun()
     const { model } = sequenceToModel(steps, results, 'M')
     const nb = model.layers[1].objects[0]
+    // No activity groups in between, unlike a pipeline: the accesses are the
+    // object's own children. Their columns sit one level further in, which is
+    // the nesting the canvas card draws.
     expect(nb.children.map((c) => c.name)).toEqual(['raw_orders', 'silver_orders'])
-    expect(nb.children.every((c) => c.children.length === 0)).toBe(true)
+    expect(nb.children.map((c) => c.children.map((g) => g.name))).toEqual([
+      ['id', 'amount'],
+      ['id', 'total'],
+    ])
   })
 
   it('chains two steps so a written table feeds the next step', () => {
@@ -587,5 +597,126 @@ describe('column edges with workspace-qualified refs', () => {
     expect(withTransform).toEqual([
       expect.objectContaining({ Transform: 'amount * 1.1' }),
     ])
+  })
+})
+
+// --- the port matches the canvas -------------------------------------------
+// The canvas nests a table's columns under the access that touched it and
+// draws a line from each across to the same column on the table card. A model
+// ported from that run has to carry the same shape, or pressing "Create model"
+// hands back something other than the picture it was pressed on.
+
+describe('columns under an access', () => {
+  const WS = 'Analytics/Silver/silver_orders'
+  const RAW = 'Analytics/Bronze/raw_orders'
+
+  function run() {
+    const s = step('a', 'enrich')
+    return {
+      s,
+      results: new Map([
+        [
+          s.key,
+          ran(
+            'enrich',
+            result({
+              reads: [RAW],
+              writes: [WS],
+              table_schemas: {
+                [RAW]: [{ name: 'id', type: 'bigint' }],
+                [WS]: [{ name: 'id', type: 'bigint' }, { name: 'total', type: 'double' }],
+              },
+            }),
+          ),
+        ],
+      ]),
+    }
+  }
+
+  it('nests the table’s columns under the step’s access row, typed', () => {
+    const { s, results } = run()
+    const { model } = sequenceToModel([s], results, 'M')
+    const nb = model.layers.flatMap((l) => l.objects).find((o) => o.name === 'enrich')!
+    const write = nb.children.find((c) => c.name === 'silver_orders')!
+    expect(write.children.map((c) => c.name)).toEqual(['id', 'total'])
+    expect(model.properties[write.children[1].id]).toEqual({ 'Data type': 'double' })
+  })
+
+  it('joins each nested column across to the same column on the table', () => {
+    const { s, results } = run()
+    const { model, stats } = sequenceToModel([s], results, 'M')
+    const objects = model.layers.flatMap((l) => l.objects)
+    const nb = objects.find((o) => o.name === 'enrich')!
+    const silver = objects.find((o) => o.name === 'silver_orders')!
+    const onStep = nb.children.find((c) => c.name === 'silver_orders')!.children.find((c) => c.name === 'total')!
+    const onTable = silver.children.find((c) => c.name === 'total')!
+    expect(
+      model.transitions.some((t) => t.source === onStep.id && t.target === onTable.id),
+    ).toBe(true)
+    // 1 read column + 2 write columns; no `column_lineage`, so no resolved edges.
+    expect(stats.accessColumnEdges).toBe(3)
+    expect(stats.columnEdges).toBe(0)
+  })
+
+  it('points a read’s column edge from the table into the step, in flow view', () => {
+    const { s, results } = run()
+    const { model } = sequenceToModel([s], results, 'M', 'flow')
+    const objects = model.layers.flatMap((l) => l.objects)
+    const nb = objects.find((o) => o.name === 'enrich')!
+    const raw = objects.find((o) => o.name === 'raw_orders')!
+    const onStep = nb.children.find((c) => c.name === 'raw_orders')!.children.find((c) => c.name === 'id')!
+    const onTable = raw.children.find((c) => c.name === 'id')!
+    expect(model.transitions.some((t) => t.source === onTable.id && t.target === onStep.id)).toBe(true)
+  })
+
+  it('runs every column edge step -> table in sequence view', () => {
+    const { s, results } = run()
+    const { model } = sequenceToModel([s], results, 'M', 'sequence')
+    const objects = model.layers.flatMap((l) => l.objects)
+    const nb = objects.find((o) => o.name === 'enrich')!
+    const raw = objects.find((o) => o.name === 'raw_orders')!
+    const onStep = nb.children.find((c) => c.name === 'raw_orders')!.children.find((c) => c.name === 'id')!
+    const onTable = raw.children.find((c) => c.name === 'id')!
+    // A read, but pointed step -> table like everything else in this layout.
+    expect(model.transitions.some((t) => t.source === onStep.id && t.target === onTable.id)).toBe(true)
+  })
+
+  it('nests them inside a pipeline’s activity groups too', () => {
+    const p: Step = { key: 'p', kind: 'pipeline', ws: 'ws1', itemId: 'it-p', name: 'nightly' }
+    const results = new Map<string, StepResult>([
+      [
+        'p',
+        {
+          status: 'ok',
+          runs: [
+            {
+              name: 'nb_silver',
+              status: 'ok',
+              result: result({ writes: [WS], table_schemas: { [WS]: [{ name: 'id' }] } }),
+            },
+          ],
+        },
+      ],
+    ])
+    const { model } = sequenceToModel([p], results, 'M')
+    const pipe = model.layers.flatMap((l) => l.objects).find((o) => o.name === 'nightly')!
+    // object -> activity group -> access -> column
+    expect(pipe.children[0].name).toBe('nb_silver')
+    expect(pipe.children[0].children[0].name).toBe('silver_orders')
+    expect(pipe.children[0].children[0].children.map((c) => c.name)).toEqual(['id'])
+  })
+
+  it('carries no nested columns, and no column edges, with columns off', () => {
+    const { s, results } = run()
+    const { model, stats } = sequenceToModel([s], results, 'M', 'flow', {
+      ...DEFAULT_PORT_OPTIONS,
+      columns: false,
+    })
+    const nb = model.layers.flatMap((l) => l.objects).find((o) => o.name === 'enrich')!
+    expect(nb.children.every((c) => c.children.length === 0)).toBe(true)
+    expect(stats.accessColumnEdges).toBe(0)
+    // The table-level lineage is untouched — the toggles are subtractive and
+    // never change the shape of the graph.
+    expect(stats.transitions).toBe(2)
   })
 })

@@ -11,9 +11,11 @@
 // like the lineage the user just looked at:
 //   layer   = a dependency column (sources on the left, as in the flow bands)
 //   object  = a table, notebook or pipeline card
-//   attribute = a table's column
-//   transition = table->step (read), step->table (write), and column->column
-//                where the run resolved it
+//   attribute = a table's column, or a step's access — and, under an access,
+//               that table's columns again, exactly as the card nests them
+//   transition = table->step (read), step->table (write); an access's columns
+//                across to the same columns on the table; and column->column
+//                where the run resolved real lineage between two tables
 import type { LineageModel, Layer, ModelObject, Attribute, Transition, EntityId } from '../model/types'
 import { emptyModel } from '../model/store'
 import { TAGS_KEY } from '../model/tags'
@@ -110,6 +112,8 @@ const stepId = (key: string) => `s:${key}`
 /** Where a step's I/O attribute for one access lives. */
 const ioKey = (nodeId: string, group: number, access: 'Read' | 'Write', table: string) =>
   `${nodeId}|${group}|${access}|${table}`
+/** One column nested under that access — the step-side end of a column edge. */
+const ioColKey = (io: string, column: string) => `${io}\0${column}`
 
 /**
  * What to badge one activity of a pipeline as.
@@ -227,7 +231,16 @@ export const DEFAULT_PORT_OPTIONS: PortOptions = {
 export interface ToModelResult {
   model: LineageModel
   /** Counts for the confirmation the caller shows. */
-  stats: { layers: number; objects: number; attributes: number; transitions: number; columnEdges: number }
+  stats: {
+    layers: number
+    objects: number
+    attributes: number
+    transitions: number
+    /** Column-to-column LINEAGE the run resolved — a measure of the engine. */
+    columnEdges: number
+    /** An access's columns joined to the table's own. Mechanical, not resolved. */
+    accessColumnEdges: number
+  }
 }
 
 export function sequenceToModel(
@@ -342,6 +355,7 @@ export function sequenceToModel(
   const props: LineageModel['properties'] = {}
   const attrIdOf = new Map<string, EntityId>() // `${table}\0${column}` -> attribute id
   const ioAttrOf = new Map<string, EntityId>() // `${stepId}|${access}|${table}` -> attribute id
+  const ioColAttrOf = new Map<string, EntityId>() // `${ioKey}\0${column}` -> attribute id
   const objIdOf = new Map<string, EntityId>()
 
   // Two fixed columns in the sequence view; dependency depth in the flow view.
@@ -366,8 +380,22 @@ export function sequenceToModel(
       // Without them a step exported as a bare object and the model did not
       // look like the canvas it came from.
       const ioAttr = (row: IoRow, group: number): Attribute => {
-        const attr: Attribute = { id: crypto.randomUUID(), name: refLabel(row.table, refs), children: [] }
-        ioAttrOf.set(ioKey(n.id, group, row.access, row.table), attr.id)
+        const key = ioKey(n.id, group, row.access, row.table)
+        // The access carries the table's columns beneath it, the same way the
+        // canvas card does. That nesting is what gives a column edge somewhere
+        // to leave FROM on the step side — without it the port drew a model
+        // whose steps were a flat list of table names, which is not the picture
+        // the user pressed the button on.
+        const children: Attribute[] = options.columns
+          ? (schemas.get(row.table) ?? []).map((c) => {
+              const col: Attribute = { id: crypto.randomUUID(), name: c.name, children: [] }
+              ioColAttrOf.set(ioColKey(key, c.name), col.id)
+              if (c.type) props[col.id] = { 'Data type': c.type }
+              return col
+            })
+          : []
+        const attr: Attribute = { id: crypto.randomUUID(), name: refLabel(row.table, refs), children }
+        ioAttrOf.set(key, attr.id)
         // Only the Access LABEL is optional. The row itself is structure —
         // dropping it would put the edge back on the object header and the
         // model would stop looking like the canvas.
@@ -456,6 +484,46 @@ export function sequenceToModel(
     return t
   }
 
+  // Declared before the helper that increments them. Counted apart on purpose:
+  // `columnEdges` answers "how much column lineage did the run actually
+  // resolve", which is a measure of the ENGINE and drops to zero on an
+  // ambiguous join. Access edges are mechanical — one per column per access,
+  // always — so folding them in would mask exactly the signal that number
+  // exists to carry.
+  let columnEdges = 0
+  let accessColumnEdges = 0
+
+  /**
+   * The column edges belonging to one access: each column under the step's row,
+   * across to the same column on the table.
+   *
+   * The identity pairing the canvas draws, and a different claim from the
+   * `column_lineage` edges below — this one says "this access moved this
+   * column", those say "this column derives from that one". Both are column to
+   * column, so both answer to the same toggle.
+   *
+   * The table-level transition is emitted regardless and never replaced: it is
+   * the structural link the layering and every consumer read, and PortOptions
+   * promises the shape of the graph does not depend on these toggles. The
+   * canvas can hide it behind the column edges because it is redrawing the same
+   * graph; a model has to carry it.
+   */
+  const columnEdgesFor = (l: Link, access: 'Read' | 'Write', bag: Record<string, string>) => {
+    if (!wantColumnEdges) return
+    const stepNode = l.kind === 'read' ? l.to : l.from
+    const io = ioKey(stepNode, l.group, access, l.table)
+    for (const c of schemas.get(l.table) ?? []) {
+      const onStep = ioColAttrOf.get(ioColKey(io, c.name))
+      const onTable = attrIdOf.get(`${l.table}\0${c.name}`)
+      if (!onStep || !onTable) continue
+      // Sequence view runs every edge step -> table, for the same reason the
+      // table-level ones do; flow view keeps true direction.
+      if (view === 'sequence' || l.kind === 'write') addTransition(onStep, onTable, bag)
+      else addTransition(onTable, onStep, bag)
+      accessColumnEdges++
+    }
+  }
+
   for (const l of links) {
     const access = l.kind === 'read' ? 'Read' : 'Write'
     const bag = {
@@ -476,6 +544,7 @@ export function sequenceToModel(
       const source = ioAttrOf.get(ioKey(stepNode, l.group, access, l.table)) ?? objIdOf.get(stepNode)
       const target = objIdOf.get(tableNode)
       if (source && target) addTransition(source, target, bag)
+      columnEdgesFor(l, access, bag)
       continue
     }
 
@@ -485,10 +554,11 @@ export function sequenceToModel(
     const source = l.kind === 'read' ? objIdOf.get(l.from) : (io ?? objIdOf.get(l.from))
     const target = l.kind === 'read' ? (io ?? objIdOf.get(l.to)) : objIdOf.get(l.to)
     if (source && target) addTransition(source, target, bag)
+    columnEdgesFor(l, access, bag)
   }
 
-  // Column-level edges, where the run resolved them unambiguously.
-  let columnEdges = 0
+  // Column-level lineage between two TABLES, where the run resolved it
+  // unambiguously — a different claim from the access edges above.
   for (const [key, res] of wantColumnEdges ? results : []) {
     const step = steps.find((s) => s.key === key)
     if (!step) continue
@@ -524,7 +594,14 @@ export function sequenceToModel(
 
   return {
     model: { ...model, layers, transitions, properties: props },
-    stats: { layers: layers.length, objects, attributes, transitions: transitions.length, columnEdges },
+    stats: {
+      layers: layers.length,
+      objects,
+      attributes,
+      transitions: transitions.length,
+      columnEdges,
+      accessColumnEdges,
+    },
   }
 }
 

@@ -1,10 +1,19 @@
-"""The sandbox runs as the service principal — against only what YOU can see.
+"""The sandbox reads Fabric as YOU — and only what you can see.
 
-The run needs the SP: once the child starts there is no user in the loop, and
-the SP is what holds a credential. But the workspace and notebook are named by
-the request, so the authorisation question is separate from the execution one.
-Ungated, `/fabric/sandbox/run` reads any notebook the SP can reach for anyone
+The workspace and notebook are named by the request, so ungated,
+`/fabric/sandbox/run` reads any notebook its credential can reach for anyone
 who can reach the endpoint — which is the whole tenant, from a public bundle.
+That gate is what most of this file tests.
+
+The credential itself is the caller's own token, as on every other Fabric
+route. This file used to open by explaining why it was the service principal
+instead — "once the child starts there is no user in the loop" — which is true
+of the child and irrelevant here: the child has no credential at all and never
+calls Fabric, while every Fabric call the endpoint makes happens in-request.
+The consequence of the mix-up was a deployment with no SP secrets refusing
+signed-in users with "Fabric is not configured — sign in".
+
+The SP remains the fallback for a caller who sends no token.
 """
 
 from __future__ import annotations
@@ -40,6 +49,10 @@ def only_mine(monkeypatch):
 
 def _run(client, workspace_id: str, token: str | None = "user-tok"):
     headers = {"Authorization": f"Bearer {token}"} if token else {}
+    if token:
+        # The browser sends the OneLake token in its own header — a different
+        # audience, and what the schema fetch reads columns from.
+        headers["X-OneLake-Authorization"] = f"Bearer {token}-lake"
     return client.post(
         "/fabric/sandbox/run",
         json={"name": "nb", "workspace_id": workspace_id, "item_id": "item-1"},
@@ -47,8 +60,28 @@ def _run(client, workspace_id: str, token: str | None = "user-tok"):
     )
 
 
+@pytest.fixture
+def capture_client(monkeypatch):
+    """Record the kwargs the endpoint builds its Fabric client with.
+
+    Patched in the sandbox router rather than globally so `access` keeps its own
+    fake, and so the test does not depend on whether this machine has service
+    principal credentials configured at all.
+    """
+    from app.sandbox import router as sandbox_router
+
+    seen: dict = {}
+
+    class Recording:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    monkeypatch.setattr(sandbox_router, "FabricClient", Recording)
+    return seen
+
+
 def test_a_workspace_you_cannot_see_is_not_fetched(client, only_mine, monkeypatch):
-    """And nothing is fetched — the refusal lands before the SP is touched."""
+    """And nothing is fetched — the refusal lands before Fabric is touched."""
     from app.sandbox import router as sandbox_router
 
     def explode(*_args, **_kwargs):  # pragma: no cover - must never run
@@ -70,8 +103,30 @@ def test_the_refusal_does_not_confirm_the_workspace_exists(client, only_mine):
     assert NOT_MINE not in resp.text
 
 
-def test_your_own_workspace_gets_past_the_gate(client, only_mine, monkeypatch):
-    """The gate must not be a wall: the SP fetch still happens for your own."""
+def test_the_run_reads_fabric_as_the_caller(client, only_mine, capture_client, monkeypatch):
+    """Both of the caller's tokens reach the client the run fetches with.
+
+    The regression this pins: the endpoint used to build a bare `FabricClient()`
+    and force the service-principal path, so a signed-in user on a deployment
+    without SP secrets was told to sign in — and the OneLake token, which is
+    what the schema fetch needs, was never read off the request at all.
+    """
+    from app.sandbox import router as sandbox_router
+
+    monkeypatch.setattr(
+        sandbox_router,
+        "fetch_notebook_source",
+        lambda *a, **k: (_ for _ in ()).throw(sandbox_router.FabricError("stop here")),
+    )
+    _run(client, MINE)
+    assert capture_client["user_token"] == "user-tok"
+    assert capture_client["onelake_token"] == "user-tok-lake"
+
+
+def test_your_own_workspace_gets_past_the_gate(
+    client, only_mine, capture_client, monkeypatch
+):
+    """The gate must not be a wall: the fetch still happens for your own."""
     from app.sandbox import router as sandbox_router
 
     reached = {}
@@ -86,7 +141,7 @@ def test_your_own_workspace_gets_past_the_gate(client, only_mine, monkeypatch):
     assert resp.status_code == 502  # got through the gate, failed at the fetch
 
 
-def test_an_unsigned_caller_still_runs_as_before(client, monkeypatch):
+def test_an_unsigned_caller_still_runs_as_before(client, capture_client, monkeypatch):
     """No token means no user whose access could be checked, not "denied".
 
     This is the development path — a curl, or the DEV-only "continue without

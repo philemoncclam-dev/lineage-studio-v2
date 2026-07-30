@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from ..fabric.access import assert_visible, limit_to_visible, visible_workspace_ids
 from ..fabric.client import FabricClient, FabricError
-from ..fabric.router import user_token
+from ..fabric.router import onelake_token, user_token
 from ..fabric.notebooks import NotebookDecodeError, fetch_notebook_source
 from ..fabric.schema import (
     guid_name_map,
@@ -63,15 +63,36 @@ class SandboxRunRequest(BaseModel):
 def sandbox_run(
     req: SandboxRunRequest,
     token: Annotated[str | None, Depends(user_token)] = None,
+    lake: Annotated[str | None, Depends(onelake_token)] = None,
 ) -> RunResult:
-    """Run as the service principal, but only against what the CALLER can see.
+    """Read Fabric as the CALLER, falling back to the service principal.
 
-    The split is deliberate. The run itself needs the SP — there is no user in
-    the loop once the child process starts, and the SP is what holds a
-    credential — but the workspace and notebook are named by the request, so
-    without a check this endpoint would fetch any notebook the SP can reach on
-    behalf of anyone who can reach this endpoint. The target is authorised
-    against the caller's own token; the fetch that follows is not.
+    The client is built from the caller's own tokens, exactly as every other
+    Fabric route builds one. An earlier version constructed a bare
+    `FabricClient()` here, on the reasoning that the run "needs the SP, because
+    there is no user in the loop once the child process starts" — which
+    describes the child accurately and this function not at all. The child
+    holds no credential of any kind (`runner._scrubbed_env` sees to that) and
+    never speaks to Fabric; every Fabric call this endpoint makes happens
+    *here*, in-request, where the caller's tokens are available. Dropping them
+    meant a deployment without service-principal secrets answered signed-in
+    users with "Fabric is not configured — sign in", which they had already
+    done.
+
+    `onelake_token` matters as much as the Fabric one and was not being read at
+    all: OneLake is a separate audience, and it is what `resolve_read_schemas`
+    below reads columns from. Without it a run resolved no schemas, so even a
+    successful run came back with no column lineage.
+
+    Passing them through also makes the authorisation intrinsic rather than
+    bolted on — Fabric evaluates the caller's own access on the fetch itself,
+    so the `assert_visible` gate is a fast, honest 404 in front of a check that
+    now also happens for real, instead of the only thing standing between a
+    caller and any notebook the SP can reach.
+
+    A caller who sends no token still gets the service principal, so the
+    non-interactive paths — tests, a curl, the DEV-only "continue without
+    signing in" — behave exactly as before.
     """
     cells = req.cells
     schemas: dict[str, list[ColumnSchema]] = dict(req.schemas or {})
@@ -93,7 +114,7 @@ def sandbox_run(
         visible = visible_workspace_ids(token)
         assert_visible(visible, req.workspace_id)
         try:
-            client = FabricClient()
+            client = FabricClient(user_token=token, onelake_token=lake)
             source = fetch_notebook_source(client, req.workspace_id, req.item_id, req.name)
         except (FabricError, NotebookDecodeError) as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc

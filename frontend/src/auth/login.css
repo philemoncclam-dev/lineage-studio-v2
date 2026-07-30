@@ -32,7 +32,11 @@
   background: #fff;
   border: 1px solid #e3e7ef;
   border-radius: 16px;
-  padding: 36px 32px 30px;
+  /* Was 36px on top, set when a 44px mark sat above the heading and needed
+     room to breathe. With the mark gone the heading is the first thing in the
+     card, and 36px over a 21px line left it floating — so the top comes down
+     to match the bottom and the card closes up by the mark's full height. */
+  padding: 30px 32px;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 18px 44px rgba(16, 24, 40, 0.09);
 }
 
@@ -44,16 +48,6 @@
   align-items: center;
   text-align: center;
   margin-bottom: 24px;
-}
-
-.lg-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #3b6fd4, #6f4fd8);
-  box-shadow: 0 6px 16px rgba(59, 111, 212, 0.28);
-  margin-bottom: 14px;
-  flex: none;
 }
 
 .lg-title {

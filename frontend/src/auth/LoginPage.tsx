@@ -24,12 +24,12 @@ export function LoginPage() {
   return (
     <main className="lg-page" aria-labelledby="lg-title">
       <section className="lg-card">
-        {/* The mark and the name, and nothing else above the button. The page
-            needs a heading regardless — `aria-labelledby` points here, and a
-            landmark announced with one button and no heading tells a screen
-            reader user nothing about where they have landed. */}
+        {/* The name, and nothing else above the button. The gradient mark that
+            used to sit here is gone; the heading is not, and must not go —
+            `aria-labelledby` points at it, and a landmark announced with one
+            button and no heading tells a screen reader user nothing about
+            where they have landed. */}
         <div className="lg-brand">
-          <span className="lg-mark" aria-hidden="true" />
           <h1 className="lg-title" id="lg-title">
             Lineage Studio
           </h1>

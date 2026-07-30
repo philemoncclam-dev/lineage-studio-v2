@@ -47,6 +47,17 @@ _WRITE_SQL = re.compile(
     )""",
     re.I | re.S | re.X,
 )
+#: Writes with no plain SELECT to analyze — `MERGE INTO` above all, the Delta
+#: upsert every gold notebook is built on. Off Fabric there is no Delta table to
+#: merge into, so running one only raises; but the TARGET is a write and the
+#: `USING` side is a read, and those were being lost entirely to the exception.
+#: Table-level lineage, then, rather than none — the columns come from
+#: `_sqllineage` on the stub engine, which parses the same statement properly.
+_WRITE_TARGET_ONLY = re.compile(
+    r"^\s*(?:MERGE\s+INTO|UPDATE|DELETE\s+FROM)\s+(?P<t>[\w.`]+)", re.I
+)
+#: The `USING` source of a MERGE, when it is a table rather than a subquery.
+_MERGE_USING = re.compile(r"\bUSING\s+(?P<t>[\w.`]+)(?!\s*\()", re.I)
 _VIEW_IN_PLAN = re.compile(r"View \(`([^`]+)`", re.I)
 _UNRESOLVED_IN_PLAN = re.compile(r"UnresolvedRelation \[([^\],]+)", re.I)
 
@@ -290,6 +301,26 @@ def main() -> None:
                 if ref not in writes:
                     writes.append(ref)
             return None
+
+        # MERGE / UPDATE / DELETE: no projection to analyze, and nothing to run
+        # against off Fabric. Record the tables and move on rather than letting
+        # the cell raise and take the whole statement's lineage with it.
+        target_only = _WRITE_TARGET_ONLY.match(query)
+        if target_only:
+            ref = _resolve_read(target_only.group("t"))
+            if ref not in writes:
+                writes.append(ref)
+            using = _MERGE_USING.search(query)
+            if using:
+                source = _resolve_read(using.group("t"))
+                if _refs.table_of(source):
+                    reads.add(source)
+            log.append(
+                f"[spark] {_refs.table_of(ref)}: table-level lineage only — "
+                "MERGE/UPDATE/DELETE has no plan to analyze off Fabric."
+            )
+            return None
+
         return _orig_sql(query, *a, **k)
 
     spark.sql = _sql

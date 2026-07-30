@@ -62,6 +62,13 @@ _WRITE = [
     re.compile(rf"""\.write[\w.()'"= ]*\.(?:{_FMT})\(\s*['"]({_PATH})['"]""", re.I),
     re.compile(r"""\bINSERT\s+INTO\s+([\w.`]+)""", re.I),
     re.compile(r"""\bCREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+([\w.`]+)""", re.I),
+    # The Delta upsert — the most common write in a gold notebook, and it was
+    # matched by nothing here, so a whole MERGE-based pipeline produced no write
+    # edge at all. `_sqllineage` resolves its columns; this is the table-level
+    # answer, and the one that survives a missing sqlglot.
+    re.compile(r"""\bMERGE\s+INTO\s+([\w.`]+)""", re.I),
+    re.compile(r"""\bUPDATE\s+([\w.`]+)\s+SET\b""", re.I),
+    re.compile(r"""\bDELETE\s+FROM\s+([\w.`]+)""", re.I),
 ]
 _IMPORT = re.compile(r"^\s*(?:from\s+[\w.]+\s+import\b|import\s+[\w.]+)", re.M)
 

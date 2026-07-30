@@ -211,6 +211,123 @@ def test_a_path_write_is_captured_not_discarded():
     assert make_ref("out_table", "Gold", "Finance") in result.writes
 
 
+# --- MERGE INTO: the Delta upsert ------------------------------------------
+# Matched by nothing on either engine, so a gold notebook built on MERGE — which
+# is most of them — produced no write edge, no table, no columns. Nothing.
+
+MERGE_CELL = [
+    "spark.sql('''\n"
+    "MERGE INTO customers AS t USING staging_updates AS s ON t.id = s.id\n"
+    "WHEN MATCHED THEN UPDATE SET t.name = s.name, t.total = s.amount * 2\n"
+    "WHEN NOT MATCHED THEN INSERT (id, name) VALUES (s.id, s.name)\n"
+    "''')"
+]
+
+
+def _merge_run(cells=None, schemas=None):
+    return run_sandbox(
+        RunRequest(
+            notebook_name="nb",
+            cells=cells or MERGE_CELL,
+            schemas=schemas or {},
+            workspace="Analytics",
+            lakehouse="Gold",
+        ),
+        engine="stub",
+    )
+
+
+def test_a_merge_is_a_write_to_its_target():
+    result = _merge_run()
+    assert result.writes == [make_ref("customers", "Gold", "Analytics")]
+
+
+def test_a_merge_reads_its_using_source():
+    result = _merge_run()
+    assert make_ref("staging_updates", "Gold", "Analytics") in result.reads
+
+
+def test_a_merge_resolves_column_lineage_on_both_clauses():
+    result = _merge_run()
+    target = make_ref("customers", "Gold", "Analytics")
+    source = make_ref("staging_updates", "Gold", "Analytics")
+    flows = {(f.to_column, f.from_column, f.from_table) for f in result.column_lineage}
+    # UPDATE SET — a passthrough and a computed column.
+    assert ("name", "name", source) in flows
+    assert ("total", "amount", source) in flows
+    # NOT MATCHED INSERT — the column list paired with its values.
+    assert ("id", "id", source) in flows
+    assert all(f.to_table == target for f in result.column_lineage)
+
+
+def test_a_computed_merge_column_carries_its_transform():
+    result = _merge_run()
+    total = [f for f in result.column_lineage if f.to_column == "total"]
+    assert total and total[0].transform == "s.amount * 2"
+    name = [f for f in result.column_lineage if f.to_column == "name"]
+    assert name and name[0].transform is None  # A passthrough has none.
+
+
+def test_a_star_merge_maps_every_source_column_to_its_namesake():
+    """`INSERT *` / `UPDATE SET *` carry no column list; the schemas supply it."""
+    source = make_ref("staging_updates", "Gold", "Analytics")
+    target = make_ref("customers", "Gold", "Analytics")
+    result = _merge_run(
+        cells=[
+            "spark.sql('''\n"
+            "MERGE INTO customers AS t USING staging_updates AS s ON t.id = s.id\n"
+            "WHEN MATCHED THEN UPDATE SET *\n"
+            "WHEN NOT MATCHED THEN INSERT *\n"
+            "''')"
+        ],
+        schemas={
+            source: [{"name": "id"}, {"name": "name"}, {"name": "scratch"}],
+            target: [{"name": "id"}, {"name": "name"}],
+        },
+    )
+    flows = {(f.to_column, f.from_column) for f in result.column_lineage}
+    assert ("id", "id") in flows
+    assert ("name", "name") in flows
+    # A source column the target doesn't have is not invented into it.
+    assert not any(f.to_column == "scratch" for f in result.column_lineage)
+
+
+def test_a_merge_from_a_subquery_reads_the_underlying_table():
+    result = _merge_run(
+        cells=[
+            "spark.sql('''\n"
+            "MERGE INTO customers AS t "
+            "USING (SELECT id, amount FROM staging_updates) AS s ON t.id = s.id\n"
+            "WHEN MATCHED THEN UPDATE SET t.total = s.amount\n"
+            "''')"
+        ]
+    )
+    assert make_ref("staging_updates", "Gold", "Analytics") in result.reads
+
+
+def test_a_merge_delete_clause_moves_no_columns():
+    result = _merge_run(
+        cells=[
+            "spark.sql('MERGE INTO customers AS t USING staging_updates AS s "
+            "ON t.id = s.id WHEN MATCHED THEN DELETE')"
+        ]
+    )
+    assert result.writes == [make_ref("customers", "Gold", "Analytics")]
+    assert result.column_lineage == []
+
+
+def test_an_update_statement_is_a_write_with_no_invented_columns():
+    result = _merge_run(cells=["spark.sql('UPDATE customers SET total = 0')"])
+    assert result.writes == [make_ref("customers", "Gold", "Analytics")]
+    assert result.column_lineage == []
+
+
+def test_a_delete_statement_is_a_write_not_a_read():
+    result = _merge_run(cells=["spark.sql('DELETE FROM customers WHERE total = 0')"])
+    assert result.writes == [make_ref("customers", "Gold", "Analytics")]
+    assert result.reads == []
+
+
 # --- coverage: the gap reports itself --------------------------------------
 # The same lesson as SchemaResolution, applied to code. An empty column_lineage
 # used to mean any of four things — nothing to find, the DataFrame API on an

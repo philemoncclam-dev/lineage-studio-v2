@@ -647,6 +647,30 @@ export interface SandboxTableRef {
   kind?: 'table' | 'file'
 }
 
+/**
+ * What the run could and could not analyse — the code-side counterpart to
+ * `schema_resolution` (backend/app/sandbox/_coverage.py).
+ *
+ * An empty `column_lineage` has four causes and the result could not tell them
+ * apart: nothing to find; the DataFrame API on an engine that reads only SQL
+ * (the stub — which is production); a query built from an f-string or variable,
+ * skipped because its text is unknowable without running the cell; a cell that
+ * would not parse. Only the first is a finding; the rest are missing answers.
+ */
+export interface SandboxCoverage {
+  cells: number
+  sql_cells: number
+  sql_statements: number
+  /** Cells writing via the DataFrame API and issuing no SQL — the stub's blind spot. */
+  dataframe_write_cells: number
+  dynamic_sql_cells: number
+  unparsable_cells: number
+  writes: number
+  writes_with_column_lineage: number
+  /** The load-bearing field: a run can look healthy with every write bare. */
+  writes_without_column_lineage: string[]
+}
+
 export interface SandboxRunResult {
   ok: boolean
   /**
@@ -691,6 +715,11 @@ export interface SandboxRunResult {
   } | null
   /** Column-level lineage from the analyzed plans (Spark engine only). */
   column_lineage: SandboxColumnFlow[]
+  /**
+   * What the run could and could not analyse. Undefined from a backend deployed
+   * before it existed — which must not read as "coverage was total".
+   */
+  coverage?: SandboxCoverage | null
   /**
    * ref → its parts, for every ref named anywhere in this result.
    *

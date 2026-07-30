@@ -30,6 +30,7 @@ from pathlib import Path
 # Sibling module, pure stdlib — see the note in child_stub.py. Not part of
 # `app`, so the isolation contract in the docstring above still holds.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _coverage  # noqa: E402
 import _refs  # noqa: E402
 
 # Loopback binding + a Python interpreter for the driver — set before Spark
@@ -329,6 +330,15 @@ def main() -> None:
 
     spark.stop()
 
+    # Coverage matters here too, for a different reason: Catalyst reads the
+    # DataFrame API fine, so the counts that stay above zero on this engine are
+    # the ones no engine can fix — a dynamically built query, an unparsable cell,
+    # a write whose plan would not analyze (each already logged above).
+    coverage = _coverage.add_writes(
+        _coverage.scan_cells(cells), sorted(set(writes)), column_lineage
+    )
+    log.extend(_coverage.notes(coverage, "spark"))
+
     result = {
         "ok": True,
         "engine": "spark",
@@ -336,6 +346,7 @@ def main() -> None:
         "cells": cell_results,
         "reads": sorted(r for r in (reads - set(writes)) if _refs.table_of(r)),
         "writes": sorted(set(writes)),
+        "coverage": coverage,
         "table_schemas": table_schemas,
         "column_lineage": column_lineage,
         "tables": _refs.table_refs(sorted(reads | set(writes) | set(table_schemas))),

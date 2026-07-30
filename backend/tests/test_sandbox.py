@@ -211,6 +211,90 @@ def test_a_path_write_is_captured_not_discarded():
     assert make_ref("out_table", "Gold", "Finance") in result.writes
 
 
+# --- coverage: the gap reports itself --------------------------------------
+# The same lesson as SchemaResolution, applied to code. An empty column_lineage
+# used to mean any of four things — nothing to find, the DataFrame API on an
+# engine that reads only SQL, a dynamically built query, an unparsable cell — and
+# the result could not tell them apart.
+
+def test_a_dataframe_write_is_reported_as_an_engine_limit_not_an_empty_result():
+    result = run_sandbox(
+        RunRequest(
+            notebook_name="nb",
+            cells=["df = spark.table('src')", "df.write.mode('overwrite').saveAsTable('dst')"],
+            workspace="Analytics",
+            lakehouse="Bronze",
+        ),
+        engine="stub",
+    )
+    cov = result.coverage
+    assert cov is not None
+    assert cov.dataframe_write_cells == 1
+    # The write happened and has no column lineage — the fact that matters.
+    assert cov.writes == 1
+    assert cov.writes_with_column_lineage == 0
+    assert cov.writes_without_column_lineage == [make_ref("dst", "Bronze", "Analytics")]
+    assert any("DataFrame API" in line for line in result.log)
+
+
+def test_a_sql_write_reports_its_columns_as_covered():
+    ref = make_ref("src", "Bronze", "Analytics")
+    result = run_sandbox(
+        RunRequest(
+            notebook_name="nb",
+            cells=["spark.sql('CREATE TABLE dst AS SELECT order_id FROM src')"],
+            schemas={ref: [{"name": "order_id", "type": "long"}]},
+            workspace="Analytics",
+            lakehouse="Bronze",
+        ),
+        engine="stub",
+    )
+    cov = result.coverage
+    assert cov.sql_statements == 1
+    assert cov.writes == 1
+    assert cov.writes_with_column_lineage == 1
+    assert cov.writes_without_column_lineage == []
+
+
+def test_a_dynamically_built_query_is_counted_not_silently_dropped():
+    """An f-string table name is skipped on purpose — but silently, until now."""
+    result = run_sandbox(
+        RunRequest(
+            notebook_name="nb",
+            cells=["t = 'orders'\nspark.sql(f'SELECT * FROM {t}')"],
+        ),
+        engine="stub",
+    )
+    assert result.coverage.dynamic_sql_cells == 1
+    assert any("dynamically" in line for line in result.log)
+
+
+def test_an_unparsable_cell_is_counted():
+    result = run_sandbox(
+        RunRequest(notebook_name="nb", cells=["def broken(:\n  pass"]), engine="stub"
+    )
+    assert result.coverage.unparsable_cells == 1
+
+
+def test_a_magic_cell_is_not_an_unparsable_python_cell():
+    result = run_sandbox(
+        RunRequest(notebook_name="nb", cells=["%%sql\nSELECT 1 FROM t"]), engine="stub"
+    )
+    assert result.coverage.unparsable_cells == 0
+    assert result.coverage.sql_cells == 1
+
+
+def test_a_read_only_notebook_reports_no_missing_coverage():
+    """The one case where an empty column_lineage really is 'nothing to see'."""
+    result = run_sandbox(
+        RunRequest(notebook_name="nb", cells=["df = spark.table('t')", "df.count()"]),
+        engine="stub",
+    )
+    cov = result.coverage
+    assert (cov.writes, cov.dataframe_write_cells, cov.dynamic_sql_cells) == (0, 0, 0)
+    assert cov.writes_without_column_lineage == []
+
+
 # --- the run leaves nothing behind ----------------------------------------
 # `os.rmdir` removed only an EMPTY working directory, so every Spark run — which
 # leaves a spark-warehouse and a metastore_db in there — leaked its whole tree

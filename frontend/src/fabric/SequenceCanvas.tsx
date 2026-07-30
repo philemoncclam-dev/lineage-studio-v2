@@ -7,7 +7,15 @@
 // same reading as `modeling/ModelViewer`.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { refKind, refLabel, refWorkspace, type SandboxColumn, type SandboxRunResult, type SandboxTableRef } from '../api'
+import {
+  refKind,
+  refLabel,
+  refWorkspace,
+  type SandboxColumn,
+  type SandboxCoverage,
+  type SandboxRunResult,
+  type SandboxTableRef,
+} from '../api'
 import { StepIcon } from './SequencePanel'
 import { stepReads, stepTables, stepWrites, type Step, type StepResult } from './sequence'
 import {
@@ -938,6 +946,32 @@ export function SequenceCanvas({ steps, results }: { steps: Step[]; results: Map
   const schemaUnresolved = [...new Set(schemaReports.flatMap((s) => s.unresolved))].sort()
   const schemaFailures = [...new Set(schemaReports.flatMap((s) => s.failures))]
 
+  // Coverage, across the run. The counterpart to the schema report above, and
+  // the one that answers "why is this table bare?" when OneLake was perfectly
+  // readable: production runs the stub engine, which derives column lineage from
+  // SQL only, so a DataFrame-API notebook yields no column edges at all. Without
+  // this that gap is indistinguishable from a notebook that moves no columns.
+  const coverages = notebookRuns.map(({ r }) => r.coverage).filter((c) => !!c)
+  const sum = (pick: (c: SandboxCoverage) => number) => coverages.reduce((n, c) => n + pick(c), 0)
+  const totalWrittenTables = sum((c) => c.writes)
+  const coveredWrites = sum((c) => c.writes_with_column_lineage)
+  const bareWrites = [...new Set(coverages.flatMap((c) => c.writes_without_column_lineage))].sort()
+  const dataframeCells = sum((c) => c.dataframe_write_cells)
+  const dynamicSqlCells = sum((c) => c.dynamic_sql_cells)
+  const unparsableCells = sum((c) => c.unparsable_cells)
+  // The reasons, in the order they explain the most. Each is a real cause of a
+  // bare write, and naming it is the whole point of the block.
+  const coverageReasons = [
+    dataframeCells > 0 &&
+      `${dataframeCells} cell${dataframeCells === 1 ? '' : 's'} write through the DataFrame API — the ${
+        notebookRuns[0]?.r.engine ?? 'stub'
+      } engine derives column lineage from SQL only, so those writes have no column edges.`,
+    dynamicSqlCells > 0 &&
+      `${dynamicSqlCells} cell${dynamicSqlCells === 1 ? '' : 's'} build their SQL from an f-string or a variable; the query text is not knowable without running the cell, so it was skipped rather than guessed at.`,
+    unparsableCells > 0 &&
+      `${unparsableCells} cell${unparsableCells === 1 ? '' : 's'} could not be parsed.`,
+  ].filter((r): r is string => typeof r === 'string')
+
   if (steps.length === 0)
     return (
       <div className="fx-detail-empty">
@@ -992,6 +1026,17 @@ export function SequenceCanvas({ steps, results }: { steps: Step[]; results: Map
                       </dd>
                     </div>
                   )}
+                  {/* How much of what the run wrote actually got column lineage.
+                      The rest of this header says what the run found; this says
+                      how much of it is complete. */}
+                  {totalWrittenTables > 0 && (
+                    <div>
+                      <dt>Columns</dt>
+                      <dd data-warn={bareWrites.length > 0 || undefined}>
+                        {coveredWrites}/{totalWrittenTables}
+                      </dd>
+                    </div>
+                  )}
                 </dl>
               </>
             )}
@@ -1025,6 +1070,39 @@ export function SequenceCanvas({ steps, results }: { steps: Step[]; results: Map
                 <ul className="sbx-schema-why">
                   {schemaFailures.map((f) => (
                     <li key={f}>{f}</li>
+                  ))}
+                </ul>
+              )}
+            </details>
+          )}
+
+          {/* Same shape as the schema gap above, and the same argument: the run
+              is valid, its column lineage is just incomplete for a reason that
+              nothing else on screen would show. The reasons are listed because
+              the actionable distinction lives in them — an engine limit is fixed
+              by running the Spark engine, a dynamic query never can be. */}
+          {bareWrites.length > 0 && (
+            <details className="sbx-schema-gap">
+              <summary>
+                {bareWrites.length} written table{bareWrites.length === 1 ? '' : 's'} got no column
+                lineage
+                {coverageReasons.length > 0
+                  ? ' — for the reasons below, not because there was nothing to find.'
+                  : '.'}
+              </summary>
+              <ul>
+                {bareWrites.map((ref) => (
+                  // Labels come from every run's side table merged, not the
+                  // first run's: a bare write may belong to any step.
+                  <li key={ref}>
+                    {refLabel(ref, Object.assign({}, ...notebookRuns.map(({ r }) => r.tables ?? {})))}
+                  </li>
+                ))}
+              </ul>
+              {coverageReasons.length > 0 && (
+                <ul className="sbx-schema-why">
+                  {coverageReasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
                   ))}
                 </ul>
               )}

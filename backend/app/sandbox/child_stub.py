@@ -32,6 +32,7 @@ from pathlib import Path
 # path, so its own directory leads sys.path. It is NOT part of `app`, so the
 # isolation contract above still holds.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _coverage  # noqa: E402
 import _refs  # noqa: E402
 import _sqllineage  # noqa: E402
 
@@ -174,6 +175,14 @@ def main() -> None:
         if not any(c["name"] == flow["to_column"] for c in columns):
             columns.append({"name": flow["to_column"], "type": None})
 
+    # What could and could not be analysed. The stub's blind spot — the whole
+    # DataFrame API — is production's blind spot, so it has to be reported rather
+    # than left to look like a notebook that moves no columns.
+    coverage = _coverage.add_writes(
+        _coverage.scan_cells(cells), sorted(all_writes), column_lineage
+    )
+    log.extend(_coverage.notes(coverage, "stub"))
+
     result = {
         "ok": True,
         "engine": "stub",
@@ -181,6 +190,7 @@ def main() -> None:
         "cells": cell_results,
         "reads": sorted(all_reads - all_writes),
         "writes": sorted(all_writes),
+        "coverage": coverage,
         "table_schemas": table_schemas,
         "column_lineage": column_lineage,
         # Schema refs join the side table too, exactly as the Spark path does:

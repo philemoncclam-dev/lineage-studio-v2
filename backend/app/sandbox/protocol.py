@@ -74,6 +74,37 @@ class SchemaResolution(BaseModel):
     failures: list[str] = Field(default_factory=list)
 
 
+class Coverage(BaseModel):
+    """What the run could and could not analyse — see `_coverage.py`.
+
+    The code-side counterpart to `SchemaResolution`, and the same lesson: an
+    empty `column_lineage` has four causes (nothing to find; the DataFrame API on
+    an engine that only reads SQL; a dynamically built query; an unparsable
+    cell) and the result could not tell them apart. `writes_without_column_
+    lineage` is the load-bearing field — a run can look entirely healthy while
+    every write landed with no column edges at all.
+
+    `None` on a result means the engine predates this field, not that coverage
+    was total.
+    """
+
+    cells: int = 0
+    #: Cells that hand at least one SQL statement to Spark, and the statement count.
+    sql_cells: int = 0
+    sql_statements: int = 0
+    #: Cells that write through the DataFrame API and issue no SQL. On the stub
+    #: engine — which is production — these are precisely the writes that cannot
+    #: get column lineage, because that needs a plan and a plan needs Spark.
+    dataframe_write_cells: int = 0
+    #: Cells building SQL from an f-string or a variable. Skipped deliberately:
+    #: the text is unknowable without running the cell.
+    dynamic_sql_cells: int = 0
+    unparsable_cells: int = 0
+    writes: int = 0
+    writes_with_column_lineage: int = 0
+    writes_without_column_lineage: list[str] = Field(default_factory=list)
+
+
 class RunRequest(BaseModel):
     """Backend → executor: what to run and the schemas to stand up.
 
@@ -158,6 +189,9 @@ class RunResult(BaseModel):
     #: `table_schemas`. Lets the UI group tables by workspace without parsing
     #: refs itself, and lets it mark cross-workspace access.
     tables: dict[str, TableRef] = Field(default_factory=dict)
+    #: What the run could and could not analyse. Filled by the executor, which is
+    #: the only thing that sees the source. See `Coverage`.
+    coverage: Coverage | None = None
     #: How the input-schema fetch went. Filled by the backend AFTER the executor
     #: returns — the child process has no network and no credential, so it could
     #: not report this even in principle. See `SchemaResolution`.

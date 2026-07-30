@@ -980,7 +980,11 @@ const PORT_SETTINGS: { key: keyof PortOptions; label: string; hint: string }[] =
   { key: 'accessTags', label: 'Access tags (R/W)', hint: "Badge a step's rows as Read or Write" },
   { key: 'provenance', label: 'Provenance', hint: 'Source, Step number and Workspace properties' },
   { key: 'columns', label: 'Table columns', hint: 'Carry each table schema across as attributes' },
-  { key: 'columnEdges', label: 'Column-level edges', hint: 'Column-to-column lineage, where resolved' },
+  {
+    key: 'columnEdges',
+    label: 'Column-level edges',
+    hint: 'Join each column to the same column on the table it came from',
+  },
 ]
 
 /** The gear beside "Create model": what the port carries into the model. */

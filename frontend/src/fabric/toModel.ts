@@ -216,7 +216,13 @@ export interface PortOptions {
   provenance: boolean
   /** Table columns as attributes. Off also means no column-level edges. */
   columns: boolean
-  /** Column-to-column transitions, where the run resolved them unambiguously. */
+  /**
+   * Join each column under an access to the same column on the table.
+   *
+   * Where the run resolved a derivation for a written column, it rides on this
+   * edge as `Derives`/`Transform` rather than as an edge of its own between the
+   * two tables — see `flowOf`.
+   */
   columnEdges: boolean
 }
 
@@ -278,6 +284,40 @@ export function sequenceToModel(
     {},
     ...steps.map((s) => stepTables(results.get(s.key))),
   )
+
+  /**
+   * `to_table\0to_column` -> where that column came from, and via which step.
+   *
+   * Column lineage is carried as PROPERTIES on the write-side column edge, not
+   * as an edge of its own between the two tables. As an edge it was the one
+   * transition in the model that did not run table -> step -> table: in the
+   * flow view it leapt from a source table straight to an output table, past
+   * the notebooks layer that actually performs the derivation, and in the
+   * sequence view — where every table shares one layer — it doubled back from
+   * gold to silver underneath the column it belonged to.
+   *
+   * Nothing is lost by demoting it. The derivation is still recorded, on the
+   * edge into the column it produced, and the route it took is now traversable
+   * through the step rather than around it.
+   */
+  const flowOf = new Map<string, { from: string; column: string; transform?: string; via: string }>()
+
+  for (const [key, res] of results) {
+    const step = steps.find((s) => s.key === key)
+    if (!step) continue
+    for (const run of res.runs) {
+      const reads = run.result?.reads ?? []
+      for (const f of run.result?.column_lineage ?? []) {
+        const k = `${f.to_table}\0${f.to_column}`
+        if (flowOf.has(k)) continue
+        // An unattributable source stays out entirely rather than being
+        // guessed at — the same rule the edge followed.
+        const from = resolveSourceTable(f, reads, schemas)
+        if (!from) continue
+        flowOf.set(k, { from, column: f.from_column, transform: f.transform ?? undefined, via: step.name })
+      }
+    }
+  }
 
   const ensureTable = (ref: string): string => {
     const id = tableId(ref)
@@ -516,9 +556,22 @@ export function sequenceToModel(
       const onStep = ioColAttrOf.get(ioColKey(io, c.name))
       const onTable = attrIdOf.get(`${l.table}\0${c.name}`)
       if (!onStep || !onTable) continue
+      // Where a written column came from, on the edge that produces it. The
+      // read side gets nothing: a column arriving from a table has no
+      // derivation of its own to report.
+      const flow = l.kind === 'write' ? flowOf.get(`${l.table}\0${c.name}`) : undefined
+      const derived = flow
+        ? {
+            Derives: `${refLabel(flow.from, refs)}.${flow.column}`,
+            ...(flow.transform ? { Transform: flow.transform } : {}),
+            ...(options.provenance ? { Via: flow.via } : {}),
+          }
+        : {}
+      if (flow) columnEdges++
       // Sequence view runs every edge step -> table, for the same reason the
       // table-level ones do; flow view keeps true direction.
-      if (view === 'sequence' || l.kind === 'write') addTransition(onStep, onTable, bag)
+      if (view === 'sequence' || l.kind === 'write')
+        addTransition(onStep, onTable, { ...bag, ...derived })
       else addTransition(onTable, onStep, bag)
       accessColumnEdges++
     }
@@ -555,30 +608,6 @@ export function sequenceToModel(
     const target = l.kind === 'read' ? (io ?? objIdOf.get(l.to)) : objIdOf.get(l.to)
     if (source && target) addTransition(source, target, bag)
     columnEdgesFor(l, access, bag)
-  }
-
-  // Column-level lineage between two TABLES, where the run resolved it
-  // unambiguously — a different claim from the access edges above.
-  for (const [key, res] of wantColumnEdges ? results : []) {
-    const step = steps.find((s) => s.key === key)
-    if (!step) continue
-    for (const run of res.runs) {
-      const flows = run.result?.column_lineage ?? []
-      const reads = run.result?.reads ?? []
-      for (const f of flows) {
-        const targetAttr = attrIdOf.get(`${f.to_table}\0${f.to_column}`)
-        if (!targetAttr) continue
-        const fromTable = resolveSourceTable(f, reads, schemas)
-        if (!fromTable) continue
-        const sourceAttr = attrIdOf.get(`${fromTable}\0${f.from_column}`)
-        if (!sourceAttr || sourceAttr === targetAttr) continue
-        addTransition(sourceAttr, targetAttr, {
-          ...(options.provenance ? { Source: 'Fabric sandbox', Via: step.name } : {}),
-          ...(f.transform ? { Transform: f.transform } : {}),
-        })
-        columnEdges++
-      }
-    }
   }
 
   // Counted through the nesting, not just the top level: a pipeline's tables

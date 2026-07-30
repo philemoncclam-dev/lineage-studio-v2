@@ -105,15 +105,43 @@ describe('sequenceToModel', () => {
     expect(model.properties[pair(writeRow.id, silver.id)!.id].Access).toBe('Write')
   })
 
-  it('draws a column transition and records its transform', () => {
+  it('records a derivation on the edge that produces the column', () => {
     const { steps, results } = simpleRun()
     const { model, stats } = sequenceToModel(steps, results, 'M')
-    const amount = model.layers[0].objects[0].children.find((a) => a.name === 'amount')!
-    const total = model.layers[2].objects[0].children.find((a) => a.name === 'total')!
-    const t = model.transitions.find((x) => x.source === amount.id && x.target === total.id)
+    const nb = model.layers[1].objects[0]
+    const onStep = nb.children
+      .find((c) => c.name === 'silver_orders')!
+      .children.find((c) => c.name === 'total')!
+    const onTable = model.layers[2].objects[0].children.find((a) => a.name === 'total')!
+    const t = model.transitions.find((x) => x.source === onStep.id && x.target === onTable.id)
     expect(t).toBeDefined()
-    expect(model.properties[t!.id]).toMatchObject({ Via: 'enrich', Transform: 'amount * 1.2' })
+    expect(model.properties[t!.id]).toMatchObject({
+      Via: 'enrich',
+      Transform: 'amount * 1.2',
+      Derives: 'raw_orders.amount',
+    })
     expect(stats.columnEdges).toBe(1)
+  })
+
+  it('never joins one table’s column straight to another’s', () => {
+    // The regression: as its own edge, column lineage was the one transition
+    // that did not run table -> step -> table. In the flow view it leapt the
+    // notebooks layer entirely; in the sequence view, where every table shares
+    // a layer, it doubled back from the output table to the source underneath.
+    const { steps, results } = simpleRun()
+    for (const view of ['flow', 'sequence'] as const) {
+      const { model } = sequenceToModel(steps, results, 'M', view)
+      const tableAttrs = new Set(
+        model.layers
+          .flatMap((l) => l.objects)
+          .filter((o) => o.name === 'raw_orders' || o.name === 'silver_orders')
+          .flatMap((o) => o.children.map((c) => c.id)),
+      )
+      const both = model.transitions.filter(
+        (t) => tableAttrs.has(t.source) && tableAttrs.has(t.target),
+      )
+      expect(both, `${view} view joined two table columns directly`).toEqual([])
+    }
   })
 
   it('skips a column edge when the source column name is ambiguous', () => {
@@ -176,16 +204,14 @@ describe('sequenceToModel', () => {
     const { model, stats } = sequenceToModel([s], results, 'M')
     expect(stats.columnEdges).toBe(1)
 
-    const rightId = model.layers[0].objects.find((o) => o.name === 'right_t')!.children[0]
-    const leftId = model.layers[0].objects.find((o) => o.name === 'left_t')!.children[0]
-    const outId = model.layers[2].objects[0].children[0]
-    expect(model.transitions.some((t) => t.source === rightId.id && t.target === outId.id)).toBe(
-      true,
-    )
-    // ...and emphatically not from the other side of the join.
-    expect(model.transitions.some((t) => t.source === leftId.id && t.target === outId.id)).toBe(
-      false,
-    )
+    // The derivation names the side the engine reported...
+    const nb = model.layers[1].objects[0]
+    const onStep = nb.children.find((c) => c.name === 'out_t')!.children[0]
+    const onTable = model.layers[2].objects[0].children[0]
+    const t = model.transitions.find((x) => x.source === onStep.id && x.target === onTable.id)!
+    expect(model.properties[t.id]).toMatchObject({ Derives: 'right_t.id' })
+    // ...and emphatically not the other side of the join.
+    expect(model.properties[t.id].Derives).not.toContain('left_t')
   })
 
   // --- pipelines port their notebooks ---------------------------------------
@@ -575,19 +601,18 @@ describe('column edges with workspace-qualified refs', () => {
     expect(stats.columnEdges).toBe(1)
   })
 
-  it('connects the two columns, not their tables', () => {
+  it('routes the derivation through the step, on a qualified ref', () => {
     const { s, results } = qualifiedRun()
     const { model } = sequenceToModel([s], results, 'M')
-    const attrs = model.layers
-      .flatMap((l) => l.objects)
-      .flatMap((o) => o.children.map((c) => [c.id, `${o.name}.${c.name}`] as const))
-    const byId = new Map(attrs)
-    const edge = model.transitions.find((t) => byId.has(t.source) && byId.has(t.target))
-    expect(edge).toBeDefined()
-    expect([byId.get(edge!.source), byId.get(edge!.target)]).toEqual([
-      'bronze_orders.amount',
-      'silver_orders.amount_usd',
-    ])
+    const objects = model.layers.flatMap((l) => l.objects)
+    const nb = objects.find((o) => o.name === 'enrich')!
+    const silver = objects.find((o) => o.name === 'silver_orders')!
+    const onStep = nb.children.find((c) => c.name === 'silver_orders')!.children[0]
+    const onTable = silver.children[0]
+    const t = model.transitions.find((x) => x.source === onStep.id && x.target === onTable.id)!
+    expect(t).toBeDefined()
+    // The label is the leaf, not the whole `Analytics/Bronze/...` ref.
+    expect(model.properties[t.id]).toMatchObject({ Derives: 'bronze_orders.amount' })
   })
 
   it('carries the transform onto the edge', () => {

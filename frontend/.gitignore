@@ -32,3 +32,11 @@ dist-ssr
 # "Cannot find module './routeTree.gen'". Committing it keeps a clean checkout
 # typecheckable. The plugin still regenerates it on every dev/build run; commit
 # the result whenever routes change.
+
+# Added by `vercel link`. `.env.local` holds a downloaded OIDC token, and
+# `.vercel/` the project id — neither belongs in the repo.
+.vercel
+.env*
+# ...but the template does: it is the only record of which VITE_* vars a build
+# expects, and a blanket .env* would hide it from anyone adding one.
+!.env.example

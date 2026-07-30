@@ -50,6 +50,19 @@ export interface LineageGraph {
 const BASE = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '')
 
 /**
+ * Where the *Spark* sandbox lives, which is not necessarily where the rest of
+ * the API lives.
+ *
+ * The sandbox is the one endpoint that needs a JVM, so in production it runs on
+ * a container host rather than alongside the other routes. That host scales to
+ * zero to stay affordable, which means a run can pay a cold start of minutes
+ * while every other route stays fast — so only this one call is pointed at it.
+ * Unset (dev, or a deployment with no container) falls back to `BASE`, where
+ * the backend answers with whichever engine it can reach.
+ */
+const SANDBOX_BASE = (import.meta.env.VITE_SANDBOX_API_BASE ?? BASE).replace(/\/$/, '')
+
+/**
  * How to get the signed-in user's Fabric token, installed by `AuthProvider`.
  *
  * A module variable rather than a parameter because these are plain async
@@ -979,6 +992,9 @@ export async function revokeShare(token: string): Promise<void> {
   if (!res.ok) return detail(res, 'revoke share')
 }
 
+/** Gateway statuses a scaled-to-zero host returns while it is still waking. */
+const COLD_START_STATUS = new Set([502, 503, 504])
+
 export async function runSandbox(body: {
   name?: string
   workspace_id?: string
@@ -994,11 +1010,24 @@ export async function runSandbox(body: {
    */
   carried_schemas?: Record<string, SandboxColumn[]>
 }): Promise<SandboxRunResult> {
-  const res = await fabricFetch(`${BASE}/fabric/sandbox/run`, {
+  // A scaled-to-zero host answers the first request after idle with a gateway
+  // error, not a result: the ingress gives up before the container has pulled
+  // its image and started a JVM. That is a cold start, not a failed run, and
+  // retrying it succeeds — so retry rather than showing the user an error for
+  // something that is only slow. Anything that is not a gateway error (a 4xx, a
+  // real 500) is reported the first time, because retrying will not change it.
+  let res = await fabricFetch(`${SANDBOX_BASE}/fabric/sandbox/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+  for (let attempt = 0; attempt < 2 && COLD_START_STATUS.has(res.status); attempt++) {
+    res = await fabricFetch(`${SANDBOX_BASE}/fabric/sandbox/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
   if (!res.ok) return detail(res, 'sandbox run')
   return res.json()
 }

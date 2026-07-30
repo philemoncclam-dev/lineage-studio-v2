@@ -66,8 +66,16 @@ class SchemaResolution(BaseModel):
     #: Of those, the ones a schema came back for.
     resolved: list[str] = Field(default_factory=list)
     #: Of those, the ones that stayed unknown — each one is columns the run
-    #: cannot resolve and lineage it will therefore not derive.
+    #: cannot resolve and lineage it will therefore not derive. A ref filled from
+    #: an upstream step (see `carried`) is NOT here: it is known, just not from
+    #: OneLake.
     unresolved: list[str] = Field(default_factory=list)
+    #: Refs whose columns came from an earlier step in the same sequence rather
+    #: than from OneLake. A table a bronze notebook creates does not necessarily
+    #: exist yet — or exists with an older schema — so the run that wrote it is
+    #: the better authority, and without this the downstream notebook had no
+    #: columns to resolve against and produced no column lineage at all.
+    carried: list[str] = Field(default_factory=list)
     #: One line per swallowed failure, in the order they occurred. Empty with a
     #: non-empty `unresolved` means the lookups succeeded and the table simply
     #: was not found — a genuinely different diagnosis from being refused.

@@ -8,6 +8,7 @@ import { useSyncExternalStore } from 'react'
 import {
   runSandbox,
   refParts,
+  type SandboxColumn,
   type SandboxTableRef,
   fetchFabricPipelineDefinition,
   type SandboxRunResult,
@@ -186,12 +187,39 @@ export async function runAll() {
   steps.forEach((s) => next.set(s.key, { status: 'pending', runs: [] }))
   set({ running: true, results: new Map(next) })
 
+  // Schemas observed so far, carried forward into every later step.
+  //
+  // A sequence is a chain: bronze creates a table, silver reads it, gold reads
+  // what silver wrote. But each step is its own backend call and its own child
+  // process, so the downstream steps arrived knowing nothing — the table they
+  // read may not exist in OneLake yet, so its columns came back empty and the
+  // whole downstream half of a medallion sequence produced no column lineage.
+  // The run that WROTE a table is the best authority on its columns, and this
+  // is the only place that knows the run order.
+  //
+  // The backend uses these to fill gaps only; a schema OneLake answers for is
+  // never overridden (see `carried_schemas` in sandbox/router.py).
+  const carried: Record<string, SandboxColumn[]> = {}
+  const carry = (result: SandboxRunResult) => {
+    for (const [ref, columns] of Object.entries(result.table_schemas ?? {})) {
+      // Later wins: within one sequence the most recent run to touch a table
+      // has the most current shape of it.
+      if (columns?.length) carried[ref] = columns
+    }
+  }
+
   for (const step of steps) {
     next.set(step.key, { status: 'running', runs: [] })
     set({ results: new Map(next) })
     try {
       if (step.kind === 'notebook') {
-        const result = await runSandbox({ name: step.name, workspace_id: step.ws, item_id: step.itemId })
+        const result = await runSandbox({
+          name: step.name,
+          workspace_id: step.ws,
+          item_id: step.itemId,
+          carried_schemas: carried,
+        })
+        carry(result)
         next.set(step.key, {
           status: result.ok ? 'ok' : 'error',
           runs: [
@@ -217,6 +245,9 @@ export async function runAll() {
           if (!a.notebook_id) {
             const declared = copyActivityRun(a)
             if (declared) {
+              // A Copy declares its column mapping inline, so it too knows the
+              // shape of the table it lands — worth carrying to the next step.
+              if (declared.result) carry(declared.result)
               runs.push(declared)
               next.set(step.key, { status: 'running', runs: runs.slice(), activities })
               set({ results: new Map(next) })
@@ -228,7 +259,11 @@ export async function runAll() {
               name: a.name,
               workspace_id: a.workspace_id ?? step.ws,
               item_id: a.notebook_id,
+              carried_schemas: carried,
             })
+            // A pipeline's activities run in dependency order, so the carry
+            // matters most here — this IS the medallion chain, declared.
+            carry(result)
             runs.push({
               name: a.name,
               status: result.ok ? 'ok' : 'error',

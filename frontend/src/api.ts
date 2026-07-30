@@ -710,6 +710,8 @@ export interface SandboxRunResult {
     requested: string[]
     resolved: string[]
     unresolved: string[]
+    /** Refs whose columns came from an earlier step of the sequence, not OneLake. */
+    carried?: string[]
     /** Empty with a non-empty `unresolved` means not-found, not refused. */
     failures: string[]
   } | null
@@ -985,6 +987,12 @@ export async function runSandbox(body: {
   /** The notebook's own workspace/lakehouse — the defaults bare names resolve against. */
   workspace?: string
   lakehouse?: string
+  /**
+   * Schemas observed by earlier steps of the same sequence. They fill gaps the
+   * OneLake fetch could not answer — a table an upstream notebook just created
+   * may not exist there yet — and never override what it did answer.
+   */
+  carried_schemas?: Record<string, SandboxColumn[]>
 }): Promise<SandboxRunResult> {
   const res = await fabricFetch(`${BASE}/fabric/sandbox/run`, {
     method: 'POST',

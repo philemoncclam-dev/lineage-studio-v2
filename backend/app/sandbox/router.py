@@ -39,6 +39,18 @@ class SandboxRunRequest(BaseModel):
     #: Empty-view schemas for the tables the notebook reads, so the Spark engine
     #: can resolve them with zero data. Ignored by the stub engine.
     schemas: dict[str, list[ColumnSchema]] | None = None
+    #: Schemas observed by EARLIER steps of the same sequence — `table_schemas`
+    #: from their results, accumulated by the caller.
+    #:
+    #: Separate from `schemas` because the two mean different things. `schemas`
+    #: is authoritative and suppresses the OneLake fetch entirely; these only
+    #: FILL GAPS after it, and never override a schema OneLake answered for.
+    #: A silver notebook reading a table its bronze predecessor just created had
+    #: nothing to resolve against — the table may not exist in OneLake yet — so
+    #: the downstream half of every medallion sequence came back with no column
+    #: lineage. `child_spark` already does exactly this between cells of one
+    #: notebook; this is the same idea across the process boundary.
+    carried_schemas: dict[str, list[ColumnSchema]] | None = None
     #: The notebook's own workspace and attached lakehouse — the defaults an
     #: unqualified table name resolves against. `workspace` is the display name
     #: (`workspace_id` is the GUID used for API calls); when it is omitted the
@@ -137,6 +149,22 @@ def sandbox_run(
                 # message is the only diagnosis there is.
                 resolution.failures.append(f"schema fetch abandoned — {exc}")
                 schemas = {}
+
+    # Upstream steps fill what OneLake could not answer for, and only that:
+    # an observed schema is never overridden by a carried one, because OneLake is
+    # ground truth for a table that already exists. What it is NOT is a
+    # prediction of a table an earlier step in this sequence just created — and
+    # that is precisely the read a silver or gold notebook is built on.
+    carried_used: list[str] = []
+    for ref, columns in (req.carried_schemas or {}).items():
+        if ref not in schemas and columns:
+            schemas[ref] = list(columns)
+            carried_used.append(ref)
+    if resolution is not None and carried_used:
+        resolution.carried = sorted(carried_used)
+        # No longer a gap: these columns are known, just not from OneLake.
+        filled = set(carried_used)
+        resolution.unresolved = [r for r in resolution.unresolved if r not in filled]
 
     result = run_sandbox(
         RunRequest(

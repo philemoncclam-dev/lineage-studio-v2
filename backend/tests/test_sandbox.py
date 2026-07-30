@@ -211,6 +211,109 @@ def test_a_path_write_is_captured_not_discarded():
     assert make_ref("out_table", "Gold", "Finance") in result.writes
 
 
+# --- schemas carried between steps of a sequence ---------------------------
+# A sequence is a chain — bronze creates a table, silver reads it — but each step
+# is its own process, so a downstream notebook arrived knowing nothing about the
+# table its predecessor had just written. Its columns came back empty (that table
+# need not exist in OneLake yet) and the downstream half of every medallion
+# sequence produced no column lineage.
+
+def test_a_carried_schema_gives_a_downstream_notebook_its_column_lineage(client):
+    upstream = make_ref("bronze_orders", "Bronze", "Analytics")
+    resp = client.post(
+        "/fabric/sandbox/run",
+        json={
+            "name": "silver",
+            "cells": ["spark.sql('CREATE TABLE silver_orders AS SELECT order_id FROM bronze_orders')"],
+            "carried_schemas": {upstream: [{"name": "order_id", "type": "long"}]},
+            "workspace": "Analytics",
+            "lakehouse": "Bronze",
+        },
+    )
+    body = resp.json()
+    # The upstream table's columns reached the run, and the write it fed came out
+    # with column lineage instead of bare. Asserted without `from_table`, which
+    # only the stub engine fills — the Spark engine resolves attributes by name
+    # (see ColumnFlow.from_table), and this endpoint runs whichever is available.
+    assert [c["name"] for c in body["table_schemas"][upstream]] == ["order_id"]
+    assert body["coverage"]["writes_with_column_lineage"] == 1
+    assert {(f["to_column"], f["from_column"]) for f in body["column_lineage"]} == {
+        ("order_id", "order_id")
+    }
+
+
+# Columns deliberately UNQUALIFIED. A join whose source text qualifies them
+# (`o.order_id`) is already attributable from the text alone; when it does not,
+# only the schemas can say which side of the join owns each column — which is
+# what makes the upstream carry worth doing.
+JOIN_CELL = [
+    "spark.sql('''CREATE TABLE gold_orders AS\n"
+    "SELECT order_id, name FROM bronze_orders JOIN bronze_customers ON cid = id''')"
+]
+
+
+def _join_run(schemas=None):
+    return run_sandbox(
+        RunRequest(
+            notebook_name="gold",
+            cells=JOIN_CELL,
+            schemas=schemas or {},
+            workspace="Analytics",
+            lakehouse="Bronze",
+        ),
+        engine="stub",
+    )
+
+
+def test_without_upstream_schemas_a_joined_column_has_no_owner():
+    """The gap the carry closes. An edge with no `from_table` is one the frontend
+    drops whenever two source tables tie on a column name — which is exactly what
+    a join is — so unowned edges are lineage that never reaches the graph."""
+    result = _join_run()
+    assert all(f.from_table is None for f in result.column_lineage)
+
+
+def test_carried_schemas_attribute_each_joined_column_to_its_own_upstream_table():
+    orders = make_ref("bronze_orders", "Bronze", "Analytics")
+    customers = make_ref("bronze_customers", "Bronze", "Analytics")
+    result = _join_run(
+        schemas={
+            orders: [{"name": "order_id", "type": "long"}, {"name": "cid", "type": "long"}],
+            customers: [{"name": "id", "type": "long"}, {"name": "name", "type": "string"}],
+        }
+    )
+    owners = {(f.to_column, f.from_table) for f in result.column_lineage}
+    assert ("order_id", orders) in owners
+    assert ("name", customers) in owners
+
+
+def test_a_carried_schema_never_overrides_one_onelake_answered_for(client):
+    """OneLake is ground truth for a table that already exists; an upstream run
+    is only the better authority for one it just created."""
+    ref = make_ref("t", "Bronze", "Analytics")
+    resp = client.post(
+        "/fabric/sandbox/run",
+        json={
+            "name": "nb",
+            "cells": ["x = 1"],
+            "schemas": {ref: [{"name": "real_column", "type": "long"}]},
+            "carried_schemas": {ref: [{"name": "stale_column", "type": "string"}]},
+            "workspace": "Analytics",
+            "lakehouse": "Bronze",
+        },
+    )
+    assert [c["name"] for c in resp.json()["table_schemas"][ref]] == ["real_column"]
+
+
+def test_carrying_nothing_leaves_the_run_unchanged(client):
+    resp = client.post(
+        "/fabric/sandbox/run",
+        json={"name": "nb", "cells": CELLS, "carried_schemas": {}, "workspace": "Analytics"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ok"]
+
+
 # --- MERGE INTO: the Delta upsert ------------------------------------------
 # Matched by nothing on either engine, so a gold notebook built on MERGE — which
 # is most of them — produced no write edge, no table, no columns. Nothing.

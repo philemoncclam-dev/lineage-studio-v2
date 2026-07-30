@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ancestorsOf, buildIndex } from '../model/index'
-import { traceFrom } from '../model/trace'
+import { pruneModel, traceFrom } from '../model/trace'
 import { registerSearchHandler } from '../shell/searchBridge'
 import { registerRailAction } from '../shell/railActions'
 import ModelSearch from './ModelSearch'
@@ -207,34 +207,10 @@ export default function ModelViewer({
   const [trace, setTrace] = useState<ReadonlySet<EntityId> | null>(null)
 
   const index = useMemo(() => buildIndex(model), [model])
-  const layout = useMemo(() => layoutModel(model, collapsed), [model, collapsed])
   const parentOf = useCallback(
     (id: EntityId) => index.entries.get(id)?.parentId ?? null,
     [index],
   )
-
-  /**
-   * Every selectable entity in READING order — layer, then each of its cards,
-   * then that card's rows — which is what a shift-range runs along.
-   *
-   * Built from the LAYOUT rather than the model so it follows what is on screen:
-   * a collapsed card contributes no rows, and shift-clicking across one must not
-   * silently select the rows it is hiding. The layout already knows which rows
-   * are rendered, so ordering off it keeps "everything between these two" and
-   * "everything I can see between these two" the same statement.
-   */
-  const visualOrder = useMemo(() => {
-    const out: EntityId[] = []
-    for (const layer of layout.layers) {
-      out.push(layer.id)
-      for (const card of layout.cards) {
-        if (card.layerId !== layer.id) continue
-        out.push(card.id)
-        for (const row of card.rows) out.push(row.id)
-      }
-    }
-    return out
-  }, [layout])
 
   /** Entities the Views filter matches; empty set means "no filter running". */
   const viewMatched = useMemo(() => applyFilter(model, filter), [model, filter])
@@ -259,6 +235,49 @@ export default function ModelViewer({
   }, [trace, viewMatched, viewFiltering])
   const filtering = viewFiltering || trace !== null
   const hideUnmatched = filter.hide || trace !== null
+
+  /**
+   * What the canvas is LAID OUT from — the model itself, or the traced subset.
+   *
+   * A trace prunes rather than hides. The Views filter can get away with hiding
+   * because it is a lens over a model you are still working in: rows vanish,
+   * their space stays, and nothing you were looking at moves. A trace is the
+   * opposite request — take the unrelated model away — and hiding alone left
+   * the traced entities exactly as far apart as they had been, in full-height
+   * cards showing two rows each, separated by columns of nothing.
+   *
+   * Only the layout is swapped. Edits, selection, the index and the keyboard
+   * all still run against the real model, and ids are untouched by pruning, so
+   * everything on screen still refers to the entity it names.
+   */
+  const canvasModel = useMemo(
+    () => (trace ? pruneModel(model, matched) : model),
+    [trace, model, matched],
+  )
+  const layout = useMemo(() => layoutModel(canvasModel, collapsed), [canvasModel, collapsed])
+
+  /**
+   * Every selectable entity in READING order — layer, then each of its cards,
+   * then that card's rows — which is what a shift-range runs along.
+   *
+   * Built from the LAYOUT rather than the model so it follows what is on screen:
+   * a collapsed card contributes no rows, and shift-clicking across one must not
+   * silently select the rows it is hiding. The layout already knows which rows
+   * are rendered, so ordering off it keeps "everything between these two" and
+   * "everything I can see between these two" the same statement.
+   */
+  const visualOrder = useMemo(() => {
+    const out: EntityId[] = []
+    for (const layer of layout.layers) {
+      out.push(layer.id)
+      for (const card of layout.cards) {
+        if (card.layerId !== layer.id) continue
+        out.push(card.id)
+        for (const row of card.rows) out.push(row.id)
+      }
+    }
+    return out
+  }, [layout])
 
   /**
    * The transitions that exist as far as the canvas is concerned.
@@ -1506,9 +1525,11 @@ function Card({
       {slice.length > 0 && (
         <div style={{ paddingTop: firstVisible * ROW_HEIGHT }}>
           {slice
-            // Rows are the one place hiding is safe without reflowing the
-            // world: a card's height is fixed by the layout, so dropping rows
-            // leaves a gap rather than moving anything else on the canvas.
+            // Still needed for a Views filter in hide mode, which lays out the
+            // whole model and drops rows from it — a card's height is fixed by
+            // the layout, so the row leaves a gap rather than moving anything
+            // else. A TRACE never reaches this filter with work to do: it is
+            // laid out from an already-pruned model, so every row here survived.
             .filter((row) => !(filtering && hideUnmatched) || matched.has(row.id))
             .map((row) => (
             <div

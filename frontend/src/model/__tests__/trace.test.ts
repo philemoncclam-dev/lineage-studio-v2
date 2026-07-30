@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildIndex } from '../index'
-import { traceFrom } from '../trace'
+import { pruneModel, traceFrom } from '../trace'
 import type { LineageModel } from '../types'
 
 /**
@@ -139,5 +139,84 @@ describe('traceFrom', () => {
   it('returns nothing for no seeds, and ignores ids not in the model', () => {
     expect(traceFrom(buildIndex(model()), []).size).toBe(0)
     expect(traceFrom(buildIndex(model()), ['nope']).size).toBe(0)
+  })
+})
+
+// --- pruning ----------------------------------------------------------------
+// A trace has to take the unrelated model AWAY, not grey it out. Hiding at
+// render time leaves the space behind: the layout is computed from the whole
+// model, so the traced chain stayed as far apart as it started, inside
+// full-height cards showing two rows. Pruning first is what closes that up.
+
+describe('pruneModel', () => {
+  const traced = () => {
+    const m = model()
+    return { m, keep: traceFrom(buildIndex(m), ['silver.id']) }
+  }
+
+  it('drops objects that are not on the trace', () => {
+    const { m, keep } = traced()
+    const out = pruneModel(m, keep)
+    const names = out.layers.flatMap((l) => l.objects.map((o) => o.id))
+    expect(names).toContain('silver')
+    expect(names).toContain('raw')
+    expect(names).not.toContain('junk')
+  })
+
+  it('shrinks a card to only the rows that survived', () => {
+    const { m, keep } = traced()
+    const out = pruneModel(m, keep)
+    const raw = out.layers.flatMap((l) => l.objects).find((o) => o.id === 'raw')!
+    // `raw.amount` is on the other chain; the card is one row tall now, which
+    // is the whole point — its height comes from this list.
+    expect(raw.children.map((c) => c.id)).toEqual(['raw.id'])
+  })
+
+  it('keeps nesting intact on the way down', () => {
+    const { m, keep } = traced()
+    const out = pruneModel(m, keep)
+    const nb = out.layers.flatMap((l) => l.objects).find((o) => o.id === 'nb')!
+    expect(nb.children.map((c) => c.id)).toEqual(['nb.raw'])
+    expect(nb.children[0].children.map((c) => c.id)).toEqual(['nb.raw.id'])
+  })
+
+  it('keeps only transitions with both ends still present', () => {
+    const { m, keep } = traced()
+    const out = pruneModel(m, keep)
+    expect(out.transitions.map((t) => t.id)).toEqual(['t1', 't3', 't5'])
+  })
+
+  it('drops a layer left with nothing in it', () => {
+    const m = model()
+    // Trace a chain that never touches the Notebooks layer.
+    const keep = new Set(['L1', 'raw', 'raw.id'])
+    const out = pruneModel(m, keep)
+    expect(out.layers.map((l) => l.id)).toEqual(['L1'])
+  })
+
+  it('leaves the model alone when everything is kept', () => {
+    const m = model()
+    const all = new Set<string>()
+    const walk = (a: { id: string; children: typeof a[] }) => {
+      all.add(a.id)
+      a.children.forEach(walk)
+    }
+    for (const l of m.layers) {
+      all.add(l.id)
+      for (const o of l.objects) {
+        all.add(o.id)
+        o.children.forEach(walk)
+      }
+    }
+    const out = pruneModel(m, all)
+    expect(out.layers).toEqual(m.layers)
+    expect(out.transitions).toEqual(m.transitions)
+  })
+
+  it('does not mutate the model it prunes', () => {
+    const { m, keep } = traced()
+    const before = JSON.stringify(m)
+    pruneModel(m, keep)
+    expect(JSON.stringify(m)).toBe(before)
   })
 })

@@ -12,7 +12,7 @@
 // drop the upstream that explains the value.
 
 import { ancestorsOf, type ModelIndex } from './index'
-import type { EntityId } from './types'
+import type { Attribute, EntityId, LineageModel } from './types'
 
 /**
  * Every entity connected to `seeds`, plus the containers needed to draw them.
@@ -73,4 +73,49 @@ export function traceFrom(index: ModelIndex, seeds: Iterable<EntityId>): Readonl
   const out = new Set<EntityId>(reached)
   for (const id of reached) for (const up of ancestorsOf(index, id)) out.add(up.id)
   return out
+}
+
+/**
+ * The model with everything outside `keep` removed.
+ *
+ * Hiding and pruning are not the same thing, and a trace needs the second.
+ * Dropping cards and rows at render time leaves their SPACE behind — the layout
+ * is computed from the whole model, so a traced canvas came out as the original
+ * canvas with holes punched in it: full-height cards showing two rows, columns
+ * of empty space where unrelated tables used to be, and the traced entities as
+ * far apart as they ever were. That is the opposite of what a trace is for.
+ *
+ * Laying out a pruned model instead makes every card shrink to the rows that
+ * survived and every column close up behind what left, so the chain reads as
+ * one compact run.
+ *
+ * The pruned model is for LAYOUT AND DISPLAY ONLY. Edits still apply to the
+ * real one — ids are unchanged, so anything selected while tracing still refers
+ * to the same entity.
+ */
+export function pruneModel(model: LineageModel, keep: ReadonlySet<EntityId>): LineageModel {
+  const keepAttrs = (attrs: Attribute[]): Attribute[] =>
+    attrs
+      .filter((a) => keep.has(a.id))
+      .map((a) => ({ ...a, children: keepAttrs(a.children) }))
+
+  const layers = model.layers
+    .filter((l) => keep.has(l.id))
+    .map((l) => ({
+      ...l,
+      objects: l.objects
+        .filter((o) => keep.has(o.id))
+        .map((o) => ({ ...o, children: keepAttrs(o.children) })),
+    }))
+    // A layer that kept nothing is an empty column, and an empty column still
+    // takes a band and a slot on the canvas. Nothing is being said by it.
+    .filter((l) => l.objects.length > 0)
+
+  return {
+    ...model,
+    layers,
+    // Both endpoints, for the reason `visibleTransitions` gives: an edge into a
+    // row that is no longer drawn hangs in space pointing at nothing.
+    transitions: model.transitions.filter((t) => keep.has(t.source) && keep.has(t.target)),
+  }
 }

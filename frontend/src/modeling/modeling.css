@@ -1123,6 +1123,36 @@
   opacity: 0.7;
 }
 
+/* ===== Trace origin =====
+   What the trace was taken FROM.
+
+   It needs its own mark because being on the trace stops meaning anything the
+   moment the trace runs: everything left on the canvas is on it, so the origin
+   is indistinguishable from the fifty things it reached. Red, and used nowhere
+   else on a card, so it reads as "this one" rather than as another state.
+
+   `outline` rather than `border` — an outline is drawn outside the box model,
+   so it cannot shift a row by a pixel or reflow a card whose height the layout
+   has already fixed. Negative offset pulls it just inside the edge so a row's
+   mark is not clipped by the card that holds it. */
+.mv-card[data-trace-origin],
+.mv-row[data-trace-origin] {
+  outline: 2px solid #d92d20;
+  outline-offset: -2px;
+}
+/* Rows are already `position: relative`; the card is `position: absolute` and
+   must stay that way, so only the row is lifted. Without it the next row's
+   background paints over the mark's lower edge. */
+.mv-row[data-trace-origin] {
+  z-index: 1;
+  background: rgb(217 45 32 / 0.06);
+}
+/* The card's own mark sits on the whole card; when the ORIGIN is a row inside
+   it, the card keeps its ordinary border and only the row is marked. */
+.mv-card[data-trace-origin] .mv-card-header {
+  background: rgb(217 45 32 / 0.07);
+}
+
 /* ===== Auto-Mapper =====
    Docked to the right, not modal: two of its steps refer to the canvas (picking
    a scope entity, reading the objects a suggestion group names), so it must

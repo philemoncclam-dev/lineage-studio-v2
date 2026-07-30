@@ -75,6 +75,9 @@ import './modeling.css'
 /** Rows rendered above and below the visible slice, to hide scroll tearing. */
 const ROW_OVERSCAN = 6
 
+/** Shared empty set, so "no trace running" does not remount every card. */
+const EMPTY_IDS: ReadonlySet<EntityId> = new Set()
+
 /** Whether two id sets hold the same members — for "is this the same trace?". */
 function sameSet(a: ReadonlySet<EntityId>, b: ReadonlySet<EntityId>): boolean {
   if (a.size !== b.size) return false
@@ -199,12 +202,18 @@ export default function ModelViewer({
   /**
    * The active lineage trace, or null.
    *
-   * Held as the RESULT rather than as the seeds it was taken from, so it
-   * survives the selection changing underneath it — you trace a column, then
-   * click through what came back, and the trace stays put instead of retracing
-   * from wherever you just clicked. Ctrl+T again, or Escape, ends it.
+   * Both halves are kept. `reached` is what stays on the canvas, and it is held
+   * as the RESULT rather than being recomputed, so the trace survives the
+   * selection changing underneath it — you trace a column, then click through
+   * what came back, and it stays put instead of retracing from wherever you
+   * just clicked. `seeds` is what you traced FROM, which by then is the one
+   * thing the canvas can no longer tell you: every card on screen is on the
+   * trace, so nothing distinguishes the origin unless it is remembered.
    */
-  const [trace, setTrace] = useState<ReadonlySet<EntityId> | null>(null)
+  const [trace, setTrace] = useState<{
+    seeds: ReadonlySet<EntityId>
+    reached: ReadonlySet<EntityId>
+  } | null>(null)
 
   const index = useMemo(() => buildIndex(model), [model])
   const parentOf = useCallback(
@@ -230,8 +239,8 @@ export default function ModelViewer({
    */
   const matched = useMemo(() => {
     if (!trace) return viewMatched
-    if (!viewFiltering) return trace
-    return new Set([...trace].filter((id) => viewMatched.has(id)))
+    if (!viewFiltering) return trace.reached
+    return new Set([...trace.reached].filter((id) => viewMatched.has(id)))
   }, [trace, viewMatched, viewFiltering])
   const filtering = viewFiltering || trace !== null
   const hideUnmatched = filter.hide || trace !== null
@@ -918,8 +927,9 @@ export default function ModelViewer({
           setTrace(null)
           return
         }
-        const next = traceFrom(index, selection)
-        setTrace((prev) => (prev && sameSet(prev, next) ? null : next))
+        const seeds = new Set(selection)
+        const reached = traceFrom(index, seeds)
+        setTrace((prev) => (prev && sameSet(prev.seeds, seeds) ? null : { seeds, reached }))
         return
       }
       if (mod && e.key.toLowerCase() === 'c' && selection.size > 0) {
@@ -1295,6 +1305,7 @@ export default function ModelViewer({
               filtering={filtering}
               matched={matched}
               hideUnmatched={hideUnmatched}
+              traceOrigin={trace?.seeds ?? EMPTY_IDS}
               highlighted={highlighted}
               pending={pending}
               pendingLayer={pendingLayer}
@@ -1416,6 +1427,13 @@ interface CardProps {
   filtering: boolean
   matched: ReadonlySet<EntityId>
   hideUnmatched: boolean
+  /**
+   * What the trace was taken FROM. Empty when nothing is being traced.
+   *
+   * Marked so the origin stays findable: once a trace has pruned the canvas,
+   * every card left is on the trace, so being on it distinguishes nothing.
+   */
+  traceOrigin: ReadonlySet<EntityId>
   onSelect: (id: EntityId, mods: { additive: boolean; range: boolean }) => void
   onConnectFrom: (id: EntityId) => void
   onConnectTo: (id: EntityId) => void
@@ -1431,6 +1449,7 @@ function Card({
   filtering,
   matched,
   hideUnmatched,
+  traceOrigin,
   highlighted,
   pending,
   pendingLayer,
@@ -1475,6 +1494,7 @@ function Card({
       data-dimmed={(filtering && !matched.has(card.id)) || undefined}
       data-selected={selection.has(card.id) || undefined}
       data-traced={highlighted.has(card.id) || undefined}
+      data-trace-origin={traceOrigin.has(card.id) || undefined}
     >
       <div
         className="mv-card-header"
@@ -1544,6 +1564,7 @@ function Card({
               data-dimmed={(filtering && !matched.has(row.id)) || undefined}
               data-selected={selection.has(row.id) || undefined}
               data-traced={highlighted.has(row.id) || undefined}
+              data-trace-origin={traceOrigin.has(row.id) || undefined}
               onClick={(e) => onSelect(row.id, { additive: e.ctrlKey || e.metaKey, range: e.shiftKey })}
               onDoubleClick={() => onEdit(row.id)}
               onContextMenu={(e) => onContextMenu(e, row.id)}

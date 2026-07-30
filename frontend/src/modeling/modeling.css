@@ -1145,6 +1145,16 @@
    background paints over the mark's lower edge. */
 .mv-row[data-trace-origin] {
   z-index: 1;
+}
+/* The tint is for an origin that is NOT currently selected.
+
+   `.mv-row[data-selected]` sets a blue fill AND white text, and it sits earlier
+   in this file at the same specificity — so an unguarded tint here won the
+   background and left the white text on top of it, which is how the origin row
+   went blank the moment it was traced (you select a row, then press the key, so
+   it is always both). The outline already marks the origin; selection keeps its
+   own colours, and the two read fine together. */
+.mv-row[data-trace-origin]:not([data-selected]) {
   background: rgb(217 45 32 / 0.06);
 }
 /* The card's own mark sits on the whole card; when the ORIGIN is a row inside

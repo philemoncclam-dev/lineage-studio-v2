@@ -10,6 +10,7 @@ import { useNavigate } from '@tanstack/react-router'
 import {
   refKind,
   refLabel,
+  refLakehouse,
   refWorkspace,
   type SandboxColumn,
   type SandboxCoverage,
@@ -196,6 +197,12 @@ function semanticBand(inCol: FlowNode[]): string {
   const uniq = (xs: (string | undefined)[]) => [...new Set(xs.filter((x): x is string => !!x))]
   const ws = uniq(inCol.map((n) => n.ws))
   if (ws.length) return ws.join(' + ')
+  // No workspace resolved anywhere in the band: name it for the lakehouses it
+  // holds instead of the useless 'Tables'. A lakehouse is not a workspace and
+  // the band does not pretend otherwise — it is simply the most specific true
+  // thing left to say.
+  const lakes = uniq(inCol.map((n) => n.lakehouse))
+  if (lakes.length) return lakes.join(' + ')
   return inCol.some((n) => n.kind === 'table') ? 'Tables' : 'Notebooks & pipelines'
 }
 
@@ -562,14 +569,45 @@ export function layoutStages(nodes: FlowNode[], edges: FlowEdge[]): Layout {
   return columnLayout(nodes, colOf, (inCol) => {
     const inTables = inCol.filter((n) => n.kind === 'table')
     if (!inTables.length) {
-      // A steps band, named for the stage it feeds — "Into silver" — because a
-      // step column's identity is its output, not its contents.
+      // A steps band: its workspace when the run resolved one, else the stage
+      // it feeds — "Into lh_silver". A step column has no lakehouse of its own,
+      // so without the fallback every one of them read 'Notebooks & pipelines'
+      // and the picture had unnamed gaps down the middle.
+      if (inCol.some((n) => n.ws)) return semanticBand(inCol)
       const fed = inCol.flatMap((n) => (writesOf.get(n.id) ?? []).map((t) => stageKey(nodes.find((x) => x.id === t)!)))
       const uniq = [...new Set(fed.filter(Boolean))]
       return uniq.length ? `Into ${uniq.join(' + ')}` : 'Notebooks & pipelines'
     }
     return semanticBand(inTables)
   })
+}
+
+/**
+ * Who a card belongs to, for the workspace view's x axis.
+ *
+ * The workspace when the run resolved one. When it did not — a notebook
+ * addressing `lh_bronze.orders` gives a ref with no workspace at all, which is
+ * the common case — the LAKEHOUSE stands in, and a step falls back to the
+ * lakehouse it writes into. Without the fallback every card shared one key and
+ * the whole view drew as a single column, which is not a layout so much as an
+ * absence of one.
+ *
+ * The two are never mixed silently: a band standing in for an unknown owner
+ * says so.
+ */
+function ownerOf(nodes: FlowNode[], edges: FlowEdge[]) {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const writeTarget = new Map<string, string>()
+  for (const e of edges)
+    if (e.tone === 'write' && e.kind !== 'column' && !writeTarget.has(e.from)) writeTarget.set(e.from, e.to)
+
+  const lakehouseOf = (n: FlowNode): string =>
+    n.kind === 'table' ? n.lakehouse || '' : (byId.get(writeTarget.get(n.id) ?? '')?.lakehouse ?? '')
+
+  const key = (n: FlowNode) => n.ws || (lakehouseOf(n) ? `lh:${lakehouseOf(n)}` : '')
+  const label = (k: string) =>
+    k.startsWith('lh:') ? `${k.slice(3)} · workspace unknown` : k || 'workspace unresolved'
+  return { key, label }
 }
 
 /**
@@ -583,7 +621,8 @@ export function layoutStages(nodes: FlowNode[], edges: FlowEdge[]): Layout {
  */
 export function layoutWorkspaces(nodes: FlowNode[], edges: FlowEdge[]): Layout {
   const depth = depthsOf(nodes, edges)
-  const wsOf = (n: FlowNode) => n.ws || ''
+  const owner = ownerOf(nodes, edges)
+  const wsOf = (n: FlowNode) => owner.key(n)
 
   const first = new Map<string, { depth: number; at: number }>()
   nodes.forEach((n, i) => {
@@ -618,7 +657,7 @@ export function layoutWorkspaces(nodes: FlowNode[], edges: FlowEdge[]): Layout {
   return {
     pos,
     containers,
-    bands: spaces.map((ws, c) => band(c, ws || 'workspace unresolved', c, lastCol)),
+    bands: spaces.map((ws, c) => band(c, owner.label(ws), c, lastCol)),
     groups: [],
     width: spaces.length * (NW + GX) - GX,
     height: Math.max(1, y - GY * 2),
@@ -979,7 +1018,7 @@ export function buildFlow(steps: Step[], results: Map<string, StepResult>): { no
         kind: 'table',
         label: refLabel(ref, refs),
         ws: refWorkspace(ref, refs),
-        lakehouse: refs[ref]?.resolved ? refs[ref].lakehouse : '',
+        lakehouse: refLakehouse(ref, refs),
         isFile: refKind(ref, refs) === 'file',
         // A raw file has no schema to count, so it says what it is instead of
         // showing "0 cols" — which would read as a table we failed to resolve.

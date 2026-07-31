@@ -790,7 +790,11 @@ const layoutModel = (layout: 'workspace' | 'stages') => {
 describe('semantic layouts', () => {
   it('names layers after the workspace alone — a lakehouse is an object, not a layer', () => {
     const model = layoutModel('workspace')
-    expect(model.layers.map((l) => l.name)).toEqual(['Engineering', 'Platform'])
+    // Ordered by where the run STARTS, not by kind: the bronze table it reads
+    // is in Platform, so Platform heads the model and the notebook that reads
+    // it follows. The layout used to be steps-left/tables-right, which is two
+    // layers whatever the run contains and says nothing about ownership.
+    expect(model.layers.map((l) => l.name)).toEqual(['Platform', 'Engineering'])
   })
 
   it('gives one layer per workspace in the workspace layout', () => {
@@ -801,10 +805,16 @@ describe('semantic layouts', () => {
     const model = layoutModel('stages')
     // bronze | the notebook | silver — the same graph, drawn left to right.
     expect(model.layers.map((l) => l.name)).toEqual(['Platform', 'Engineering', 'Platform'])
+    // and the stage layers hold the lakehouse each stage names.
+    expect(model.layers.map((l) => l.objects.map((o) => o.name))).toEqual([
+      ['lh_bronze'],
+      ['nb_silver'],
+      ['lh_silver'],
+    ])
   })
 
   it('makes the lakehouse the object and its tables the children', () => {
-    const platform = layoutModel('workspace').layers[1]
+    const platform = layoutModel('workspace').layers.find((l) => l.name === 'Platform')!
     expect(platform.objects.map((o) => o.name).sort()).toEqual(['lh_bronze', 'lh_silver'])
     const bronze = platform.objects.find((o) => o.name === 'lh_bronze')!
     expect(bronze.children.map((c) => c.name)).toEqual(['orders'])
@@ -814,14 +824,14 @@ describe('semantic layouts', () => {
 
   it('tags the lakehouse so it reads as one on the card', () => {
     const model = layoutModel('workspace')
-    const platform = model.layers[1]
+    const platform = model.layers.find((l) => l.name === 'Platform')!
     expect(tagsOf(model, platform.objects[0].id)).toEqual(['Lakehouse'])
   })
 
   it('marks a table staged where it sits inside a step', () => {
     // The step's own rows are the table AS THE NOTEBOOK SAW IT, which is not
     // the table in the lakehouse layer even though both are called `orders`.
-    const step = layoutModel('workspace').layers[0].objects[0]
+    const step = layoutModel('workspace').layers.find((l) => l.name === 'Engineering')!.objects[0]
     const names: string[] = []
     const walk = (a: { name: string; children: { name: string; children: unknown[] }[] }) => {
       names.push(a.name)
@@ -831,7 +841,9 @@ describe('semantic layouts', () => {
     expect(names).toContain('orders (staged)')
     expect(names).toContain('orders_enriched (staged)')
     // and the real table, in its lakehouse, keeps its plain name
-    const bronze = layoutModel('workspace').layers[1].objects.find((o) => o.name === 'lh_bronze')!
+    const bronze = layoutModel('workspace')
+      .layers.find((l) => l.name === 'Platform')!
+      .objects.find((o) => o.name === 'lh_bronze')!
     expect(bronze.children.map((c) => c.name)).toEqual(['orders'])
   })
 
@@ -876,6 +888,8 @@ describe('pipeline grouping in the semantic layouts', () => {
     const model = sequenceToModel(steps, results, 'M', 'flow', {
       ...DEFAULT_PORT_OPTIONS, layout: 'workspace',
     }).model
-    expect(model.layers[0].objects.map((o) => o.name)).toEqual(['nb_silver'])
+    expect(model.layers.find((l) => l.name === 'Engineering')!.objects.map((o) => o.name)).toEqual([
+      'nb_silver',
+    ])
   })
 })

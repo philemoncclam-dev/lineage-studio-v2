@@ -792,8 +792,26 @@ export function refKind(ref: string, tables?: Record<string, SandboxTableRef>): 
 
 /** The workspace a ref belongs to, or `''` when it could not be resolved. */
 export function refWorkspace(ref: string, tables?: Record<string, SandboxTableRef>): string {
-  const t = tables?.[ref]
-  return t?.resolved ? t.workspace : ''
+  // Falls back to the ref's own shape, like `refLabel` and `refKind`: a ref
+  // that arrived without a side table (a pipeline Copy activity) still names
+  // its workspace, and returning '' for it read as "unresolved" when it was
+  // only unaccompanied.
+  const t = tables?.[ref] ?? refParts(ref)
+  return t.resolved ? t.workspace : ''
+}
+
+/**
+ * The lakehouse a ref belongs to, or `''` when the ref does not name one.
+ *
+ * NOT gated on `resolved`, which means the WORKSPACE is known — and that is a
+ * different question. `lh_bronze.orders` in a notebook yields `/lh_bronze/orders`:
+ * unresolved workspace, perfectly good lakehouse. Gating the two together threw
+ * the lakehouse away for every such ref, which is most of them on a run whose
+ * notebooks address their own lakehouse by name — and left the semantic views
+ * with nothing to group by, so every table fell into one band called `Tables`.
+ */
+export function refLakehouse(ref: string, tables?: Record<string, SandboxTableRef>): string {
+  return tables?.[ref]?.lakehouse || refParts(ref).lakehouse || ''
 }
 
 /**

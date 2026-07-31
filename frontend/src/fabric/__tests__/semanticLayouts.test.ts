@@ -60,13 +60,15 @@ describe('layoutStages', () => {
   it('orders bands by medallion stage and runs every edge to the right', () => {
     const { nodes, edges } = medallion()
     const { pos, bands } = layoutStages(nodes, edges)
+    // Table bands take the workspace holding them; a steps band takes its own,
+    // which here is the engineering workspace running every hop.
     expect(bands.map((b) => b.label)).toEqual([
-      'platform', // lh_landing
-      'Into lh_bronze',
       'platform',
-      'Into lh_silver',
+      'engineering',
       'platform',
-      'Into lh_gold',
+      'engineering',
+      'platform',
+      'engineering',
       'platform',
     ])
     for (const e of edges) expect(pos.get(e.from)!.x).toBeLessThan(pos.get(e.to)!.x)
@@ -97,6 +99,12 @@ describe('layoutStages', () => {
       { from: 's:late', to: 't:bronze.orders', tone: 'write' as const, kind: 'table' as const },
     )
     expect(layoutStages(nodes, edges).pos.get('t:bronze.orders')!.x).toBe(before)
+  })
+
+  it('names a steps band for what it feeds when no workspace resolved', () => {
+    const nodes: FlowNode[] = [table('bronze.a', 'lh_bronze', ''), step('nb', '')]
+    const edges = [{ from: 's:nb', to: 't:bronze.a', tone: 'write' as const, kind: 'table' as const }]
+    expect(layoutStages(nodes, edges).bands.map((b) => b.label)).toEqual(['Into lh_bronze', 'lh_bronze'])
   })
 
   it('boxes each lakehouse, and each pipeline on its own', () => {
@@ -142,8 +150,20 @@ describe('layoutWorkspaces', () => {
     expect(dir).toEqual([1, -1, 1, -1, 1, -1])
   })
 
-  it('sorts an unresolved workspace last', () => {
-    const nodes: FlowNode[] = [table('a', 'lh_bronze', ''), table('b', 'lh_bronze', 'platform')]
+  it('falls back to the lakehouse when no workspace resolved, and says so', () => {
+    // The common case: a notebook addressing `lh_bronze.orders` yields a ref
+    // with no workspace at all. Keying on the workspace alone put every card in
+    // one band, which is not a layout.
+    const nodes: FlowNode[] = [table('a', 'lh_bronze', ''), table('b', 'lh_silver', '')]
+    const { bands } = layoutWorkspaces(nodes, [])
+    expect(bands.map((b) => b.label)).toEqual([
+      'lh_bronze · workspace unknown',
+      'lh_silver · workspace unknown',
+    ])
+  })
+
+  it('sorts a card with neither workspace nor lakehouse last', () => {
+    const nodes: FlowNode[] = [table('a', '', ''), table('b', 'lh_bronze', 'platform')]
     const { bands } = layoutWorkspaces(nodes, [])
     expect(bands.map((b) => b.label)).toEqual(['platform', 'workspace unresolved'])
   })

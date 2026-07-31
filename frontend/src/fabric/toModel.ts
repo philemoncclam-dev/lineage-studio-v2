@@ -22,6 +22,7 @@ import { TAGS_KEY } from '../model/tags'
 import {
   refKind,
   refLabel,
+  refLakehouse,
   refWorkspace,
   type FabricPipelineActivity,
   type SandboxColumn,
@@ -42,6 +43,13 @@ interface Node {
    * how it reads on the card, must say File.
    */
   isFile?: boolean
+  /**
+   * A table's lakehouse. Independent of whether the WORKSPACE resolved — a ref
+   * naming `lh_bronze` and no workspace has a perfectly good lakehouse, and
+   * treating the two as one answer is what put every table in a layer called
+   * `Tables` under a holder called `Tables`.
+   */
+  lakehouse?: string
   /** A table's columns, which become its attributes. */
   columns: SandboxColumn[]
   /**
@@ -158,6 +166,103 @@ function columnsOf(nodes: Node[], links: Link[]): Map<string, number> {
 }
 
 /**
+ * One column per medallion stage, with the steps that FEED a stage in the
+ * column to its left — the `stages` canvas layout, as layers.
+ *
+ * A table's column is a property of the table (which lakehouse holds it), not
+ * of its longest path, so a late job re-reading gold does not drag the table it
+ * writes rightwards. A step sits left of what it writes but never left of what
+ * it reads, so a back-fill's one backward edge is the write.
+ */
+function stageColumnsOf(nodes: Node[], links: Link[], refs: Record<string, SandboxTableRef>): Map<string, number> {
+  const depth = columnsOf(nodes, links)
+  const stageKey = (n: Node) => refLakehouse(n.ref ?? n.name, refs) || n.ws || ''
+
+  const seen = new Map<string, { rank: number; depth: number; at: number }>()
+  nodes
+    .filter((n) => n.kind === 'table')
+    .forEach((t, i) => {
+      const key = stageKey(t)
+      const d = depth.get(t.id) ?? 0
+      const prev = seen.get(key)
+      if (!prev) seen.set(key, { rank: stageRank(key), depth: d, at: i })
+      else prev.depth = Math.min(prev.depth, d)
+    })
+  const index = new Map(
+    [...seen.entries()]
+      .sort(([, a], [, b]) => {
+        const ar = a.rank < 0 ? Infinity : a.rank
+        const br = b.rank < 0 ? Infinity : b.rank
+        return ar - br || a.depth - b.depth || a.at - b.at
+      })
+      .map(([key], i) => [key, i]),
+  )
+
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const stageOf = (id: string) => index.get(stageKey(byId.get(id)!)) ?? 0
+  const out = new Map<string, number>()
+  for (const n of nodes) {
+    if (n.kind === 'table') {
+      out.set(n.id, 2 * (index.get(stageKey(n)) ?? 0) + 1)
+      continue
+    }
+    const reads = links.filter((l) => l.kind === 'read' && l.to === n.id).map((l) => stageOf(l.from))
+    const writes = links.filter((l) => l.kind === 'write' && l.from === n.id).map((l) => stageOf(l.to))
+    const c = Math.max(
+      reads.length ? 2 * Math.max(...reads) + 2 : -Infinity,
+      writes.length ? 2 * Math.min(...writes) : -Infinity,
+    )
+    out.set(n.id, Number.isFinite(c) ? c : 0)
+  }
+  return compact(out)
+}
+
+/**
+ * One column per owner — the `workspace` canvas layout, as layers.
+ *
+ * Ownership is the axis, so a medallion run that hops between two workspaces
+ * gives two layers with edges crossing back and forth between them, which is
+ * the honest picture of it. Columns are ordered by how early the owner appears,
+ * so the first layer is still where the run starts.
+ */
+function ownerColumnsOf(nodes: Node[], links: Link[], refs: Record<string, SandboxTableRef>): Map<string, number> {
+  const depth = columnsOf(nodes, links)
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const lakeOf = (n: Node): string =>
+    n.kind === 'table'
+      ? refLakehouse(n.ref ?? n.name, refs)
+      : refLakehouse(
+          byId.get(links.find((l) => l.kind === 'write' && l.from === n.id)?.to ?? '')?.ref ?? '',
+          refs,
+        )
+  const key = (n: Node) => n.ws || (lakeOf(n) ? `lh:${lakeOf(n)}` : '')
+
+  const first = new Map<string, { depth: number; at: number }>()
+  nodes.forEach((n, i) => {
+    const k = key(n)
+    const d = depth.get(n.id) ?? 0
+    const prev = first.get(k)
+    if (!prev) first.set(k, { depth: d, at: i })
+    else prev.depth = Math.min(prev.depth, d)
+  })
+  const index = new Map(
+    [...first.entries()]
+      // An unknown owner sorts last: it is the least trustworthy column and
+      // should not head the model.
+      .sort(([ka, a], [kb, b]) => (ka === '' ? 1 : kb === '' ? -1 : a.depth - b.depth || a.at - b.at))
+      .map(([k], i) => [k, i]),
+  )
+  return new Map(nodes.map((n) => [n.id, index.get(key(n)) ?? 0]))
+}
+
+/** Squeeze assigned columns down to contiguous ones, so no layer comes out empty. */
+function compact(col: Map<string, number>): Map<string, number> {
+  const used = [...new Set(col.values())].sort((a, b) => a - b)
+  const slot = new Map(used.map((c, i) => [c, i]))
+  return new Map([...col].map(([id, c]) => [id, slot.get(c)!]))
+}
+
+/**
  * The pipeline a step was reached through, from the name the backend built.
  *
  * `expand_pipeline_activities` names an expanded step
@@ -180,10 +285,32 @@ const uniq = (xs: (string | undefined)[]): string[] => [
   ...new Set(xs.filter((x): x is string => !!x)),
 ]
 
-/** The lakehouse a table ref belongs to, or '' when the ref never resolved. */
-function refLakehouse(ref: string, refs: Record<string, SandboxTableRef>): string {
-  const t = refs[ref]
-  return t?.resolved ? t.lakehouse : ''
+/**
+ * Medallion stage names, in the order data moves through them. Kept in step
+ * with the canvas's `STAGE_ORDER` — the model is meant to be the picture the
+ * user pressed the button on, so the two must rank a lakehouse the same way.
+ */
+const STAGE_ORDER = [
+  'landing',
+  'raw',
+  'staging',
+  'bronze',
+  'silver',
+  'gold',
+  'platinum',
+  'curated',
+  'serving',
+  'mart',
+]
+
+/** Where a lakehouse sits in the medallion order, or -1 when it names no stage. */
+function stageRank(name: string): number {
+  const low = name.toLowerCase()
+  let best = -1
+  STAGE_ORDER.forEach((s, i) => {
+    if (best < 0 && new RegExp(`(^|[^a-z])${s}([^a-z]|$)`).test(low)) best = i
+  })
+  return best
 }
 
 /**
@@ -204,6 +331,12 @@ function semanticLayerName(inColumn: Node[]): string {
   // deliberately not.
   const ws = uniq(inColumn.map((n) => n.ws))
   if (ws.length) return ws.join(' + ')
+  // Nothing in the layer resolved a workspace — which is the normal case for a
+  // notebook addressing its own lakehouse by name. Name the layer for the
+  // lakehouses in it rather than 'Tables': it is the most specific true thing
+  // left, and 'Tables' told the reader nothing at all.
+  const lakes = uniq(inColumn.map((n) => n.lakehouse))
+  if (lakes.length) return lakes.join(' + ')
   return inColumn.some((n) => n.kind === 'table') ? 'Tables' : 'Notebooks & pipelines'
 }
 
@@ -281,19 +414,21 @@ export interface PortOptions {
    * user was looking at, so the exported model matches the picture they pressed
    * the button on.
    *
-   * The other two name layers after the WORKSPACE they belong to rather than
-   * after a position in a computed layout, and group tables under the lakehouse
-   * that holds them. They differ only in how many layers that produces:
+   * The other two name layers after what is in them rather than after a
+   * position in a computed layout, and group tables under the lakehouse that
+   * holds them. Each mirrors the canvas view of the same name — pressing
+   * Create model from a view exports the arrangement on screen:
    *
-   *   `workspace` — one layer per workspace. Two layers for a platform/
-   *     engineering split. The most truthful about ownership, and the reason it
-   *     is not the default: a medallion pipeline crosses between the two on
-   *     every hop, so silver→gold points back into the layer on its left. Four
-   *     such back-edges on the demo product.
+   *   `workspace` — one layer per OWNER: the workspace, or the lakehouse
+   *     standing in for it where no workspace resolved. The most truthful about
+   *     ownership, and the reason it is not the default: a medallion run
+   *     crosses between owners on every hop, so some writes point back into the
+   *     layer on their left.
    *
-   *   `stages`  — the same names, but one layer per dependency depth, so the
-   *     zigzag is straightened into a line: platform·landing, engineering·l2b,
-   *     platform·bronze, and so on. Same graph, no back-edges.
+   *   `stages`  — one layer per medallion STAGE, with the steps feeding a stage
+   *     in the layer to its left. A table's layer is the lakehouse holding it,
+   *     not its longest path, so the run reads left to right and only a genuine
+   *     write-back into an earlier stage points left.
    */
   layout?: ModelLayout
 }
@@ -403,6 +538,7 @@ export function sequenceToModel(
         name: refLabel(ref, refs),
         ref,
         ws: refWorkspace(ref, refs),
+        lakehouse: refLakehouse(ref, refs),
         isFile: refKind(ref, refs) === 'file',
         columns: schemas.get(ref) ?? [],
         io: [],
@@ -481,28 +617,49 @@ export function sequenceToModel(
   const semantic = layout !== 'view'
 
   const col = new Map<string, number>()
-  if (layout === 'workspace' || (layout === 'view' && view === 'sequence'))
-    // Steps left, tables right. Two layers in `workspace` layout, which is the
-    // whole point of it — and the reason writes point back leftwards.
+  if (layout === 'stages')
+    // One layer per medallion STAGE, mirroring the canvas view of the same
+    // name. It used to reuse dependency depth, which puts a table wherever its
+    // longest path lands rather than in the stage that holds it — so the
+    // exported model was not the picture the button was pressed on.
+    for (const [id, c] of stageColumnsOf(nodes, links, refs)) col.set(id, c)
+  else if (layout === 'workspace')
+    // One layer per OWNER — the workspace, or the lakehouse standing in for it
+    // where no workspace resolved. It used to be steps-left/tables-right, which
+    // is two layers whatever the run contains and says nothing about ownership.
+    for (const [id, c] of ownerColumnsOf(nodes, links, refs)) col.set(id, c)
+  else if (view === 'sequence')
+    // Steps left, tables right — the sequence canvas, exported as it looks.
     nodes.forEach((n) => col.set(n.id, n.kind === 'table' ? 1 : 0))
-  else
-    // `stages` reuses dependency depth, which already alternates tables and the
-    // steps that produce them — so the zigzag comes out straight for free, and
-    // only the NAMES had to change.
-    for (const [id, c] of columnsOf(nodes, links)) col.set(id, c)
+  else for (const [id, c] of columnsOf(nodes, links)) col.set(id, c)
   const lastCol = Math.max(0, ...col.values())
 
   const layers: Layer[] = []
   for (let c = 0; c <= lastCol; c++) {
     const inColumn = nodes.filter((n) => col.get(n.id) === c)
     if (!inColumn.length) continue
-    const name = semantic
-      ? semanticLayerName(inColumn)
-      : view === 'sequence'
-        ? c === 0
-          ? 'Notebooks & pipelines'
-          : 'Tables'
-        : layerName(inColumn, c, lastCol)
+    // A steps layer in the `stages` layout whose workspace never resolved is
+    // named for what it FEEDS, matching the canvas band. Where the workspace IS
+    // known it still wins: a layer is named for what it is, and a notebook's
+    // workspace is what it is. This is only the fallback that keeps every steps
+    // layer from being called 'Notebooks & pipelines'.
+    const feeds =
+      layout === 'stages' && inColumn.every((n) => n.kind !== 'table' && !n.ws)
+        ? uniq(
+            links
+              .filter((l) => l.kind === 'write' && inColumn.some((n) => n.id === l.from))
+              .map((l) => refLakehouse(l.table, refs)),
+          )
+        : []
+    const name = feeds.length
+      ? `Into ${feeds.join(' + ')}`
+      : semantic
+        ? semanticLayerName(inColumn)
+        : view === 'sequence'
+          ? c === 0
+            ? 'Notebooks & pipelines'
+            : 'Tables'
+          : layerName(inColumn, c, lastCol)
     const layer: Layer = { id: crypto.randomUUID(), name, objects: [] }
     //: lakehouse name -> its tables, collected while walking this layer's nodes
     //  and wrapped into one object per lakehouse once the layer is done.

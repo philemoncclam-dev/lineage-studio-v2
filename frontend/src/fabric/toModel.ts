@@ -157,6 +157,38 @@ function columnsOf(nodes: Node[], links: Link[]): Map<string, number> {
   return col
 }
 
+const uniq = (xs: (string | undefined)[]): string[] => [
+  ...new Set(xs.filter((x): x is string => !!x)),
+]
+
+/** The lakehouse a table ref belongs to, or '' when the ref never resolved. */
+function refLakehouse(ref: string, refs: Record<string, SandboxTableRef>): string {
+  const t = refs[ref]
+  return t?.resolved ? t.lakehouse : ''
+}
+
+/**
+ * A layer label built from what is actually in the layer, not its position.
+ *
+ * `Source tables`/`Tables`/`Output tables` describe where a column sits in a
+ * layout; `LS_Demo_Retail_Platform · lh_bronze` describes what the thing IS,
+ * and survives being looked at a week later. Workspace first because that is
+ * the boundary a reader cannot otherwise see — two lakehouses called `bronze`
+ * in different workspaces are not the same lakehouse.
+ *
+ * A mixed layer falls back to naming every workspace in it rather than picking
+ * one, since silently choosing would misattribute the rest.
+ */
+function semanticLayerName(inColumn: Node[], refs: Record<string, SandboxTableRef>): string {
+  const ws = uniq(inColumn.map((n) => n.ws)).join(' + ')
+  const tables = inColumn.filter((n) => n.kind === 'table')
+  if (tables.length && tables.length === inColumn.length) {
+    const lakes = uniq(tables.map((n) => refLakehouse(n.ref ?? n.name, refs)))
+    return [ws, lakes.join(', ')].filter(Boolean).join(' · ') || 'Tables'
+  }
+  return ws || 'Notebooks & pipelines'
+}
+
 /** Band label for a column, matching the canvas: all-tables columns say so. */
 function layerName(inColumn: Node[], col: number, lastCol: number): string {
   if (!inColumn.length) return `Layer ${col + 1}`
@@ -224,7 +256,31 @@ export interface PortOptions {
    * two tables — see `flowOf`.
    */
   columnEdges: boolean
+  /**
+   * How the model is divided into layers.
+   *
+   * `view` keeps the historical behaviour — follow whichever canvas view the
+   * user was looking at, so the exported model matches the picture they pressed
+   * the button on.
+   *
+   * The other two name layers after the WORKSPACE they belong to rather than
+   * after a position in a computed layout, and group tables under the lakehouse
+   * that holds them. They differ only in how many layers that produces:
+   *
+   *   `workspace` — one layer per workspace. Two layers for a platform/
+   *     engineering split. The most truthful about ownership, and the reason it
+   *     is not the default: a medallion pipeline crosses between the two on
+   *     every hop, so silver→gold points back into the layer on its left. Four
+   *     such back-edges on the demo product.
+   *
+   *   `stages`  — the same names, but one layer per dependency depth, so the
+   *     zigzag is straightened into a line: platform·landing, engineering·l2b,
+   *     platform·bronze, and so on. Same graph, no back-edges.
+   */
+  layout?: ModelLayout
 }
+
+export type ModelLayout = 'view' | 'workspace' | 'stages'
 
 export const DEFAULT_PORT_OPTIONS: PortOptions = {
   kindTags: true,
@@ -232,6 +288,7 @@ export const DEFAULT_PORT_OPTIONS: PortOptions = {
   provenance: true,
   columns: true,
   columnEdges: true,
+  layout: 'view',
 }
 
 export interface ToModelResult {
@@ -401,18 +458,37 @@ export function sequenceToModel(
   // Two fixed columns in the sequence view; dependency depth in the flow view.
   // Node order already has steps in run order and tables in first-touch order,
   // so the split alone gives "step 1 on top".
+  const layout: ModelLayout = options.layout ?? 'view'
+  //: Layers named for the workspace, tables gathered under their lakehouse.
+  const semantic = layout !== 'view'
+
   const col = new Map<string, number>()
-  if (view === 'sequence') nodes.forEach((n) => col.set(n.id, n.kind === 'table' ? 1 : 0))
-  else for (const [id, c] of columnsOf(nodes, links)) col.set(id, c)
+  if (layout === 'workspace' || (layout === 'view' && view === 'sequence'))
+    // Steps left, tables right. Two layers in `workspace` layout, which is the
+    // whole point of it — and the reason writes point back leftwards.
+    nodes.forEach((n) => col.set(n.id, n.kind === 'table' ? 1 : 0))
+  else
+    // `stages` reuses dependency depth, which already alternates tables and the
+    // steps that produce them — so the zigzag comes out straight for free, and
+    // only the NAMES had to change.
+    for (const [id, c] of columnsOf(nodes, links)) col.set(id, c)
   const lastCol = Math.max(0, ...col.values())
 
   const layers: Layer[] = []
   for (let c = 0; c <= lastCol; c++) {
     const inColumn = nodes.filter((n) => col.get(n.id) === c)
     if (!inColumn.length) continue
-    const name =
-      view === 'sequence' ? (c === 0 ? 'Notebooks & pipelines' : 'Tables') : layerName(inColumn, c, lastCol)
+    const name = semantic
+      ? semanticLayerName(inColumn, refs)
+      : view === 'sequence'
+        ? c === 0
+          ? 'Notebooks & pipelines'
+          : 'Tables'
+        : layerName(inColumn, c, lastCol)
     const layer: Layer = { id: crypto.randomUUID(), name, objects: [] }
+    //: lakehouse name -> its tables, collected while walking this layer's nodes
+    //  and wrapped into one object per lakehouse once the layer is done.
+    const grouped = new Map<string, ModelObject[]>()
     for (const n of inColumn) {
       const object: ModelObject = { id: crypto.randomUUID(), name: n.name, children: [] }
       objIdOf.set(n.id, object.id)
@@ -434,7 +510,16 @@ export function sequenceToModel(
               return col
             })
           : []
-        const attr: Attribute = { id: crypto.randomUUID(), name: refLabel(row.table, refs), children }
+        // `(staged)` distinguishes the copy of a table that sits INSIDE a step
+        // from the real table in its lakehouse layer. Both are called `orders`
+        // and they mean different things: one is the notebook's view of it at
+        // that moment, the other is the table itself. Without the suffix a
+        // reader sees the same name twice and reasonably assumes a duplicate.
+        const attr: Attribute = {
+          id: crypto.randomUUID(),
+          name: semantic ? `${refLabel(row.table, refs)} (staged)` : refLabel(row.table, refs),
+          children,
+        }
         ioAttrOf.set(key, attr.id)
         // Only the Access LABEL is optional. The row itself is structure —
         // dropping it would put the edge back on the object header and the
@@ -511,7 +596,22 @@ export function sequenceToModel(
       // No empty bags: an entity with no properties should have no entry at
       // all, or the Inspector and the exporters have a row of blanks to skip.
       if (Object.keys(bag).length) props[object.id] = bag
-      layer.objects.push(object)
+      // In the semantic layouts a table is not a top-level object: the LAKEHOUSE
+      // is, and its tables hang beneath it. Held back here and wrapped below.
+      //
+      // This costs nothing to wire, because a ModelObject and an Attribute are
+      // the same shape (`{id, name, children}`) and a Transition may point at
+      // either — so the object built above becomes the attribute verbatim, and
+      // `objIdOf` keeps addressing it by the same id. No edge has to be rebuilt.
+      if (semantic && n.kind === 'table') {
+        const lake = refLakehouse(n.ref ?? n.name, refs) || 'Tables'
+        ;(grouped.get(lake) ?? grouped.set(lake, []).get(lake)!).push(object)
+      } else layer.objects.push(object)
+    }
+    for (const [lake, tables] of grouped) {
+      const holder: ModelObject = { id: crypto.randomUUID(), name: lake, children: tables }
+      if (options.kindTags) props[holder.id] = { [TAGS_KEY]: 'Lakehouse' }
+      layer.objects.push(holder)
     }
     layers.push(layer)
   }

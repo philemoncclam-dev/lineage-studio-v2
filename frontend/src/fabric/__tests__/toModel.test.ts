@@ -745,3 +745,106 @@ describe('columns under an access', () => {
     expect(stats.transitions).toBe(2)
   })
 })
+
+// --- semantic layouts ------------------------------------------------------
+//
+// `view` names layers after a position in a computed layout ("Source tables").
+// These two name them after the workspace that owns them, and gather tables
+// under their lakehouse. They differ only in how many layers that makes.
+
+/** Engineering notebook reading bronze and writing silver, in Platform. */
+function medallionRun() {
+  const s: Step = { key: 'a', kind: 'notebook', ws: 'Engineering', itemId: 'it-a', name: 'nb_silver' }
+  const BRONZE = 'Platform/lh_bronze/orders'
+  const SILVER = 'Platform/lh_silver/orders_enriched'
+  const results = new Map([
+    [
+      s.key,
+      ran(
+        'nb_silver',
+        result({
+          reads: [BRONZE],
+          writes: [SILVER],
+          table_schemas: {
+            [BRONZE]: [{ name: 'order_id', type: 'string' }],
+            [SILVER]: [{ name: 'order_id', type: 'string' }],
+          },
+          tables: {
+            [BRONZE]: { workspace: 'Platform', lakehouse: 'lh_bronze', table: 'orders', resolved: true },
+            [SILVER]: {
+              workspace: 'Platform', lakehouse: 'lh_silver', table: 'orders_enriched', resolved: true,
+            },
+          },
+        }),
+      ),
+    ],
+  ])
+  return { steps: [s], results }
+}
+
+const layoutModel = (layout: 'workspace' | 'stages') => {
+  const { steps, results } = medallionRun()
+  return sequenceToModel(steps, results, 'M', 'flow', { ...DEFAULT_PORT_OPTIONS, layout }).model
+}
+
+describe('semantic layouts', () => {
+  it('names layers after the workspace, not a position in the layout', () => {
+    const model = layoutModel('workspace')
+    expect(model.layers.map((l) => l.name)).toEqual([
+      'Engineering',
+      'Platform · lh_bronze, lh_silver',
+    ])
+  })
+
+  it('gives one layer per workspace in the workspace layout', () => {
+    expect(layoutModel('workspace').layers).toHaveLength(2)
+  })
+
+  it('straightens the zigzag into one layer per hop in the stages layout', () => {
+    const model = layoutModel('stages')
+    // bronze | the notebook | silver — the same graph, drawn left to right.
+    expect(model.layers.map((l) => l.name)).toEqual([
+      'Platform · lh_bronze',
+      'Engineering',
+      'Platform · lh_silver',
+    ])
+  })
+
+  it('makes the lakehouse the object and its tables the children', () => {
+    const platform = layoutModel('workspace').layers[1]
+    expect(platform.objects.map((o) => o.name).sort()).toEqual(['lh_bronze', 'lh_silver'])
+    const bronze = platform.objects.find((o) => o.name === 'lh_bronze')!
+    expect(bronze.children.map((c) => c.name)).toEqual(['orders'])
+    // and the table keeps its columns beneath it
+    expect(bronze.children[0].children.map((c) => c.name)).toEqual(['order_id'])
+  })
+
+  it('tags the lakehouse so it reads as one on the card', () => {
+    const model = layoutModel('workspace')
+    const platform = model.layers[1]
+    expect(tagsOf(model, platform.objects[0].id)).toEqual(['Lakehouse'])
+  })
+
+  it('marks a table staged where it sits inside a step', () => {
+    // The step's own rows are the table AS THE NOTEBOOK SAW IT, which is not
+    // the table in the lakehouse layer even though both are called `orders`.
+    const step = layoutModel('workspace').layers[0].objects[0]
+    const names: string[] = []
+    const walk = (a: { name: string; children: { name: string; children: unknown[] }[] }) => {
+      names.push(a.name)
+      a.children.forEach((c) => walk(c as never))
+    }
+    step.children.forEach((c) => walk(c as never))
+    expect(names).toContain('orders (staged)')
+    expect(names).toContain('orders_enriched (staged)')
+    // and the real table, in its lakehouse, keeps its plain name
+    const bronze = layoutModel('workspace').layers[1].objects.find((o) => o.name === 'lh_bronze')!
+    expect(bronze.children.map((c) => c.name)).toEqual(['orders'])
+  })
+
+  it('leaves the default layout exactly as it was', () => {
+    const { steps, results } = medallionRun()
+    const before = sequenceToModel(steps, results, 'M', 'flow').model
+    expect(before.layers.map((l) => l.name)).toEqual(['Source tables', 'Notebooks & pipelines', 'Output tables'])
+  })
+})

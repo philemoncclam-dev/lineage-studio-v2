@@ -25,6 +25,25 @@ network (or a Windows job object), which is deliberately not attempted here —
 this module's guarantee is "no credential reachable", not "no syscall
 reachable".
 
+And that guarantee is narrower than the scrubbing makes it look. **Scrubbing the
+child's environment does not hide the PARENT's.** On Linux the child runs as the
+same uid as the API process, so `/proc/1/environ` is readable and every variable
+this module carefully withheld is one `open()` away. Verified against the
+deployed container, where the readable set was `CORS_ORIGINS`, `JAVA_HOME`,
+`PURVIEW_ALLOW_WRITE` — harmless only because that container holds no secrets.
+
+Two consequences, both load-bearing:
+
+  - **A host that runs this must hold no secrets in its environment.** Adding
+    `PURVIEW_CLIENT_SECRET`, `DATABASE_URL` or `ANTHROPIC_API_KEY` to a
+    deployment that runs the Spark engine publishes them to anyone who can run
+    a cell. `render.yaml` sets exactly those, which is safe only for as long as
+    that service runs the stub.
+  - Closing it properly means the child running as a **different uid** (Linux
+    denies `/proc/<pid>/environ` across users), which in turn means the executor
+    wants to be its own service rather than a subprocess of the API. That is the
+    direction to grow in, and it is not what this module does today.
+
 M2a spawns the stub executor under the backend's own interpreter. M2b will swap
 `_executor_cmd` for the pinned Spark venv running the Spark executor script —
 nothing else in this module, the router, or the frontend changes, because the

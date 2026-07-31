@@ -34,6 +34,21 @@ def client():
 
 
 @pytest.fixture
+def gated(monkeypatch):
+    """Switch the deployment's gate back on for one test.
+
+    The suite runs with `sandbox_require_auth` off (see `conftest`), which is
+    how a laptop runs. A deployment is the opposite, and these are the tests
+    that check what it does.
+    """
+    from app.config import Settings
+
+    on = Settings(_env_file=None, sandbox_require_auth=True)
+    monkeypatch.setattr("app.sandbox.router.get_settings", lambda: on)
+    return on
+
+
+@pytest.fixture
 def only_mine(monkeypatch):
     """A signed-in caller who can see exactly one workspace."""
 
@@ -175,6 +190,104 @@ def test_reaching_into_an_invisible_workspace_is_dropped_not_refused(only_mine):
     """
     visible = access.visible_workspace_ids("user-tok")
     assert access.limit_to_visible(visible, [MINE, NOT_MINE]) == [MINE]
+
+
+# --- the cells path, which used to have no gate at all -------------------
+
+
+def _run_cells(client, token: str | None = None):
+    """The path the deployed frontend uses for every re-run — and an attacker."""
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    return client.post(
+        "/fabric/sandbox/run",
+        json={"name": "nb", "cells": ["print('hello')"]},
+        headers=headers,
+    )
+
+
+def test_anonymous_cells_are_refused_on_a_deployment(client, gated, monkeypatch):
+    """The hole this closes: unauthenticated REMOTE CODE EXECUTION.
+
+    Supplying `cells` skipped every check — `assert_visible` only ever ran on
+    the fetch path — and the cells go to the child, which `exec()`s them on the
+    Spark engine. Harmless for as long as production ran the stub, which
+    executes nothing; arbitrary execution the moment a JVM is deployed, for
+    anyone who reads the endpoint out of the public frontend bundle.
+    """
+    from app.sandbox import router as sandbox_router
+
+    def explode(*_args, **_kwargs):  # pragma: no cover - must never run
+        raise AssertionError("ran a stranger's cells")
+
+    monkeypatch.setattr(sandbox_router, "run_sandbox", explode)
+    resp = _run_cells(client)
+    assert resp.status_code == 401
+    assert "sign in" in resp.text.lower()
+
+
+def test_a_bare_bearer_string_is_not_a_gate(client, gated, monkeypatch):
+    """"Sent a token" cannot be the test — any string satisfies it.
+
+    Fabric is the authority, so a token it refuses must be refused here, not
+    waved through because the header was well-formed.
+    """
+    from app.fabric.client import FabricError
+    from app.sandbox import router as sandbox_router
+
+    class Rejecting:
+        def __init__(self, **kwargs):
+            pass
+
+        def list_workspaces(self):
+            raise FabricError("401 unauthorized")
+
+    monkeypatch.setattr(access, "FabricClient", Rejecting)
+
+    def explode(*_args, **_kwargs):  # pragma: no cover - must never run
+        raise AssertionError("ran cells for a token Fabric rejected")
+
+    monkeypatch.setattr(sandbox_router, "run_sandbox", explode)
+    assert _run_cells(client, token="not-a-real-token").status_code == 403
+
+
+def test_a_signed_in_caller_may_still_run_cells(client, gated, only_mine, monkeypatch):
+    """The gate must not be a wall: a real user's re-run still works."""
+    from app.sandbox import router as sandbox_router
+
+    reached = {}
+
+    def fake_run(req, **kwargs):
+        reached["cells"] = req.cells
+        raise RuntimeError("reached the runner")
+
+    monkeypatch.setattr(sandbox_router, "run_sandbox", fake_run)
+    with pytest.raises(RuntimeError, match="reached the runner"):
+        _run_cells(client, token="user-tok")
+    assert reached["cells"] == ["print('hello')"]
+
+
+def test_the_gate_asks_fabric_once_not_twice(client, gated, monkeypatch):
+    """A second `list_workspaces` per run is a wasted round trip, not a check."""
+    from app.sandbox import router as sandbox_router
+
+    calls = []
+
+    class Counting:
+        def __init__(self, **kwargs):
+            pass
+
+        def list_workspaces(self):
+            calls.append(1)
+            return [{"id": MINE, "displayName": "Mine"}]
+
+    monkeypatch.setattr(access, "FabricClient", Counting)
+    monkeypatch.setattr(
+        sandbox_router,
+        "fetch_notebook_source",
+        lambda *a, **k: (_ for _ in ()).throw(sandbox_router.FabricError("stop")),
+    )
+    _run(client, MINE)
+    assert len(calls) == 1
 
 
 def test_a_token_fabric_rejects_sees_nothing(client, monkeypatch):

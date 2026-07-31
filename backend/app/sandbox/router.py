@@ -4,6 +4,13 @@ Either the cells are supplied directly (offline / test path), or a live notebook
 is fetched from Fabric by workspace + item id and decoded to cells first. Either
 way the run itself goes through `run_sandbox`, so the isolation guarantees hold
 regardless of where the code came from.
+
+Both paths are gated on a caller Fabric recognises (`sandbox_require_auth`,
+default on). Calling the cells path the "offline / test path" undersold it: it
+is also what the deployed frontend uses for every re-run, and it hands code
+straight to the child. `run_sandbox`'s guarantees are about what the child can
+REACH — no credential, a throwaway home and cwd — and were never a claim that
+running a stranger's code is safe.
 """
 
 from __future__ import annotations
@@ -13,6 +20,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..config import get_settings
 from ..fabric.access import assert_visible, limit_to_visible, visible_workspace_ids
 from ..fabric.client import FabricClient, FabricError
 from ..fabric.router import onelake_token, user_token
@@ -94,6 +102,32 @@ def sandbox_run(
     non-interactive paths — tests, a curl, the DEV-only "continue without
     signing in" — behave exactly as before.
     """
+    # Who may ask — settled before anything is fetched OR executed.
+    #
+    # The fetch path below has always been gated. The cells path never was, and
+    # it is the dangerous one: cells go straight to the child, which `exec()`s
+    # them on the Spark engine. While production ran only the stub that was
+    # merely untidy; the moment a JVM is deployed it is remote code execution,
+    # so the gate has to come first and cover both paths.
+    #
+    # "Sent a bearer token" is not by itself a gate — any string satisfies it.
+    # Fabric is the authority here as everywhere else in this backend: a token
+    # it refuses lists no workspaces, and `visible_workspace_ids` turns that
+    # into a 403. Nothing is validated locally, so there is still only one
+    # authority on who a caller is.
+    gate = get_settings().sandbox_require_auth
+    visible: set[str] | None = None
+    if gate:
+        if not token:
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "Sign in to run a notebook. (A local backend can set "
+                    "SANDBOX_REQUIRE_AUTH=false to allow anonymous runs.)"
+                ),
+            )
+        visible = visible_workspace_ids(token)
+
     cells = req.cells
     schemas: dict[str, list[ColumnSchema]] = dict(req.schemas or {})
     # Stays None when no fetch is attempted — caller-supplied cells or schemas.
@@ -110,8 +144,11 @@ def sandbox_run(
                 status_code=400,
                 detail="provide cells, or workspace_id + item_id to fetch the notebook",
             )
-        # Before anything is fetched: may THIS caller see that workspace?
-        visible = visible_workspace_ids(token)
+        # Before anything is fetched: may THIS caller see that workspace? The
+        # gate above may already have asked; asking twice is a wasted round trip
+        # to Fabric, not a second opinion.
+        if not gate:
+            visible = visible_workspace_ids(token)
         assert_visible(visible, req.workspace_id)
         try:
             client = FabricClient(user_token=token, onelake_token=lake)

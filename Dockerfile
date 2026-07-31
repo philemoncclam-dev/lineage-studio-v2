@@ -9,6 +9,14 @@
 # NOT Vercel — serverless can't host Spark. Build from the repo root:
 #     docker build -t lineage-backend .
 #     docker run -p 8080:8080 --env-file backend/../.env lineage-backend
+#
+# GIVE THIS CONTAINER NO SECRETS. It runs the Spark engine, which `exec()`s
+# notebook cells, and the child shares this process's uid — so anything in the
+# environment is readable via /proc/1/environ by any cell that runs. See the
+# isolation note in app/sandbox/runner.py. `SANDBOX_REQUIRE_AUTH` (default on)
+# decides who may run one; this decides what they'd find if they did.
+# In particular do NOT set PURVIEW_CLIENT_SECRET, DATABASE_URL or
+# ANTHROPIC_API_KEY here — those belong on the stub-engine deployment.
 
 FROM python:3.12-slim-bookworm
 

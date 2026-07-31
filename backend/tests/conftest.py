@@ -14,7 +14,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.purview.client import PurviewError  # noqa: E402  (needs the path above)
+from app.config import get_settings  # noqa: E402  (needs the path above)
+from app.purview.client import PurviewError  # noqa: E402
 
 WS = "11111111-1111-1111-1111-111111111111"
 LH = "22222222-2222-2222-2222-222222222222"
@@ -130,3 +131,21 @@ class FakePurviewClient:
 @pytest.fixture
 def fake_client() -> FakePurviewClient:
     return FakePurviewClient()
+
+
+@pytest.fixture(autouse=True)
+def _sandbox_auth_off(monkeypatch):
+    """Run the suite as a laptop would, not as a deployment.
+
+    `sandbox_require_auth` ships ON, so without this every test that posts cells
+    would 401 and be testing the gate instead of whatever it is actually about.
+    Turning it off here is the same escape hatch a local backend uses, applied
+    once rather than in fifty places.
+
+    The gate itself is therefore NOT covered by this default — it is switched
+    back on explicitly in `test_sandbox_access.py`, which is where it belongs.
+    """
+    monkeypatch.setenv("SANDBOX_REQUIRE_AUTH", "false")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()

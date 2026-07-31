@@ -83,6 +83,24 @@ class Settings(BaseSettings):
     #: configured. That is a laptop reachable from nowhere; a deployment is not.
     chat_require_auth: bool = True
 
+    #: Refuse `/fabric/sandbox/run` from a caller who sent no bearer token.
+    #:
+    #: On by DEFAULT, and for a sharper reason than the assistant's. `/chat/ask`
+    #: spends money; this route runs CODE. On the Spark engine the cells go to
+    #: `exec()` (`child_spark.py`), so an unauthenticated sandbox on a public URL
+    #: is arbitrary remote execution for anyone who reads the address out of the
+    #: frontend bundle — where it is published in plain text.
+    #:
+    #: Note this gate is about the CELLS path. The fetch path was always gated
+    #: (`assert_visible`), but that check only runs when a notebook is fetched;
+    #: cells supplied directly skipped every check and went straight to the
+    #: child. The stub engine hid the consequence for as long as it was all that
+    #: production ran — it pattern-matches text and executes nothing.
+    #:
+    #: Set `SANDBOX_REQUIRE_AUTH=false` on a local backend where sign-in is not
+    #: configured. That is a laptop reachable from nowhere; a deployment is not.
+    sandbox_require_auth: bool = True
+
     @property
     def chat_model(self) -> str:
         return self.chat_model_name or self.anthropic_model

@@ -80,6 +80,11 @@ export interface FlowNode {
    */
   ws?: string
   /**
+   * A table's lakehouse. Carried on the node because the semantic views name a
+   * band for it, and the refs table is not in scope by the time bands are cut.
+   */
+  lakehouse?: string
+  /**
    * A raw-file source rather than a Delta table.
    *
    * Deliberately NOT a new `FlowKind`: `kind === 'table'` is what puts a node in
@@ -165,7 +170,31 @@ function anchorY(n: FlowNode, rowKey?: string) {
  * direction of travel is carried by the row it leaves and the edge's colour.
  * The flow view keeps true edge direction.
  */
-export type CanvasView = 'flow' | 'sequence'
+/**
+ * How the sandbox canvas is arranged.
+ *
+ * `flow`/`sequence` name bands for a POSITION in the layout ("Source tables").
+ * `stages`/`workspace` name them for the workspace and lakehouse they actually
+ * hold, and are the same two arrangements underneath — `stages` reuses the flow
+ * columns, `workspace` the two-column split. Only the labels differ, which is
+ * why they cost no new layout code.
+ */
+export type CanvasView = 'flow' | 'sequence' | 'stages' | 'workspace'
+
+/** The two views that name bands for what is in them rather than where it sits. */
+const SEMANTIC_VIEWS: readonly CanvasView[] = ['stages', 'workspace']
+
+/** `workspace · lakehouse` for a band, from the nodes actually in it. */
+function semanticBand(inCol: FlowNode[]): string {
+  const uniq = (xs: (string | undefined)[]) => [...new Set(xs.filter((x): x is string => !!x))]
+  const ws = uniq(inCol.map((n) => n.ws)).join(' + ')
+  const tables = inCol.filter((n) => n.kind === 'table')
+  if (tables.length && tables.length === inCol.length) {
+    const lakes = uniq(tables.map((n) => n.lakehouse))
+    return [ws || 'unknown workspace', lakes.join(', ')].filter(Boolean).join(' · ')
+  }
+  return ws || 'Notebooks & pipelines'
+}
 
 interface Layout {
   pos: Map<string, { x: number; y: number }>
@@ -233,7 +262,7 @@ function groupByWorkspace(tables: FlowNode[]): { table: FlowNode; startsGroup: b
  * which pushes steps in sequence order — so "first step on top" needs no
  * sorting. The tables column is regrouped by workspace.
  */
-function layoutSequence(nodes: FlowNode[]): Layout {
+function layoutSequence(nodes: FlowNode[], semantic = false): Layout {
   const steps = nodes.filter((n) => n.kind !== 'table')
   const tables = nodes.filter((n) => n.kind === 'table')
   const pos: Layout['pos'] = new Map()
@@ -262,8 +291,17 @@ function layoutSequence(nodes: FlowNode[]): Layout {
   return {
     pos,
     bands: [
-      band(0, 'Notebooks & pipelines', 0, 1),
-      band(1, spaces.size > 1 ? `Tables · ${spaces.size} workspaces` : 'Tables', 1, 1),
+      band(0, semantic ? semanticBand(nodes.filter((n) => n.kind !== 'table')) : 'Notebooks & pipelines', 0, 1),
+      band(
+        1,
+        semantic
+          ? semanticBand(tables)
+          : spaces.size > 1
+            ? `Tables · ${spaces.size} workspaces`
+            : 'Tables',
+        1,
+        1,
+      ),
     ],
     groups,
     width: 2 * (NW + GX) - GX,
@@ -291,7 +329,7 @@ function sequenceEdges(edges: FlowEdge[], stepIds: ReadonlySet<string>): FlowEdg
   return out
 }
 
-function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
+function layoutFlow(nodes: FlowNode[], edges: FlowEdge[], semantic = false): Layout {
   const incoming = new Map<string, string[]>()
   nodes.forEach((n) => incoming.set(n.id, []))
   edges.forEach((e) => {
@@ -333,11 +371,13 @@ function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
     const tables = inCol.filter((n) => n.kind === 'table').length
     const label = !inCol.length
       ? ''
-      : tables === inCol.length
-        ? c === 0
-          ? 'Source tables'
-          : 'Tables'
-        : 'Notebooks & pipelines'
+      : semantic
+        ? semanticBand(inCol)
+        : tables === inCol.length
+          ? c === 0
+            ? 'Source tables'
+            : 'Tables'
+          : 'Notebooks & pipelines'
     return band(c, label, c, maxCol)
   })
 
@@ -419,7 +459,8 @@ function FlowCanvas({
 
   const shown = useMemo(() => {
     const stepIds = new Set(rawNodes.filter((n) => n.kind !== 'table').map((n) => n.id))
-    const base = view === 'sequence' ? sequenceEdges(edges, stepIds) : edges
+    const twoColumn = view === 'sequence' || view === 'workspace'
+    const base = twoColumn ? sequenceEdges(edges, stepIds) : edges
     // A column edge is only drawn when BOTH of its rows are actually on screen
     // — a collapsed group would otherwise anchor every hidden column to the
     // card header, which is a fan of identical lines saying nothing. Whenever
@@ -436,7 +477,12 @@ function FlowCanvas({
     ]
   }, [edges, rawNodes, view, byId])
   const { pos, bands, groups, width, height } = useMemo(
-    () => (view === 'sequence' ? layoutSequence(nodes) : layoutFlow(nodes, edges)),
+    () =>
+      // `workspace` is the two-column split and `stages` the depth columns —
+      // the same two arrangements as `sequence`/`flow`, semantically labelled.
+      view === 'sequence' || view === 'workspace'
+        ? layoutSequence(nodes, view === 'workspace')
+        : layoutFlow(nodes, edges, view === 'stages'),
     [nodes, edges, view],
   )
   const w = width + PAD * 2
@@ -612,6 +658,7 @@ export function buildFlow(steps: Step[], results: Map<string, StepResult>): { no
         kind: 'table',
         label: refLabel(ref, refs),
         ws: refWorkspace(ref, refs),
+        lakehouse: refs[ref]?.resolved ? refs[ref].lakehouse : '',
         isFile: refKind(ref, refs) === 'file',
         // A raw file has no schema to count, so it says what it is instead of
         // showing "0 cols" — which would read as a table we failed to resolve.
@@ -883,7 +930,17 @@ function ToModelBar({
     try {
       // The model is built in whichever view is on screen — what you export is
       // what you were looking at.
-      const { model } = sequenceToModel(steps, results, defaultModelName(steps), view, options)
+      // The exported model matches the picture on screen, which is the whole
+      // contract of this button — so a semantic view exports semantic layers,
+      // and the two arrangements map onto the two the builder already knows.
+      const semantic = SEMANTIC_VIEWS.includes(view)
+      const { model } = sequenceToModel(
+        steps,
+        results,
+        defaultModelName(steps),
+        view === 'sequence' || view === 'workspace' ? 'sequence' : 'flow',
+        { ...options, layout: semantic ? (view as 'stages' | 'workspace') : 'view' },
+      )
       await localStore.save(model)
       await navigate({ to: '/model/$modelId', params: { modelId: model.id } })
     } catch (e) {
@@ -900,6 +957,8 @@ function ToModelBar({
           [
             ['flow', 'Flow', 'One column per dependency depth'],
             ['sequence', 'Sequence', 'Tables in one column, steps in run order in the other'],
+            ['stages', 'Stages', 'Flow columns, each band named for its workspace and lakehouse'],
+            ['workspace', 'Workspace', 'One band per workspace — truthful about ownership, so writes point back'],
           ] as const
         ).map(([key, label, hint]) => (
           <button

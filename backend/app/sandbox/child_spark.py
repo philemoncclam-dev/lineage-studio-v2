@@ -346,6 +346,59 @@ def main() -> None:
         self, _view_for(name), *a, **k
     )
 
+    def _stand_in(raw: str):
+        """The empty view standing in for whatever `raw` names, as a DataFrame.
+
+        A view is registered on demand when nothing was registered under that
+        name — i.e. when no schema came back for the table. The read has already
+        been recorded by `_view_for`, so the alternative is failing the whole
+        notebook over one table we could not describe, which loses the lineage
+        of every cell after it as well.
+        """
+        view = _view_for(raw)
+        try:
+            return _orig_table(view)
+        except Exception:  # noqa: BLE001 — nothing registered under that name
+            spark.createDataFrame([], StructType()).createOrReplaceTempView(view)
+            return _orig_table(view)
+
+    # Path reads — the case this used to miss entirely.
+    #
+    # `spark.read.format("delta").load("abfss://…")` went straight through to
+    # Spark, which then needs a real Delta reader and real storage credentials
+    # and has neither: the run died with ClassNotFoundException: delta.DefaultSource
+    # and produced no lineage at all. That is not a rare shape — a notebook
+    # writing ACROSS workspaces has to use a path, because a bare table name
+    # resolves against its own workspace — so every cross-workspace notebook,
+    # which is exactly what a medallion architecture is made of, failed on the
+    # Spark engine while the stub engine read it correctly.
+    #
+    # A path is just another way of naming a table, so it resolves to the same
+    # empty view a named read does, and no Delta jar is needed for any of it.
+    _orig_reader_load = type(spark.read).load
+
+    def _reader_load(self, path=None, format=None, schema=None, **options):  # noqa: A002,ANN001
+        if isinstance(path, str) and path:
+            return _stand_in(path)
+        return _orig_reader_load(self, path, format, schema, **options)
+
+    type(spark.read).load = _reader_load
+
+    # The per-format shorthands are the same read with the format baked in.
+    def _format_reader(name: str):
+        original = getattr(type(spark.read), name)
+
+        def read(self, path=None, *a, **k):  # noqa: ANN001
+            if isinstance(path, str) and path:
+                return _stand_in(path)
+            return original(self, path, *a, **k)
+
+        return read
+
+    for _fmt in ("parquet", "csv", "json", "orc", "text"):
+        if hasattr(type(spark.read), _fmt):
+            setattr(type(spark.read), _fmt, _format_reader(_fmt))
+
     def _rewrite_sql(query: str) -> str:
         """Swap qualified table names in SQL for the views standing in for them.
 

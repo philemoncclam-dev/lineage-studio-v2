@@ -202,3 +202,80 @@ def test_cross_workspace_tables_stay_distinct():
     assert finance in result.reads and marketing in result.reads
     assert result.tables[finance].workspace == "Finance"
     assert result.tables[marketing].workspace == "Marketing"
+
+
+# --- path reads ------------------------------------------------------------
+#
+# A notebook that writes ACROSS workspaces has to name tables by `abfss://`
+# path, because a bare name resolves against the notebook's own workspace. That
+# makes the path read the normal shape of a medallion architecture, not an edge
+# case — and it used to fail outright on this engine.
+
+PLATFORM = "Retail_Platform"
+SRC_PATH = f"abfss://{PLATFORM}@onelake.dfs.fabric.microsoft.com/lh_bronze.Lakehouse/Tables/orders"
+DST_PATH = f"abfss://{PLATFORM}@onelake.dfs.fabric.microsoft.com/lh_silver.Lakehouse/Tables/orders_priced"
+
+PATH_SCHEMAS = {
+    make_ref("orders", "lh_bronze", PLATFORM): [
+        ColumnSchema(name="order_id", type="string"),
+        ColumnSchema(name="quantity", type="int"),
+        ColumnSchema(name="unit_price", type="double"),
+    ],
+}
+
+
+def test_a_delta_path_read_no_longer_needs_a_delta_reader():
+    """The regression: `SparkClassNotFoundException: delta.DefaultSource`.
+
+    `.format("delta").load(path)` went past the interception straight to Spark,
+    which has no Delta jar and no storage credential — so the cell died and the
+    notebook produced nothing. A path names a table, so it resolves to the same
+    empty view a named read does and no Delta reader is involved at all.
+    """
+    cells = [
+        "from pyspark.sql.functions import col",
+        f"orders = spark.read.format('delta').load('{SRC_PATH}')",
+        "priced = orders.withColumn('line_total', col('quantity') * col('unit_price'))",
+        f"priced.write.format('delta').mode('overwrite').save('{DST_PATH}')",
+    ]
+    result = run_sandbox(
+        RunRequest(notebook_name="nb", cells=cells, schemas=PATH_SCHEMAS,
+                   workspace=PLATFORM, lakehouse="lh_bronze"),
+        engine="spark",
+    )
+    assert result.ok, result.error
+    assert all(c.error is None for c in result.cells), [c.error for c in result.cells]
+
+    src = make_ref("orders", "lh_bronze", PLATFORM)
+    dst = make_ref("orders_priced", "lh_silver", PLATFORM)
+    assert src in result.reads
+    assert dst in result.writes
+
+    # Catalyst resolved the arithmetic against the real column types.
+    out = {c.name: c.type for c in result.table_schemas[dst]}
+    assert out["line_total"] == "double"
+
+    edges = {(e.from_column, e.to_column) for e in result.column_lineage if e.to_table == dst}
+    assert ("quantity", "line_total") in edges
+    assert ("unit_price", "line_total") in edges
+    assert ("order_id", "order_id") in edges
+
+
+def test_an_unknown_path_degrades_instead_of_killing_the_notebook():
+    """One table we cannot describe must not cost the lineage of every later cell."""
+    unknown = f"abfss://{PLATFORM}@onelake.dfs.fabric.microsoft.com/lh_landing.Lakehouse/Tables/never_seen"
+    cells = [
+        f"mystery = spark.read.format('delta').load('{unknown}')",
+        f"orders = spark.read.format('delta').load('{SRC_PATH}')",
+        f"orders.write.format('delta').mode('overwrite').save('{DST_PATH}')",
+    ]
+    result = run_sandbox(
+        RunRequest(notebook_name="nb", cells=cells, schemas=PATH_SCHEMAS,
+                   workspace=PLATFORM, lakehouse="lh_bronze"),
+        engine="spark",
+    )
+    assert result.ok, result.error
+    # The unreadable table is still recorded as a read — the intent is lineage.
+    assert make_ref("never_seen", "lh_landing", PLATFORM) in result.reads
+    # And the later write still produced its schema.
+    assert make_ref("orders_priced", "lh_silver", PLATFORM) in result.writes

@@ -157,6 +157,25 @@ function columnsOf(nodes: Node[], links: Link[]): Map<string, number> {
   return col
 }
 
+/**
+ * The pipeline a step was reached through, from the name the backend built.
+ *
+ * `expand_pipeline_activities` names an expanded step
+ * `invoke pl_20_bronze / invoke pl_21_dims / run nb_x`. Everything before the
+ * last segment is the orchestration that reached it; the last segment is the
+ * step itself. '' when the step was run directly and has no parent.
+ */
+function parentPipeline(name: string): string {
+  const cut = name.lastIndexOf(' / ')
+  return cut === -1 ? '' : name.slice(0, cut)
+}
+
+/** The step's own name, with the orchestration prefix removed. */
+function leafName(name: string): string {
+  const cut = name.lastIndexOf(' / ')
+  return cut === -1 ? name : name.slice(cut + 3)
+}
+
 const uniq = (xs: (string | undefined)[]): string[] => [
   ...new Set(xs.filter((x): x is string => !!x)),
 ]
@@ -168,25 +187,24 @@ function refLakehouse(ref: string, refs: Record<string, SandboxTableRef>): strin
 }
 
 /**
- * A layer label built from what is actually in the layer, not its position.
+ * A layer label built from what is in the layer, not from its position.
  *
  * `Source tables`/`Tables`/`Output tables` describe where a column sits in a
- * layout; `LS_Demo_Retail_Platform · lh_bronze` describes what the thing IS,
- * and survives being looked at a week later. Workspace first because that is
- * the boundary a reader cannot otherwise see — two lakehouses called `bronze`
- * in different workspaces are not the same lakehouse.
+ * layout. A workspace name describes what the thing IS, and still means
+ * something a week later.
  *
- * A mixed layer falls back to naming every workspace in it rather than picking
- * one, since silently choosing would misattribute the rest.
+ * A mixed layer names every workspace in it rather than picking one, since
+ * silently choosing would misattribute the rest.
  */
-function semanticLayerName(inColumn: Node[], refs: Record<string, SandboxTableRef>): string {
-  const ws = uniq(inColumn.map((n) => n.ws)).join(' + ')
-  const tables = inColumn.filter((n) => n.kind === 'table')
-  if (tables.length && tables.length === inColumn.length) {
-    const lakes = uniq(tables.map((n) => refLakehouse(n.ref ?? n.name, refs)))
-    return [ws, lakes.join(', ')].filter(Boolean).join(' · ') || 'Tables'
-  }
-  return ws || 'Notebooks & pipelines'
+function semanticLayerName(inColumn: Node[]): string {
+  // The WORKSPACE and nothing else. The lakehouse is not a layer and does not
+  // belong in a layer's name — it is an object inside one, holding its tables.
+  // Naming the layer `Platform · lh_bronze` said the same thing twice and made
+  // a layer look like it existed per lakehouse, which is the shape this is
+  // deliberately not.
+  const ws = uniq(inColumn.map((n) => n.ws))
+  if (ws.length) return ws.join(' + ')
+  return inColumn.some((n) => n.kind === 'table') ? 'Tables' : 'Notebooks & pipelines'
 }
 
 /** Band label for a column, matching the canvas: all-tables columns say so. */
@@ -479,7 +497,7 @@ export function sequenceToModel(
     const inColumn = nodes.filter((n) => col.get(n.id) === c)
     if (!inColumn.length) continue
     const name = semantic
-      ? semanticLayerName(inColumn, refs)
+      ? semanticLayerName(inColumn)
       : view === 'sequence'
         ? c === 0
           ? 'Notebooks & pipelines'
@@ -489,6 +507,8 @@ export function sequenceToModel(
     //: lakehouse name -> its tables, collected while walking this layer's nodes
     //  and wrapped into one object per lakehouse once the layer is done.
     const grouped = new Map<string, ModelObject[]>()
+    //: pipeline path -> the steps it runs, wrapped once the layer is done.
+    const pipelines = new Map<string, ModelObject[]>()
     for (const n of inColumn) {
       const object: ModelObject = { id: crypto.randomUUID(), name: n.name, children: [] }
       objIdOf.set(n.id, object.id)
@@ -606,11 +626,25 @@ export function sequenceToModel(
       if (semantic && n.kind === 'table') {
         const lake = refLakehouse(n.ref ?? n.name, refs) || 'Tables'
         ;(grouped.get(lake) ?? grouped.set(lake, []).get(lake)!).push(object)
+      } else if (semantic && parentPipeline(n.name)) {
+        // A notebook reached through a pipeline belongs UNDER that pipeline.
+        // `expand_pipeline_activities` names it `invoke pl_20_bronze / … / run
+        // nb`, so the prefix is the orchestration the backend already resolved
+        // — no second traversal, and one pipeline invoked twice stays two
+        // groups because the whole prefix is the key.
+        const parent = parentPipeline(n.name)!
+        object.name = leafName(n.name)
+        ;(pipelines.get(parent) ?? pipelines.set(parent, []).get(parent)!).push(object)
       } else layer.objects.push(object)
     }
     for (const [lake, tables] of grouped) {
       const holder: ModelObject = { id: crypto.randomUUID(), name: lake, children: tables }
       if (options.kindTags) props[holder.id] = { [TAGS_KEY]: 'Lakehouse' }
+      layer.objects.push(holder)
+    }
+    for (const [pipe, steps] of pipelines) {
+      const holder: ModelObject = { id: crypto.randomUUID(), name: pipe, children: steps }
+      if (options.kindTags) props[holder.id] = { [TAGS_KEY]: 'Pipeline' }
       layer.objects.push(holder)
     }
     layers.push(layer)

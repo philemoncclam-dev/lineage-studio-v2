@@ -788,12 +788,9 @@ const layoutModel = (layout: 'workspace' | 'stages') => {
 }
 
 describe('semantic layouts', () => {
-  it('names layers after the workspace, not a position in the layout', () => {
+  it('names layers after the workspace alone — a lakehouse is an object, not a layer', () => {
     const model = layoutModel('workspace')
-    expect(model.layers.map((l) => l.name)).toEqual([
-      'Engineering',
-      'Platform · lh_bronze, lh_silver',
-    ])
+    expect(model.layers.map((l) => l.name)).toEqual(['Engineering', 'Platform'])
   })
 
   it('gives one layer per workspace in the workspace layout', () => {
@@ -803,11 +800,7 @@ describe('semantic layouts', () => {
   it('straightens the zigzag into one layer per hop in the stages layout', () => {
     const model = layoutModel('stages')
     // bronze | the notebook | silver — the same graph, drawn left to right.
-    expect(model.layers.map((l) => l.name)).toEqual([
-      'Platform · lh_bronze',
-      'Engineering',
-      'Platform · lh_silver',
-    ])
+    expect(model.layers.map((l) => l.name)).toEqual(['Platform', 'Engineering', 'Platform'])
   })
 
   it('makes the lakehouse the object and its tables the children', () => {
@@ -846,5 +839,43 @@ describe('semantic layouts', () => {
     const { steps, results } = medallionRun()
     const before = sequenceToModel(steps, results, 'M', 'flow').model
     expect(before.layers.map((l) => l.name)).toEqual(['Source tables', 'Notebooks & pipelines', 'Output tables'])
+  })
+})
+
+describe('pipeline grouping in the semantic layouts', () => {
+  /** Two notebooks reached through the same expanded pipeline. */
+  function nestedRun() {
+    const mk = (key: string, name: string): Step => ({
+      key, kind: 'notebook', ws: 'Engineering', itemId: `it-${key}`, name,
+    })
+    const a = mk('a', 'invoke pl_20_bronze / run nb_customers')
+    const b = mk('b', 'invoke pl_20_bronze / run nb_products')
+    const T = 'Platform/lh_bronze/customers'
+    const r = (w: string) =>
+      ran('x', result({
+        writes: [w],
+        table_schemas: { [w]: [{ name: 'id', type: 'string' }] },
+        tables: { [w]: { workspace: 'Platform', lakehouse: 'lh_bronze', table: 'customers', resolved: true } },
+      }))
+    return { steps: [a, b], results: new Map([[a.key, r(T)], [b.key, r(T)]]) }
+  }
+
+  it('puts notebooks under the pipeline that reached them', () => {
+    const { steps, results } = nestedRun()
+    const model = sequenceToModel(steps, results, 'M', 'flow', {
+      ...DEFAULT_PORT_OPTIONS, layout: 'workspace',
+    }).model
+    const eng = model.layers.find((l) => l.name === 'Engineering')!
+    expect(eng.objects.map((o) => o.name)).toEqual(['invoke pl_20_bronze'])
+    // and the orchestration prefix is stripped off the steps themselves
+    expect(eng.objects[0].children.map((c) => c.name).sort()).toEqual(['run nb_customers', 'run nb_products'])
+  })
+
+  it('leaves a directly-run notebook as its own object', () => {
+    const { steps, results } = medallionRun()
+    const model = sequenceToModel(steps, results, 'M', 'flow', {
+      ...DEFAULT_PORT_OPTIONS, layout: 'workspace',
+    }).model
+    expect(model.layers[0].objects.map((o) => o.name)).toEqual(['nb_silver'])
   })
 })

@@ -184,16 +184,12 @@ export type CanvasView = 'flow' | 'sequence' | 'stages' | 'workspace'
 /** The two views that name bands for what is in them rather than where it sits. */
 const SEMANTIC_VIEWS: readonly CanvasView[] = ['stages', 'workspace']
 
-/** `workspace · lakehouse` for a band, from the nodes actually in it. */
+/** The WORKSPACE a band holds. A lakehouse is an object in it, not its name. */
 function semanticBand(inCol: FlowNode[]): string {
   const uniq = (xs: (string | undefined)[]) => [...new Set(xs.filter((x): x is string => !!x))]
-  const ws = uniq(inCol.map((n) => n.ws)).join(' + ')
-  const tables = inCol.filter((n) => n.kind === 'table')
-  if (tables.length && tables.length === inCol.length) {
-    const lakes = uniq(tables.map((n) => n.lakehouse))
-    return [ws || 'unknown workspace', lakes.join(', ')].filter(Boolean).join(' · ')
-  }
-  return ws || 'Notebooks & pipelines'
+  const ws = uniq(inCol.map((n) => n.ws))
+  if (ws.length) return ws.join(' + ')
+  return inCol.some((n) => n.kind === 'table') ? 'Tables' : 'Notebooks & pipelines'
 }
 
 interface Layout {
@@ -957,8 +953,8 @@ function ToModelBar({
           [
             ['flow', 'Flow', 'One column per dependency depth'],
             ['sequence', 'Sequence', 'Tables in one column, steps in run order in the other'],
-            ['stages', 'Stages', 'Flow columns, each band named for its workspace and lakehouse'],
-            ['workspace', 'Workspace', 'One band per workspace — truthful about ownership, so writes point back'],
+            ['stages', 'Stages', 'One band per hop, named for its workspace; lakehouses are objects'],
+            ['workspace', 'Workspace', 'One band per workspace; lakehouses and pipelines are the objects'],
           ] as const
         ).map(([key, label, hint]) => (
           <button

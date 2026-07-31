@@ -225,3 +225,117 @@ def test_an_undecodable_definition_is_empty_rather_than_an_error():
     payload = base64.b64encode(b"{{{").decode()
     bad = {"parts": [{"path": "pipeline-content.json", "payload": payload}]}
     assert parse_pipeline_activities(bad) == []
+
+
+# --- pipelines inside pipelines --------------------------------------------
+#
+# A master pipeline that only sequences other pipelines has no notebook of its
+# own. Before `expand_pipeline_activities` the child reference was dropped
+# entirely, so such a pipeline parsed to activities with nothing runnable in
+# them and the whole orchestration did nothing at all.
+
+
+def _notebook(name: str, nb_id: str, deps: list[str] | None = None) -> dict:
+    return {
+        "name": name,
+        "type": "TridentNotebook",
+        "dependsOn": [{"activity": d, "dependencyConditions": ["Succeeded"]} for d in (deps or [])],
+        "typeProperties": {"notebookId": nb_id, "workspaceId": "ws-1"},
+    }
+
+
+def _invoke(name: str, child_id: str, deps: list[str] | None = None, *, canvas: bool = False) -> dict:
+    """`canvas=True` gives the Fabric UI's InvokePipeline spelling."""
+    tp = (
+        {"pipelineId": child_id, "workspaceId": "ws-1", "operationType": "InvokeFabricPipeline"}
+        if canvas
+        else {"pipeline": {"referenceName": child_id, "type": "PipelineReference"}}
+    )
+    return {
+        "name": name,
+        "type": "InvokePipeline" if canvas else "ExecutePipeline",
+        "dependsOn": [{"activity": d, "dependencyConditions": ["Succeeded"]} for d in (deps or [])],
+        "typeProperties": tp,
+    }
+
+
+def _expand(root: dict, library: dict[str, dict]):
+    from app.fabric.pipelines import expand_pipeline_activities
+
+    def fetch(_ws: str, item: str) -> dict:
+        return library[item]
+
+    return expand_pipeline_activities(root, fetch, workspace_id="ws-1")
+
+
+def test_a_master_of_pipelines_yields_the_notebooks_underneath():
+    """The bug this pins: pl_00_master ran nothing, because it owns no notebook."""
+    child = definition([_notebook("run nb_a", "nb-a"), _notebook("run nb_b", "nb-b", ["run nb_a"])])
+    master = definition([_invoke("invoke child", "child-1")])
+
+    acts = _expand(master, {"child-1": child})
+    assert [a.notebook_id for a in acts if a.notebook_id] == ["nb-a", "nb-b"]
+
+
+def test_the_canvas_spelling_of_the_reference_works_too():
+    """InvokePipeline stores `pipelineId`; ExecutePipeline a PipelineReference."""
+    child = definition([_notebook("run nb_a", "nb-a")])
+    master = definition([_invoke("invoke child", "child-1", canvas=True)])
+    assert [a.notebook_id for a in _expand(master, {"child-1": child})if a.notebook_id] == ["nb-a"]
+
+
+def test_the_invoking_step_is_kept_so_the_structure_stays_visible():
+    child = definition([_notebook("run nb_a", "nb-a")])
+    master = definition([_invoke("invoke child", "child-1")])
+    acts = _expand(master, {"child-1": child})
+    assert "invoke child" in [a.name for a in acts]
+    # And the child's work is named under it, so two parents invoking the same
+    # pipeline stay distinct nodes rather than colliding on `dependsOn`.
+    assert "invoke child / run nb_a" in [a.name for a in acts]
+
+
+def test_what_followed_the_invoke_waits_for_the_whole_child():
+    """Splicing, not appending.
+
+    `waitOnCompletion` is what the pipeline means. If the step after the invoke
+    kept depending on the invoke itself, it would race the child's contents
+    instead of following them — a sequence silently turned into a fork.
+    """
+    child = definition([_notebook("run nb_a", "nb-a"), _notebook("run nb_b", "nb-b", ["run nb_a"])])
+    master = definition(
+        [_invoke("invoke child", "child-1"), _notebook("run after", "nb-z", ["invoke child"])]
+    )
+    acts = {a.name: a for a in _expand(master, {"child-1": child})}
+    # the child's LEAF, not the invoke
+    assert acts["run after"].depends_on == ["invoke child / run nb_b"]
+    # and nothing in the child starts before the invoke would have
+    assert acts["invoke child / run nb_a"].depends_on == ["invoke child"]
+
+
+def test_three_levels_deep_all_come_back():
+    """The shape the demo fixture actually has: master -> bronze -> dimensions."""
+    leaf = definition([_notebook("run nb_dim", "nb-dim")])
+    mid = definition([_invoke("invoke dims", "leaf-1")])
+    master = definition([_invoke("invoke bronze", "mid-1")])
+    acts = _expand(master, {"mid-1": mid, "leaf-1": leaf})
+    assert [a.notebook_id for a in acts if a.notebook_id] == ["nb-dim"]
+    assert "invoke bronze / invoke dims / run nb_dim" in [a.name for a in acts]
+
+
+def test_a_cycle_stops_rather_than_recursing_forever():
+    """A pipeline that invokes itself is a mistake, not a reason to hang."""
+    library: dict[str, dict] = {}
+    library["self-1"] = definition([_invoke("invoke self", "self-1")])
+    acts = _expand(library["self-1"], library)
+    assert [a.name for a in acts].count("invoke self") == 1
+
+
+def test_an_unreadable_child_is_a_step_not_a_failure():
+    def fetch(_ws: str, _item: str) -> dict:
+        raise RuntimeError("403 from Fabric")
+
+    from app.fabric.pipelines import expand_pipeline_activities
+
+    master = definition([_invoke("invoke child", "child-1")])
+    acts = expand_pipeline_activities(master, fetch, workspace_id="ws-1")
+    assert [a.name for a in acts] == ["invoke child"]

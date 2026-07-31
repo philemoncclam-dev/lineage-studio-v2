@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 
 from pydantic import BaseModel
 
@@ -46,6 +47,12 @@ class PipelineActivity(BaseModel):
     # For notebook activities (type "TridentNotebook"): the referenced notebook
     # so the sandbox can actually run it. None for non-notebook activities.
     notebook_id: str | None = None
+    #: For an activity that runs ANOTHER pipeline: the child's item id. A
+    #: pipeline of pipelines is how real orchestration is written — a master
+    #: that sequences per-layer children — and without this the parser returned
+    #: activities with nothing runnable in them, so such a pipeline ran nothing
+    #: at all. `expand_pipeline_activities` is what follows it.
+    pipeline_id: str | None = None
     workspace_id: str | None = None
     #: Canonical table refs this activity reads/writes, in the same `_refs`
     #: vocabulary the sandbox uses — so a table a Copy writes is the SAME graph
@@ -100,6 +107,11 @@ def parse_pipeline_activities(
                 deps.append(dep)
         tp = a.get("typeProperties") or {}
         notebook_id = tp.get("notebookId") or (tp.get("notebook") or {}).get("id")
+        # Two spellings for the same thing. The Fabric canvas writes
+        # `InvokePipeline` with a flat `pipelineId`; `ExecutePipeline` (the ADF
+        # lineage, and the only form the REST API accepts without an
+        # `externalReferences` connection) buries it in a PipelineReference.
+        pipeline_id = tp.get("pipelineId") or (tp.get("pipeline") or {}).get("referenceName")
         reads, writes, flows = _copy_lineage(a, name_map or {}, default_workspace)
         out.append(
             PipelineActivity(
@@ -107,6 +119,7 @@ def parse_pipeline_activities(
                 type=a.get("type") or "Unknown",
                 depends_on=deps,
                 notebook_id=notebook_id,
+                pipeline_id=pipeline_id,
                 workspace_id=tp.get("workspaceId"),
                 reads=reads,
                 writes=writes,
@@ -114,6 +127,112 @@ def parse_pipeline_activities(
             )
         )
     return out
+
+
+def expand_pipeline_activities(
+    definition: dict,
+    fetch: Callable[[str, str], dict],
+    *,
+    workspace_id: str,
+    name_map: dict[str, str] | None = None,
+    default_workspace: str = "",
+    max_depth: int = 5,
+) -> list[PipelineActivity]:
+    """A pipeline's activities with child pipelines followed and spliced in.
+
+    A master pipeline that only sequences other pipelines has no notebook of its
+    own, so the flat parse returns activities the sandbox cannot run and the
+    whole orchestration comes back empty — which is what "running it does
+    nothing" looks like from the UI.
+
+    The invoking activity is KEPT rather than replaced. It is the only place the
+    structure is visible ("this step is pl_20_bronze"), it costs nothing to run
+    (no notebook), and dropping it would flatten a three-level orchestration
+    into an undifferentiated list of eleven notebooks.
+
+    Ordering is preserved by splicing, not appending:
+
+      * the child's root activities are made to depend on the invoking activity,
+        so nothing inside the child starts before the invoke would have; and
+      * whatever depended on the invoking activity is repointed at the child's
+        LEAF activities, so the next step still waits for the whole child rather
+        than racing it. `waitOnCompletion` is what the pipeline means; appending
+        would silently turn a sequence into a fork.
+
+    Child names are prefixed with the invoking activity's name, so the same
+    notebook invoked by two different parents stays two distinct nodes and
+    `dependsOn` edges cannot collide.
+
+    `fetch(workspace_id, item_id) -> definition` is passed in rather than a
+    client, so this stays testable without Fabric and the caller keeps control
+    of which credential does the reading.
+
+    Cycles and runaway depth degrade rather than raise: the invoking activity is
+    returned unexpanded, which renders as the step it is instead of failing the
+    whole read.
+    """
+
+    def walk(
+        defn: dict,
+        ws: str,
+        seen: frozenset[tuple[str, str]],
+        depth: int,
+        prefix: str,
+    ) -> list[PipelineActivity]:
+        acts = parse_pipeline_activities(
+            defn, name_map=name_map, default_workspace=default_workspace
+        )
+        for a in acts:
+            if prefix:
+                a.name = f"{prefix} / {a.name}"
+                a.depends_on = [f"{prefix} / {d}" for d in a.depends_on]
+
+        children: dict[str, list[PipelineActivity]] = {}
+        # What a dependency on this activity should become once it is expanded:
+        # its own name when it is a leaf, the child's terminal activities when
+        # it is an invoke that got followed.
+        tail: dict[str, list[str]] = {}
+
+        for a in acts:
+            children[a.name] = []
+            tail[a.name] = [a.name]
+            if not a.pipeline_id:
+                continue
+            child_ws = a.workspace_id or ws
+            key = (child_ws.lower(), a.pipeline_id.lower())
+            if depth >= max_depth or key in seen:
+                continue
+            try:
+                child_def = fetch(child_ws, a.pipeline_id)
+            except Exception:  # noqa: BLE001 — an unreadable child is a step, not a failure
+                continue
+            kids = walk(child_def, child_ws, seen | {key}, depth + 1, a.name)
+            if not kids:
+                continue
+            for k in kids:
+                if not k.depends_on:
+                    k.depends_on = [a.name]
+            referenced = {d for k in kids for d in k.depends_on}
+            leaves = [k.name for k in kids if k.name not in referenced]
+            children[a.name] = kids
+            tail[a.name] = leaves or [a.name]
+
+        # Rewire the parent's own edges before flattening. Only this level's
+        # activities are rewritten — the children's roots already point at the
+        # invoke by name, and must keep doing so.
+        for a in acts:
+            rewired: list[str] = []
+            for d in a.depends_on:
+                rewired.extend(tail.get(d, [d]))
+            a.depends_on = rewired
+
+        out: list[PipelineActivity] = []
+        for a in acts:
+            out.append(a)
+            out.extend(children[a.name])
+        return out
+
+    return walk(definition, workspace_id, frozenset(), 0, "")
 
 
 def _copy_lineage(

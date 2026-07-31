@@ -569,6 +569,16 @@ export interface FabricPipelineActivity {
   type: string
   depends_on: string[]
   notebook_id?: string | null
+  /**
+   * For a step that runs another pipeline: the child's item id.
+   *
+   * The backend has already followed it — the child's activities arrive in this
+   * same list, named `<invoke step> / <child step>` and wired into the
+   * dependency order — so this is here to identify the step, not to fetch
+   * anything. A step with this set and no `notebook_id` is a grouping node with
+   * nothing to run, which is exactly what a master pipeline is made of.
+   */
+  pipeline_id?: string | null
   workspace_id?: string | null
   /**
    * Lineage a Copy activity declares inline, parsed from the definition.

@@ -174,10 +174,17 @@ function anchorY(n: FlowNode, rowKey?: string) {
  * How the sandbox canvas is arranged.
  *
  * `flow`/`sequence` name bands for a POSITION in the layout ("Source tables").
- * `stages`/`workspace` name them for the workspace and lakehouse they actually
- * hold, and are the same two arrangements underneath — `stages` reuses the flow
- * columns, `workspace` the two-column split. Only the labels differ, which is
- * why they cost no new layout code.
+ * The other two are arrangements in their own right, not relabellings:
+ *
+ * `stages` — one band per medallion STAGE (landing, bronze, silver, gold…),
+ * with the steps that feed a stage in the band to its left. A table sits in the
+ * stage that holds it however late it was written, so the whole run reads
+ * left-to-right; the only edges pointing left are genuine write-backs into an
+ * earlier stage, which is exactly the thing worth seeing.
+ *
+ * `workspace` — one band per WORKSPACE, with depth running down the canvas. A
+ * medallion run that hops between a platform and an engineering workspace on
+ * every write therefore draws as a zig-zag: right, down, back left, down.
  */
 export type CanvasView = 'flow' | 'sequence' | 'stages' | 'workspace'
 
@@ -192,9 +199,29 @@ function semanticBand(inCol: FlowNode[]): string {
   return inCol.some((n) => n.kind === 'table') ? 'Tables' : 'Notebooks & pipelines'
 }
 
+/**
+ * A container drawn BEHIND a run of cards that belong to one thing — the
+ * lakehouse that holds those tables, or the pipeline that runs those steps.
+ *
+ * It is what makes the semantic views semantic. A band label alone says the
+ * column is "platform"; the container says which cards in it are `lh_bronze`
+ * and which are somebody else's, which is the question a reader actually has.
+ */
+export interface Container {
+  key: string
+  label: string
+  kind: 'lakehouse' | 'pipeline'
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 interface Layout {
   pos: Map<string, { x: number; y: number }>
   bands: { key: number; label: string; left: number; width: number; centerX: number }[]
+  /** Lakehouse and pipeline boxes behind the cards. Empty in the two positional views. */
+  containers?: Container[]
   /**
    * Workspace headers above the tables column (sequence view only). A group's
    * name is drawn once rather than badged on every card: the column is already
@@ -220,6 +247,83 @@ function band(key: number, label: string, col: number, lastCol: number) {
   const left = col * (NW + GX) - (col === 0 ? 0 : GX / 2)
   const right = col * (NW + GX) + NW + (col === lastCol ? 0 : GX / 2)
   return { key, label, left, width: right - left, centerX: col * (NW + GX) + NW / 2 }
+}
+
+/**
+ * The container a card belongs to: the lakehouse holding a table, or the
+ * pipeline a step IS. A card with no container sits loose in the band.
+ *
+ * A pipeline is its own container of one rather than a plain card because the
+ * boundary is the point — a pipeline is a unit of orchestration, and the reader
+ * needs to see where one ends and the next notebook begins.
+ */
+function containerOf(n: FlowNode): { key: string; label: string; kind: Container['kind'] } | null {
+  if (n.kind === 'table') return n.lakehouse ? { key: `lh:${n.lakehouse}`, label: n.lakehouse, kind: 'lakehouse' } : null
+  if (n.kind === 'pipeline') return { key: `pl:${n.id}`, label: n.label, kind: 'pipeline' }
+  return null
+}
+
+/** Padding a container box adds around its cards, and the room for its label. */
+const BOX_PAD = 9
+const BOX_HEAD = 16
+/** Extra vertical space at a container boundary, on top of the usual gap. */
+const BOX_GAP = 16
+
+/**
+ * Stack one column top-down, keeping cards of the same container together and
+ * opening a wider gap at each boundary, and emit the boxes.
+ *
+ * Contiguity is by container, not by sort order: `stableByContainer` runs first
+ * so a lakehouse's tables are adjacent even when they were first touched pages
+ * apart, which is what lets one box enclose them.
+ */
+function stackBoxed(column: FlowNode[], x: number, y0: number, pos: Layout['pos'], out: Container[]): number {
+  let y = y0
+  let prev: string | null = null
+  let open: { c: Container; top: number } | null = null
+  const close = (bottom: number) => {
+    if (open) {
+      open.c.y = open.top - BOX_HEAD - BOX_PAD
+      open.c.height = bottom - open.c.y + BOX_PAD
+      out.push(open.c)
+      open = null
+    }
+  }
+  for (const n of column) {
+    const box = containerOf(n)
+    const key = box?.key ?? null
+    if (key !== prev) {
+      close(y - GY)
+      if (y > y0) y += BOX_GAP
+      if (box) {
+        y += BOX_HEAD + BOX_PAD
+        open = {
+          c: { ...box, x: x - BOX_PAD, y, width: NW + BOX_PAD * 2, height: 0 },
+          top: y,
+        }
+      }
+      prev = key
+    }
+    pos.set(n.id, { x, y })
+    y += nodeHeight(n) + GY
+  }
+  close(y - GY)
+  return Math.max(0, y - GY)
+}
+
+/** Group a column's cards by container, keeping first-seen order of both. */
+function stableByContainer(column: FlowNode[]): FlowNode[] {
+  const order: (string | null)[] = []
+  const bins = new Map<string | null, FlowNode[]>()
+  for (const n of column) {
+    const key = containerOf(n)?.key ?? null
+    if (!bins.has(key)) {
+      bins.set(key, [])
+      order.push(key)
+    }
+    bins.get(key)!.push(n)
+  }
+  return order.flatMap((k) => bins.get(k)!)
 }
 
 /** Extra vertical space between two workspace groups in the tables column. */
@@ -258,7 +362,7 @@ function groupByWorkspace(tables: FlowNode[]): { table: FlowNode; startsGroup: b
  * which pushes steps in sequence order — so "first step on top" needs no
  * sorting. The tables column is regrouped by workspace.
  */
-function layoutSequence(nodes: FlowNode[], semantic = false): Layout {
+function layoutSequence(nodes: FlowNode[]): Layout {
   const steps = nodes.filter((n) => n.kind !== 'table')
   const tables = nodes.filter((n) => n.kind === 'table')
   const pos: Layout['pos'] = new Map()
@@ -287,17 +391,8 @@ function layoutSequence(nodes: FlowNode[], semantic = false): Layout {
   return {
     pos,
     bands: [
-      band(0, semantic ? semanticBand(nodes.filter((n) => n.kind !== 'table')) : 'Notebooks & pipelines', 0, 1),
-      band(
-        1,
-        semantic
-          ? semanticBand(tables)
-          : spaces.size > 1
-            ? `Tables · ${spaces.size} workspaces`
-            : 'Tables',
-        1,
-        1,
-      ),
+      band(0, 'Notebooks & pipelines', 0, 1),
+      band(1, spaces.size > 1 ? `Tables · ${spaces.size} workspaces` : 'Tables', 1, 1),
     ],
     groups,
     width: 2 * (NW + GX) - GX,
@@ -325,17 +420,39 @@ function sequenceEdges(edges: FlowEdge[], stepIds: ReadonlySet<string>): FlowEdg
   return out
 }
 
-function layoutFlow(nodes: FlowNode[], edges: FlowEdge[], semantic = false): Layout {
+/**
+ * Longest-path depth per node — how many hops of real lineage precede it.
+ *
+ * Shared by the flow view (which uses it as the x axis) and the workspace view
+ * (which uses it as the y axis, so a run that hops between workspaces descends
+ * as it zig-zags rather than piling onto one line).
+ */
+export function depthsOf(
+  nodes: FlowNode[],
+  edges: FlowEdge[],
+  /**
+   * Count the faint step-order edges as dependencies.
+   *
+   * True for the flow view, where they keep an unrelated later step from
+   * collapsing back onto column 0. False for the workspace view, where they
+   * would make depth track the step NUMBER — every step one row lower than the
+   * last — and flatten the table/step alternation the zig-zag is made of.
+   */
+  includeOrder = false,
+): Map<string, number> {
   const incoming = new Map<string, string[]>()
   nodes.forEach((n) => incoming.set(n.id, []))
   edges.forEach((e) => {
-    if (incoming.has(e.to)) incoming.get(e.to)!.push(e.from)
+    if (incoming.has(e.to) && (includeOrder || !e.dashed)) incoming.get(e.to)!.push(e.from)
   })
   const colOf = new Map<string, number>()
   const visiting = new Set<string>()
   function col(id: string): number {
     const c = colOf.get(id)
     if (c !== undefined) return c
+    // A cycle — a table written and then re-read by a later step — has no
+    // longest path. Breaking it at 0 keeps the walk total and costs only the
+    // precision of one node's depth.
     if (visiting.has(id)) return 0
     visiting.add(id)
     const parents = incoming.get(id) ?? []
@@ -345,6 +462,196 @@ function layoutFlow(nodes: FlowNode[], edges: FlowEdge[], semantic = false): Lay
     return v
   }
   nodes.forEach((n) => col(n.id))
+  return colOf
+}
+
+/**
+ * Medallion stage names, in the order data moves through them.
+ *
+ * Matched as a token inside a lakehouse name, so `lh_bronze`, `bronze_lh` and
+ * `Bronze` all rank the same. A lakehouse that matches nothing keeps its own
+ * band and sorts after the known ones by dependency depth — an unrecognised
+ * name is not a reason to drop a lakehouse out of the picture.
+ */
+const STAGE_ORDER = [
+  'landing',
+  'raw',
+  'staging',
+  'bronze',
+  'silver',
+  'gold',
+  'platinum',
+  'curated',
+  'serving',
+  'mart',
+]
+
+/** Where a lakehouse sits in the medallion order, or -1 when it names no stage. */
+export function stageRank(name: string): number {
+  const low = name.toLowerCase()
+  let best = -1
+  STAGE_ORDER.forEach((s, i) => {
+    if (best < 0 && new RegExp(`(^|[^a-z])${s}([^a-z]|$)`).test(low)) best = i
+  })
+  return best
+}
+
+/**
+ * One band per medallion stage, with the steps that FEED a stage in the band to
+ * its left: stage k's tables sit at column 2k+1, and everything writing into
+ * them at column 2k.
+ *
+ * This is what makes the view read left-to-right end to end. Dependency depth
+ * (the flow view) puts a table wherever its longest path lands, so a gold table
+ * re-read by a late cleanup step drifts rightwards away from the rest of gold.
+ * Here a table's column is a property OF THE TABLE, so the only leftward edges
+ * left on the canvas are genuine write-backs into an earlier stage.
+ */
+export function layoutStages(nodes: FlowNode[], edges: FlowEdge[]): Layout {
+  const tables = nodes.filter((n) => n.kind === 'table')
+  const stageKey = (n: FlowNode) => n.lakehouse || n.ws || ''
+  const depth = depthsOf(nodes, edges)
+
+  // Distinct stages, medallion order first, then anything unrecognised in
+  // dependency order behind it.
+  const seen = new Map<string, { rank: number; depth: number; at: number }>()
+  tables.forEach((t, i) => {
+    const key = stageKey(t)
+    const d = depth.get(t.id) ?? 0
+    const prev = seen.get(key)
+    if (!prev) seen.set(key, { rank: stageRank(key), depth: d, at: i })
+    else prev.depth = Math.min(prev.depth, d)
+  })
+  const stages = [...seen.entries()]
+    .sort(([, a], [, b]) => {
+      const ar = a.rank < 0 ? Infinity : a.rank
+      const br = b.rank < 0 ? Infinity : b.rank
+      return ar - br || a.depth - b.depth || a.at - b.at
+    })
+    .map(([key]) => key)
+  const stageIndex = new Map(stages.map((s, i) => [s, i]))
+
+  // A step's column: just left of the stage it writes into, but never left of
+  // anything it reads. A back-fill job reading gold and writing bronze satisfies
+  // only one of those, and it must be the reads — then its single backward edge
+  // is the WRITE back into bronze, which is the true statement about the run.
+  // Anchoring on the write instead would draw the read as the back-edge and say
+  // the opposite.
+  const writesOf = new Map<string, string[]>()
+  const readsOf = new Map<string, string[]>()
+  for (const e of edges) {
+    if (e.dashed || e.kind === 'column') continue
+    if (e.tone === 'write') (writesOf.get(e.from) ?? writesOf.set(e.from, []).get(e.from)!).push(e.to)
+    if (e.tone === 'read') (readsOf.get(e.to) ?? readsOf.set(e.to, []).get(e.to)!).push(e.from)
+  }
+  const stageOfTable = (id: string) => stageIndex.get(stageKey(nodes.find((n) => n.id === id)!) ?? '') ?? 0
+  const colOf = new Map<string, number>()
+  for (const n of nodes) {
+    if (n.kind === 'table') {
+      colOf.set(n.id, 2 * (stageIndex.get(stageKey(n)) ?? 0) + 1)
+      continue
+    }
+    const w = writesOf.get(n.id) ?? []
+    const r = readsOf.get(n.id) ?? []
+    const afterReads = r.length ? 2 * Math.max(...r.map(stageOfTable)) + 2 : -Infinity
+    const beforeWrites = w.length ? 2 * Math.min(...w.map(stageOfTable)) : -Infinity
+    const c = Math.max(afterReads, beforeWrites)
+    colOf.set(n.id, Number.isFinite(c) ? c : 0)
+  }
+
+  return columnLayout(nodes, colOf, (inCol) => {
+    const inTables = inCol.filter((n) => n.kind === 'table')
+    if (!inTables.length) {
+      // A steps band, named for the stage it feeds — "Into silver" — because a
+      // step column's identity is its output, not its contents.
+      const fed = inCol.flatMap((n) => (writesOf.get(n.id) ?? []).map((t) => stageKey(nodes.find((x) => x.id === t)!)))
+      const uniq = [...new Set(fed.filter(Boolean))]
+      return uniq.length ? `Into ${uniq.join(' + ')}` : 'Notebooks & pipelines'
+    }
+    return semanticBand(inTables)
+  })
+}
+
+/**
+ * One band per workspace, with dependency depth running DOWN the canvas.
+ *
+ * Every node at depth d shares a horizontal slot, whatever workspace it is in,
+ * so a hop between workspaces is a step sideways and a step down — a medallion
+ * run that alternates platform and engineering on every write draws as the
+ * zig-zag it actually is. Ownership is the x axis here, which is the one thing
+ * the two positional views cannot show.
+ */
+export function layoutWorkspaces(nodes: FlowNode[], edges: FlowEdge[]): Layout {
+  const depth = depthsOf(nodes, edges)
+  const wsOf = (n: FlowNode) => n.ws || ''
+
+  const first = new Map<string, { depth: number; at: number }>()
+  nodes.forEach((n, i) => {
+    const key = wsOf(n)
+    const d = depth.get(n.id) ?? 0
+    const prev = first.get(key)
+    if (!prev) first.set(key, { depth: d, at: i })
+    else prev.depth = Math.min(prev.depth, d)
+  })
+  // An unresolved workspace sorts last: it is the least trustworthy column and
+  // should not head the canvas.
+  const spaces = [...first.entries()]
+    .sort(([ka, a], [kb, b]) => (ka === '' ? 1 : kb === '' ? -1 : a.depth - b.depth || a.at - b.at))
+    .map(([key]) => key)
+
+  const pos: Layout['pos'] = new Map()
+  const containers: Container[] = []
+  const maxDepth = Math.max(0, ...depth.values())
+  let y = 0
+  for (let d = 0; d <= maxDepth; d++) {
+    let slotBottom = y
+    spaces.forEach((ws, c) => {
+      const here = stableByContainer(nodes.filter((n) => wsOf(n) === ws && (depth.get(n.id) ?? 0) === d))
+      if (!here.length) return
+      const bottom = stackBoxed(here, c * (NW + GX), y, pos, containers)
+      slotBottom = Math.max(slotBottom, bottom)
+    })
+    y = slotBottom === y ? y : slotBottom + GY * 2
+  }
+
+  const lastCol = spaces.length - 1
+  return {
+    pos,
+    containers,
+    bands: spaces.map((ws, c) => band(c, ws || 'workspace unresolved', c, lastCol)),
+    groups: [],
+    width: spaces.length * (NW + GX) - GX,
+    height: Math.max(1, y - GY * 2),
+  }
+}
+
+/**
+ * Place nodes into the columns they were assigned, dropping empty ones, and
+ * box each column's lakehouses and pipelines.
+ *
+ * Shared by `layoutStages` and anything else that decides "which column" for
+ * itself: the column index a caller computes is semantic (stage 3), while the
+ * one drawn has to be contiguous, or an unused stage leaves a blank band.
+ */
+function columnLayout(
+  nodes: FlowNode[],
+  colOf: Map<string, number>,
+  label: (inCol: FlowNode[]) => string,
+): Layout {
+  const used = [...new Set(nodes.map((n) => colOf.get(n.id) ?? 0))].sort((a, b) => a - b)
+  const pos: Layout['pos'] = new Map()
+  const containers: Container[] = []
+  let height = 1
+  const bands = used.map((c, i) => {
+    const inCol = stableByContainer(nodes.filter((n) => (colOf.get(n.id) ?? 0) === c))
+    height = Math.max(height, stackBoxed(inCol, i * (NW + GX), 0, pos, containers))
+    return band(i, label(inCol), i, used.length - 1)
+  })
+  return { pos, containers, bands, groups: [], width: used.length * (NW + GX) - GX, height }
+}
+
+function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
+  const colOf = depthsOf(nodes, edges, true)
 
   // Stack each column top-down; cards have different heights.
   const nextY = new Map<number, number>()
@@ -367,13 +674,11 @@ function layoutFlow(nodes: FlowNode[], edges: FlowEdge[], semantic = false): Lay
     const tables = inCol.filter((n) => n.kind === 'table').length
     const label = !inCol.length
       ? ''
-      : semantic
-        ? semanticBand(inCol)
-        : tables === inCol.length
-          ? c === 0
-            ? 'Source tables'
-            : 'Tables'
-          : 'Notebooks & pipelines'
+      : tables === inCol.length
+        ? c === 0
+          ? 'Source tables'
+          : 'Tables'
+        : 'Notebooks & pipelines'
     return band(c, label, c, maxCol)
   })
 
@@ -455,8 +760,11 @@ function FlowCanvas({
 
   const shown = useMemo(() => {
     const stepIds = new Set(rawNodes.filter((n) => n.kind !== 'table').map((n) => n.id))
-    const twoColumn = view === 'sequence' || view === 'workspace'
-    const base = twoColumn ? sequenceEdges(edges, stepIds) : edges
+    // Only the sequence view flips reads: it is the one layout with a single
+    // canonical tables column to point everything at. The workspace view keeps
+    // true direction, because a read crossing back to the workspace on the left
+    // is a fact about ownership, not a drawing artefact.
+    const base = view === 'sequence' ? sequenceEdges(edges, stepIds) : edges
     // A column edge is only drawn when BOTH of its rows are actually on screen
     // — a collapsed group would otherwise anchor every hidden column to the
     // card header, which is a fan of identical lines saying nothing. Whenever
@@ -472,13 +780,15 @@ function FlowCanvas({
       ...columns,
     ]
   }, [edges, rawNodes, view, byId])
-  const { pos, bands, groups, width, height } = useMemo(
+  const { pos, bands, groups, containers, width, height } = useMemo(
     () =>
-      // `workspace` is the two-column split and `stages` the depth columns —
-      // the same two arrangements as `sequence`/`flow`, semantically labelled.
-      view === 'sequence' || view === 'workspace'
-        ? layoutSequence(nodes, view === 'workspace')
-        : layoutFlow(nodes, edges, view === 'stages'),
+      view === 'stages'
+        ? layoutStages(nodes, edges)
+        : view === 'workspace'
+          ? layoutWorkspaces(nodes, edges)
+          : view === 'sequence'
+            ? layoutSequence(nodes)
+            : layoutFlow(nodes, edges),
     [nodes, edges, view],
   )
   const w = width + PAD * 2
@@ -497,6 +807,21 @@ function FlowCanvas({
         </div>
 
         <div className="sbx-flow-canvas" style={{ width: w, height: h }}>
+          {/* Behind everything: the lakehouse and pipeline boxes. They are what
+              makes a semantic band more than a renamed column — the band says
+              which workspace, the box says which lakehouse inside it. */}
+          {(containers ?? []).map((c) => (
+            <div
+              key={c.key}
+              className="sbx-flow-box"
+              data-kind={c.kind}
+              style={{ left: c.x + PAD, top: c.y + PAD, width: c.width, height: c.height }}
+            >
+              <span className="sbx-flow-box-name" title={c.label}>
+                {c.label}
+              </span>
+            </div>
+          ))}
           {groups.map((g) => (
             <div
               key={g.key}
@@ -774,6 +1099,10 @@ export function buildFlow(steps: Step[], results: Map<string, StepResult>): { no
       label: step.name,
       sub,
       badge: String(i + 1),
+      // The step's OWN workspace, which is the axis the workspace view lays
+      // cards out on. Empty when no run resolved one — the same "unresolved"
+      // the tables column already distinguishes from a real name.
+      ws: own,
       rows,
       // Every card carries its full row list; the canvas decides how much of
       // each column run to show.
@@ -953,8 +1282,8 @@ function ToModelBar({
           [
             ['flow', 'Flow', 'One column per dependency depth'],
             ['sequence', 'Sequence', 'Tables in one column, steps in run order in the other'],
-            ['stages', 'Stages', 'One band per hop, named for its workspace; lakehouses are objects'],
-            ['workspace', 'Workspace', 'One band per workspace; lakehouses and pipelines are the objects'],
+            ['stages', 'Stages', 'One band per medallion stage — reads left to right, back-writes point left'],
+            ['workspace', 'Workspace', 'One band per workspace — a cross-workspace run zig-zags down the canvas'],
           ] as const
         ).map(([key, label, hint]) => (
           <button

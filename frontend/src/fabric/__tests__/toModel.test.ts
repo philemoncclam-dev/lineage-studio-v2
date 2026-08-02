@@ -273,7 +273,8 @@ describe('sequenceToModel', () => {
     const { p, results } = pipelineRun()
     const { model } = sequenceToModel([p], results, 'M')
     const pl = pipelineObject(model)
-    expect(tagsOf(model, pl.children[0].id)).toEqual(['Notebook'])
+    // and the run order rides beside it: activity 1 of step 1.
+    expect(tagsOf(model, pl.children[0].id)).toEqual(['Notebook', 'Step 1.1'])
   })
 
   it('names a non-notebook activity by its own type instead', () => {
@@ -281,7 +282,7 @@ describe('sequenceToModel', () => {
     const res = results.get(p.key)!
     res.activities![0] = { ...res.activities![0], type: 'Copy', notebook_id: null }
     const { model } = sequenceToModel([p], results, 'M')
-    expect(tagsOf(model, pipelineObject(model).children[0].id)).toEqual(['Copy'])
+    expect(tagsOf(model, pipelineObject(model).children[0].id)).toEqual(['Copy', 'Step 1.1'])
   })
 
   it('keeps the R/W on the nested table rows', () => {
@@ -359,7 +360,9 @@ describe('sequenceToModel', () => {
   it('tags each object with its kind, so the card badges it', () => {
     const { steps, results } = simpleRun()
     const { model } = sequenceToModel(steps, results, 'M')
-    expect(tagsOf(model, model.layers[1].objects[0].id)).toEqual(['Notebook'])
+    // A step also carries its place in the run, so a nested card still says
+    // what ran when.
+    expect(tagsOf(model, model.layers[1].objects[0].id)).toEqual(['Notebook', 'Step 1'])
     expect(tagsOf(model, model.layers[0].objects[0].id)).toEqual(['Table'])
     // Attributes are left untagged — tagging a column is the user's call.
     expect(tagsOf(model, model.layers[0].objects[0].children[0].id)).toEqual([])
@@ -370,7 +373,7 @@ describe('sequenceToModel', () => {
     const results = new Map([[p.key, ran('nightly', result({ writes: ['out'] }))]])
     const { model } = sequenceToModel([p], results, 'M')
     const obj = model.layers.flatMap((l) => l.objects).find((o) => o.name === 'nightly')!
-    expect(tagsOf(model, obj.id)).toEqual(['Pipeline'])
+    expect(tagsOf(model, obj.id)).toEqual(['Pipeline', 'Step 1'])
   })
 })
 
@@ -801,16 +804,16 @@ describe('semantic layouts', () => {
     expect(layoutModel('workspace').layers).toHaveLength(2)
   })
 
-  it('keeps the whole medallion in one layer in the stages layout', () => {
+  it('keeps the whole medallion in one layer in the Zig-Zag layout', () => {
     const model = layoutModel('stages')
     // One layer per WORKSPACE, not per stage: the platform holds every
     // lakehouse it owns, in medallion order, and the engineering workspace
-    // holds the notebook. It used to be a layer per stage, which drew the same
-    // workspace band three times for one run.
-    expect(model.layers.map((l) => l.name)).toEqual(['Platform', 'Engineering'])
+    // holds the notebook. Steps first, so the layer that RUNS things is on the
+    // left and its tables on the right, whatever the run touched first.
+    expect(model.layers.map((l) => l.name)).toEqual(['Engineering', 'Platform'])
     expect(model.layers.map((l) => l.objects.map((o) => o.name))).toEqual([
-      ['lh_bronze', 'lh_silver'],
       ['nb_silver'],
+      ['lh_bronze', 'lh_silver'],
     ])
   })
 
@@ -821,7 +824,7 @@ describe('semantic layouts', () => {
     const stages = sequenceToModel(steps, results, 'M', 'flow', {
       ...DEFAULT_PORT_OPTIONS, layout: 'stages',
     }).model
-    expect(stages.layers[0].objects.map((o) => o.name)).toEqual(['lh_bronze', 'lh_silver'])
+    expect(stages.layers[1].objects.map((o) => o.name)).toEqual(['lh_bronze', 'lh_silver'])
   })
 
   it('folds a read and a write into one staged hop, not two rows', () => {

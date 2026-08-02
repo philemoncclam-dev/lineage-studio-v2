@@ -61,27 +61,28 @@ describe('layoutStages', () => {
     const { nodes, edges } = medallion()
     const { pos, bands } = layoutStages(nodes, edges)
     // A band per OWNER, not per stage: four lakehouses of one platform are one
-    // band. It used to draw seven, four of them carrying the same name.
-    expect(bands.map((b) => b.label)).toEqual(['platform', 'engineering'])
+    // band. It used to draw seven, four of them carrying the same name. The
+    // band that RUNS things comes first, whatever the run touched first.
+    expect(bands.map((b) => b.label)).toEqual(['engineering', 'platform'])
     // and every hop crosses between the two — the zig-zag the port exports.
     const dir = edges.map((e) => Math.sign(pos.get(e.to)!.x - pos.get(e.from)!.x))
-    expect(dir).toEqual([1, -1, 1, -1, 1, -1])
+    expect(dir).toEqual([-1, 1, -1, 1, -1, 1])
   })
 
-  it('stacks the lakehouse boxes in medallion order inside the band', () => {
+  it('heads the lakehouses in medallion order inside the band', () => {
     const { nodes, edges } = medallion()
-    const { containers } = layoutStages(nodes, edges)
-    // The stage did not stop mattering — it orders the boxes down the band,
+    const { groups } = layoutStages(nodes, edges)
+    // The stage did not stop mattering — it orders the groups down the band,
     // which is where a reader looks for it now the band is the workspace.
     expect(
-      containers!
-        .filter((c) => c.kind === 'lakehouse')
+      groups
+        .filter((g) => g.kind === 'lakehouse')
         .sort((a, b) => a.y - b.y)
-        .map((c) => c.label),
+        .map((g) => g.label),
     ).toEqual(['lh_landing', 'lh_bronze', 'lh_silver', 'lh_gold'])
   })
 
-  it('keeps a table in its own lakehouse box however late it is written', () => {
+  it('keeps a table in its own lakehouse group however late it is written', () => {
     const { nodes, edges } = medallion()
     // A late step that re-reads gold and re-writes bronze would drag the bronze
     // table under dependency depth. Its lakehouse is a property of the table,
@@ -105,7 +106,7 @@ describe('layoutStages', () => {
     ])
   })
 
-  it('boxes each lakehouse, and each pipeline on its own', () => {
+  it('heads each lakehouse, and each pipeline on its own', () => {
     const nodes: FlowNode[] = [
       table('bronze.a', 'lh_bronze'),
       table('bronze.b', 'lh_bronze'),
@@ -115,19 +116,14 @@ describe('layoutStages', () => {
       { from: 's:pl', to: 't:bronze.a', tone: 'write' as const, kind: 'table' as const },
       { from: 's:pl', to: 't:bronze.b', tone: 'write' as const, kind: 'table' as const },
     ]
-    const { containers } = layoutStages(nodes, edges)
-    expect(containers!.map((c) => [c.kind, c.label])).toEqual([
+    const { groups, pos } = layoutStages(nodes, edges)
+    expect(groups.map((g) => [g.kind, g.label])).toEqual([
       ['pipeline', 'pl'],
       ['lakehouse', 'lh_bronze'],
     ])
-    // The lakehouse box encloses both of its tables and nothing else.
-    const lh = containers!.find((c) => c.kind === 'lakehouse')!
-    const { pos } = layoutStages(nodes, edges)
-    for (const id of ['t:bronze.a', 't:bronze.b']) {
-      const p = pos.get(id)!
-      expect(p.y).toBeGreaterThanOrEqual(lh.y)
-      expect(p.y).toBeLessThan(lh.y + lh.height)
-    }
+    // The lakehouse heading sits above both of its tables and nothing else.
+    const lh = groups.find((g) => g.kind === 'lakehouse')!
+    for (const id of ['t:bronze.a', 't:bronze.b']) expect(pos.get(id)!.y).toBeGreaterThan(lh.y)
   })
 })
 

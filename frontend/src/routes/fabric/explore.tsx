@@ -1097,7 +1097,7 @@ function Detail({ sel }: { sel?: Selected }) {
 // pages; the sandbox has no route of its own any more.
 function DetailColumn({ sel }: { sel?: Selected }) {
   const { steps, results, running } = useSequence()
-  const [tab, setTab] = useState<'detail' | 'sandbox'>('detail')
+  const [tab, setTab] = useState<'detail' | 'sandbox' | 'report'>('detail')
 
   // A run is the moment the canvas matters, so surface it without being asked.
   useEffect(() => {
@@ -1131,9 +1131,29 @@ function DetailColumn({ sel }: { sel?: Selected }) {
           Sandbox
           {steps.length > 0 && <span className="fx-tab-count">{steps.length}</span>}
         </button>
+        {/* The run report, off the canvas' back. It shared the sandbox tab and
+            took half the column, which on a pipeline of any size left the
+            lineage a letterbox. */}
+        <button
+          className="fx-detail-tab"
+          role="tab"
+          aria-selected={tab === 'report'}
+          data-active={tab === 'report' || undefined}
+          onClick={() => setTab('report')}
+        >
+          Run report
+        </button>
       </div>
       <div className="fx-detail-scroll">
-        {tab === 'detail' ? <Detail sel={sel} /> : <SequenceCanvas steps={steps} results={results} />}
+        {tab === 'detail' ? (
+          <Detail sel={sel} />
+        ) : (
+          <SequenceCanvas
+            steps={steps}
+            results={results}
+            pane={tab === 'report' ? 'report' : 'canvas'}
+          />
+        )}
       </div>
     </>
   )

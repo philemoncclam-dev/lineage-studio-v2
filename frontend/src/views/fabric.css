@@ -1566,44 +1566,6 @@
   line-height: 1.35;
 }
 
-/* Container behind a run of cards that belong to one thing — the lakehouse
-   holding those tables, or the pipeline running those steps. Sits under the
-   edges and the cards, so it groups without ever obscuring a line. */
-.sbx-flow-box {
-  position: absolute;
-  z-index: 0;
-  border: 1px solid rgb(28 35 51 / 0.13);
-  border-radius: 10px;
-  background: rgb(28 35 51 / 0.035);
-  pointer-events: none;
-}
-.sbx-flow-box[data-kind='pipeline'] {
-  border-style: dashed;
-  border-color: rgb(28 35 51 / 0.2);
-  background: rgb(28 35 51 / 0.05);
-}
-.sbx-flow-box-name {
-  /* Inside the box's head room, not floating above it: the box already
-     reserves the space, and a label hanging outside collides with the band
-     above whenever a group starts at the top of a column. */
-  position: absolute;
-  top: 5px;
-  left: 10px;
-  max-width: calc(100% - 20px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgb(28 35 51 / 0.55);
-}
-.sbx-flow-box[data-kind='pipeline'] .sbx-flow-box-name {
-  text-transform: none;
-  letter-spacing: 0;
-}
-
 /* Workspace group header above a run of table cards in the sequence view.
    Drawn once per group rather than badged on every card — the column is
    already ordered by workspace, so repeating the name down the canvas would
@@ -1630,6 +1592,10 @@
   height: 6px;
   border-radius: 50%;
   background: rgb(28 35 51 / 0.42);
+}
+.sbx-flow-ws[data-kind='pipeline'] {
+  text-transform: none;
+  letter-spacing: 0;
 }
 .sbx-flow-ws[data-unknown] {
   color: rgb(28 35 51 / 0.42);

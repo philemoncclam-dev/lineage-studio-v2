@@ -173,7 +173,18 @@ function columnsOf(nodes: Node[], links: Link[]): Map<string, number> {
  * the honest picture of it. Columns are ordered by how early the owner appears,
  * so the first layer is still where the run starts.
  */
-function ownerColumnsOf(nodes: Node[], links: Link[], refs: Record<string, SandboxTableRef>): Map<string, number> {
+function ownerColumnsOf(
+  nodes: Node[],
+  links: Link[],
+  refs: Record<string, SandboxTableRef>,
+  /**
+   * Zig-Zag: put the owners that RUN things before the ones that only hold
+   * them, so the steps layer is on the left and its tables on the right
+   * whatever the run happened to touch first. The Workspace layout keeps the
+   * run order, which is what makes the two different.
+   */
+  stepsFirst = false,
+): Map<string, number> {
   const depth = columnsOf(nodes, links)
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const lakeOf = (n: Node): string =>
@@ -193,11 +204,13 @@ function ownerColumnsOf(nodes: Node[], links: Link[], refs: Record<string, Sandb
     if (!prev) first.set(k, { depth: d, at: i })
     else prev.depth = Math.min(prev.depth, d)
   })
+  const runs = new Set(nodes.filter((n) => n.kind !== 'table').map(key))
   const index = new Map(
     [...first.entries()]
       // An unknown owner sorts last: it is the least trustworthy column and
       // should not head the model.
       .sort(([ka, a], [kb, b]) => (ka === '' ? 1 : kb === '' ? -1 : a.depth - b.depth || a.at - b.at))
+      .sort(([ka], [kb]) => (stepsFirst ? Number(runs.has(kb)) - Number(runs.has(ka)) : 0))
       .map(([k], i) => [k, i]),
   )
   return new Map(nodes.map((n) => [n.id, index.get(key(n)) ?? 0]))
@@ -566,7 +579,7 @@ export function sequenceToModel(
     // `stages` used to give a layer per medallion stage, which split one
     // workspace across four layers and drew the same workspace band repeatedly;
     // it now orders the lakehouses INSIDE its layer by stage instead.
-    for (const [id, c] of ownerColumnsOf(nodes, links, refs)) col.set(id, c)
+    for (const [id, c] of ownerColumnsOf(nodes, links, refs, layout === 'stages')) col.set(id, c)
   else if (view === 'sequence')
     // Steps left, tables right — the sequence canvas, exported as it looks.
     nodes.forEach((n) => col.set(n.id, n.kind === 'table' ? 1 : 0))
@@ -758,8 +771,13 @@ export function sequenceToModel(
           }
           // Tagged, not just propertied: a tag is what the viewer badges on the
           // row, so a notebook reads as one at a glance — the same reasoning as
-          // the object kind tags below.
-          if (options.kindTags) props[group.id] = { [TAGS_KEY]: g.tag }
+          // the object kind tags below. The ordinal says WHEN inside the run:
+          // `3.2` is the second activity of the third step, which is the only
+          // thing that distinguishes two activities of one pipeline card.
+          if (options.kindTags)
+            props[group.id] = {
+              [TAGS_KEY]: [g.tag, ...(n.ordinal ? [`Step ${n.ordinal}.${gi + 1}`] : [])].join(', '),
+            }
           object.children.push(group)
         })
       } else {
@@ -783,16 +801,24 @@ export function sequenceToModel(
       // The kind goes in as a TAG, not just a property: a tag is what the
       // viewer badges on the card, so an object reads as a notebook at a
       // glance instead of only under inspection.
+      const kindTag = n.isFile
+        ? 'File'
+        : n.kind === 'table'
+          ? 'Table'
+          : n.kind === 'pipeline'
+            ? 'Pipeline'
+            : 'Notebook'
       const bag: Record<string, string> = {
         ...(options.kindTags
           ? {
-              [TAGS_KEY]: n.isFile
-                ? 'File'
-                : n.kind === 'table'
-                  ? 'Table'
-                  : n.kind === 'pipeline'
-                    ? 'Pipeline'
-                    : 'Notebook',
+              // Run order rides in as a TAG beside the kind, not only as the
+              // `Step` property below. A notebook nested three deep under a
+              // master pipeline loses every positional cue that it was the
+              // second thing to run — the layer no longer orders by depth and
+              // the card is inside two groups — and the one question a reader
+              // has of an orchestration is what ran when. A property answers it
+              // only under inspection; a badge answers it at a glance.
+              [TAGS_KEY]: [kindTag, ...(n.ordinal ? [`Step ${n.ordinal}`] : [])].join(', '),
             }
           : {}),
         ...(options.provenance
@@ -873,8 +899,9 @@ export function sequenceToModel(
    * canvas can hide it behind the column edges because it is redrawing the same
    * graph; a model has to carry it.
    */
-  const columnEdgesFor = (l: Link, access: 'Read' | 'Write', bag: Record<string, string>) => {
-    if (!wantColumnEdges) return
+  const columnEdgesFor = (l: Link, access: 'Read' | 'Write', bag: Record<string, string>): number => {
+    if (!wantColumnEdges) return 0
+    let drawn = 0
     const stepNode = l.kind === 'read' ? l.to : l.from
     const io = ioKey(stepNode, l.group, access, l.table)
     for (const c of schemas.get(l.table) ?? []) {
@@ -899,8 +926,24 @@ export function sequenceToModel(
         addTransition(onStep, onTable, { ...bag, ...derived })
       else addTransition(onTable, onStep, bag)
       accessColumnEdges++
+      drawn++
     }
+    return drawn
   }
+
+  /**
+   * Whether one access still needs its whole-table edge, given how many column
+   * edges it drew.
+   *
+   * In the semantic layouts it does not: a table card joined to a step card by
+   * BOTH a line between the headers and a line per column says the same thing
+   * twice, and the fat header-to-header line is the one that hides the columns
+   * underneath it. The column edges carry the same lineage more precisely, so
+   * the table edge stands down wherever they exist — and stands in wherever
+   * they do not, which is any table whose schema the run never resolved. The
+   * positional layouts keep it: their layering reads the table-level graph.
+   */
+  const tableEdgeWanted = (drew: number) => !semantic || drew === 0
 
   for (const l of links) {
     const access = l.kind === 'read' ? 'Read' : 'Write'
@@ -921,8 +964,8 @@ export function sequenceToModel(
       const tableNode = l.kind === 'read' ? l.from : l.to
       const source = ioAttrOf.get(ioKey(stepNode, l.group, access, l.table)) ?? objIdOf.get(stepNode)
       const target = objIdOf.get(tableNode)
-      if (source && target) addTransition(source, target, bag)
-      columnEdgesFor(l, access, bag)
+      if (source && target && tableEdgeWanted(columnEdgesFor(l, access, bag)))
+        addTransition(source, target, bag)
       continue
     }
 
@@ -931,8 +974,8 @@ export function sequenceToModel(
     const io = ioAttrOf.get(ioKey(stepNode, l.group, access, l.table))
     const source = l.kind === 'read' ? objIdOf.get(l.from) : (io ?? objIdOf.get(l.from))
     const target = l.kind === 'read' ? (io ?? objIdOf.get(l.to)) : objIdOf.get(l.to)
-    if (source && target) addTransition(source, target, bag)
-    columnEdgesFor(l, access, bag)
+    if (source && target && tableEdgeWanted(columnEdgesFor(l, access, bag)))
+      addTransition(source, target, bag)
   }
 
   // Counted through the nesting, not just the top level: a pipeline's tables

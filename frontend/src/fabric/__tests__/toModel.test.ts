@@ -801,15 +801,39 @@ describe('semantic layouts', () => {
     expect(layoutModel('workspace').layers).toHaveLength(2)
   })
 
-  it('straightens the zigzag into one layer per hop in the stages layout', () => {
+  it('keeps the whole medallion in one layer in the stages layout', () => {
     const model = layoutModel('stages')
-    // bronze | the notebook | silver — the same graph, drawn left to right.
-    expect(model.layers.map((l) => l.name)).toEqual(['Platform', 'Engineering', 'Platform'])
-    // and the stage layers hold the lakehouse each stage names.
+    // One layer per WORKSPACE, not per stage: the platform holds every
+    // lakehouse it owns, in medallion order, and the engineering workspace
+    // holds the notebook. It used to be a layer per stage, which drew the same
+    // workspace band three times for one run.
+    expect(model.layers.map((l) => l.name)).toEqual(['Platform', 'Engineering'])
     expect(model.layers.map((l) => l.objects.map((o) => o.name))).toEqual([
-      ['lh_bronze'],
+      ['lh_bronze', 'lh_silver'],
       ['nb_silver'],
-      ['lh_silver'],
+    ])
+  })
+
+  it('orders the lakehouses by medallion stage, not by first touch', () => {
+    const { steps, results } = medallionRun()
+    // The run touches silver first (as the write) in ref order; the stage order
+    // is what the view is for, so bronze still leads.
+    const stages = sequenceToModel(steps, results, 'M', 'flow', {
+      ...DEFAULT_PORT_OPTIONS, layout: 'stages',
+    }).model
+    expect(stages.layers[0].objects.map((o) => o.name)).toEqual(['lh_bronze', 'lh_silver'])
+  })
+
+  it('folds a read and a write into one staged hop', () => {
+    // The notebook reads bronze `orders` and writes silver `orders_enriched` —
+    // one move, so one group, tagged, with both rows inside it.
+    const model = layoutModel('stages')
+    const step = model.layers.find((l) => l.name === 'Engineering')!.objects[0]
+    expect(step.children.map((c) => c.name)).toEqual(['orders → orders_enriched'])
+    expect(tagsOf(model, step.children[0].id)).toEqual(['Staged'])
+    expect(step.children[0].children.map((c) => c.name)).toEqual([
+      'orders (staged)',
+      'orders_enriched (staged)',
     ])
   })
 
@@ -881,6 +905,30 @@ describe('pipeline grouping in the semantic layouts', () => {
     expect(eng.objects.map((o) => o.name)).toEqual(['invoke pl_20_bronze'])
     // and the orchestration prefix is stripped off the steps themselves
     expect(eng.objects[0].children.map((c) => c.name).sort()).toEqual(['run nb_customers', 'run nb_products'])
+  })
+
+  it('nests an invoked pipeline inside the master that invoked it', () => {
+    const mk = (key: string, name: string): Step => ({
+      key, kind: 'notebook', ws: 'Engineering', itemId: `it-${key}`, name,
+    })
+    const a = mk('a', 'invoke pl_00_master / invoke pl_20_bronze / run nb_customers')
+    const b = mk('b', 'invoke pl_00_master / invoke pl_30_silver / run nb_orders')
+    const T = 'Platform/lh_bronze/customers'
+    const res = ran('x', result({
+      writes: [T],
+      tables: { [T]: { workspace: 'Platform', lakehouse: 'lh_bronze', table: 'customers', resolved: true } },
+    }))
+    const model = sequenceToModel([a, b], new Map([[a.key, res], [b.key, res]]), 'M', 'flow', {
+      ...DEFAULT_PORT_OPTIONS, layout: 'stages',
+    }).model
+    const eng = model.layers.find((l) => l.name === 'Engineering')!
+    // One object, not two paths flattened into sibling labels.
+    expect(eng.objects.map((o) => o.name)).toEqual(['invoke pl_00_master'])
+    expect(eng.objects[0].children.map((c) => c.name)).toEqual([
+      'invoke pl_20_bronze',
+      'invoke pl_30_silver',
+    ])
+    expect(eng.objects[0].children[0].children.map((c) => c.name)).toEqual(['run nb_customers'])
   })
 
   it('leaves a directly-run notebook as its own object', () => {

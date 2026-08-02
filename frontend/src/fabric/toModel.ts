@@ -166,58 +166,6 @@ function columnsOf(nodes: Node[], links: Link[]): Map<string, number> {
 }
 
 /**
- * One column per medallion stage, with the steps that FEED a stage in the
- * column to its left — the `stages` canvas layout, as layers.
- *
- * A table's column is a property of the table (which lakehouse holds it), not
- * of its longest path, so a late job re-reading gold does not drag the table it
- * writes rightwards. A step sits left of what it writes but never left of what
- * it reads, so a back-fill's one backward edge is the write.
- */
-function stageColumnsOf(nodes: Node[], links: Link[], refs: Record<string, SandboxTableRef>): Map<string, number> {
-  const depth = columnsOf(nodes, links)
-  const stageKey = (n: Node) => refLakehouse(n.ref ?? n.name, refs) || n.ws || ''
-
-  const seen = new Map<string, { rank: number; depth: number; at: number }>()
-  nodes
-    .filter((n) => n.kind === 'table')
-    .forEach((t, i) => {
-      const key = stageKey(t)
-      const d = depth.get(t.id) ?? 0
-      const prev = seen.get(key)
-      if (!prev) seen.set(key, { rank: stageRank(key), depth: d, at: i })
-      else prev.depth = Math.min(prev.depth, d)
-    })
-  const index = new Map(
-    [...seen.entries()]
-      .sort(([, a], [, b]) => {
-        const ar = a.rank < 0 ? Infinity : a.rank
-        const br = b.rank < 0 ? Infinity : b.rank
-        return ar - br || a.depth - b.depth || a.at - b.at
-      })
-      .map(([key], i) => [key, i]),
-  )
-
-  const byId = new Map(nodes.map((n) => [n.id, n]))
-  const stageOf = (id: string) => index.get(stageKey(byId.get(id)!)) ?? 0
-  const out = new Map<string, number>()
-  for (const n of nodes) {
-    if (n.kind === 'table') {
-      out.set(n.id, 2 * (index.get(stageKey(n)) ?? 0) + 1)
-      continue
-    }
-    const reads = links.filter((l) => l.kind === 'read' && l.to === n.id).map((l) => stageOf(l.from))
-    const writes = links.filter((l) => l.kind === 'write' && l.from === n.id).map((l) => stageOf(l.to))
-    const c = Math.max(
-      reads.length ? 2 * Math.max(...reads) + 2 : -Infinity,
-      writes.length ? 2 * Math.min(...writes) : -Infinity,
-    )
-    out.set(n.id, Number.isFinite(c) ? c : 0)
-  }
-  return compact(out)
-}
-
-/**
  * One column per owner — the `workspace` canvas layout, as layers.
  *
  * Ownership is the axis, so a medallion run that hops between two workspaces
@@ -253,13 +201,6 @@ function ownerColumnsOf(nodes: Node[], links: Link[], refs: Record<string, Sandb
       .map(([k], i) => [k, i]),
   )
   return new Map(nodes.map((n) => [n.id, index.get(key(n)) ?? 0]))
-}
-
-/** Squeeze assigned columns down to contiguous ones, so no layer comes out empty. */
-function compact(col: Map<string, number>): Map<string, number> {
-  const used = [...new Set(col.values())].sort((a, b) => a - b)
-  const slot = new Map(used.map((c, i) => [c, i]))
-  return new Map([...col].map(([id, c]) => [id, slot.get(c)!]))
 }
 
 /**
@@ -425,10 +366,10 @@ export interface PortOptions {
    *     crosses between owners on every hop, so some writes point back into the
    *     layer on their left.
    *
-   *   `stages`  — one layer per medallion STAGE, with the steps feeding a stage
-   *     in the layer to its left. A table's layer is the lakehouse holding it,
-   *     not its longest path, so the run reads left to right and only a genuine
-   *     write-back into an earlier stage points left.
+   *   `stages`  — the same layers, with the lakehouses inside each one ordered
+   *     by medallion stage: landing, bronze, silver, gold. The whole medallion
+   *     is ONE layer because it is one workspace; the stage is an ordering
+   *     within it, not an owner of its own.
    */
   layout?: ModelLayout
 }
@@ -617,16 +558,14 @@ export function sequenceToModel(
   const semantic = layout !== 'view'
 
   const col = new Map<string, number>()
-  if (layout === 'stages')
-    // One layer per medallion STAGE, mirroring the canvas view of the same
-    // name. It used to reuse dependency depth, which puts a table wherever its
-    // longest path lands rather than in the stage that holds it — so the
-    // exported model was not the picture the button was pressed on.
-    for (const [id, c] of stageColumnsOf(nodes, links, refs)) col.set(id, c)
-  else if (layout === 'workspace')
+  if (semantic)
     // One layer per OWNER — the workspace, or the lakehouse standing in for it
-    // where no workspace resolved. It used to be steps-left/tables-right, which
-    // is two layers whatever the run contains and says nothing about ownership.
+    // where no workspace resolved. Both semantic layouts share it: a medallion
+    // platform holds ALL its lakehouses, however many stages they span, and the
+    // engineering workspace holds the pipelines that move data between them.
+    // `stages` used to give a layer per medallion stage, which split one
+    // workspace across four layers and drew the same workspace band repeatedly;
+    // it now orders the lakehouses INSIDE its layer by stage instead.
     for (const [id, c] of ownerColumnsOf(nodes, links, refs)) col.set(id, c)
   else if (view === 'sequence')
     // Steps left, tables right — the sequence canvas, exported as it looks.
@@ -664,8 +603,35 @@ export function sequenceToModel(
     //: lakehouse name -> its tables, collected while walking this layer's nodes
     //  and wrapped into one object per lakehouse once the layer is done.
     const grouped = new Map<string, ModelObject[]>()
-    //: pipeline path -> the steps it runs, wrapped once the layer is done.
-    const pipelines = new Map<string, ModelObject[]>()
+    //: pipeline path -> its holder object, so `a / b / c` nests c inside b
+    //  inside a. Keyed by the FULL path: one pipeline invoked twice from
+    //  different parents is two holders, which is what the run did.
+    const pipelines = new Map<string, ModelObject>()
+    /**
+     * The holder for one orchestration path, creating its ancestors as needed.
+     *
+     * A master pipeline that invokes four others used to export as four
+     * top-level objects named `invoke pl_00_master / invoke pl_20_bronze` — the
+     * hierarchy was in the label rather than in the model. Now it is one object
+     * with the children it actually invoked nested inside it.
+     */
+    const pipelineHolder = (path: string): ModelObject => {
+      const existing = pipelines.get(path)
+      if (existing) return existing
+      const cut = path.lastIndexOf(' / ')
+      const holder: ModelObject = {
+        id: crypto.randomUUID(),
+        name: cut === -1 ? path : path.slice(cut + 3),
+        children: [],
+      }
+      pipelines.set(path, holder)
+      if (options.kindTags) props[holder.id] = { [TAGS_KEY]: 'Pipeline' }
+      // A ModelObject and an Attribute are the same shape, so a nested holder
+      // is its parent's child verbatim — no second entity kind.
+      if (cut === -1) layer.objects.push(holder)
+      else pipelineHolder(path.slice(0, cut)).children.push(holder)
+      return holder
+    }
     for (const n of inColumn) {
       const object: ModelObject = { id: crypto.randomUUID(), name: n.name, children: [] }
       objIdOf.set(n.id, object.id)
@@ -713,6 +679,36 @@ export function sequenceToModel(
         return attr
       }
 
+      /**
+       * One step's rows, as ONE staged hop where it both reads and writes.
+       *
+       * A notebook reading `customers_raw` from lh_landing and writing
+       * `customers` to lh_bronze is a single move, and exporting it as two
+       * unrelated rows broke the trace exactly where it should be tightest: the
+       * reader saw a row that ends and another that begins, with nothing saying
+       * they are the same hop. Wrapped, the pair reads `customers_raw →
+       * customers` and the lineage zig-zags smoothly between the two layers.
+       *
+       * The rows themselves are untouched inside it, so every edge still lands
+       * on the access it belongs to — this adds a level, it does not merge.
+       */
+      const stagedRows = (rows: IoRow[], group: number): Attribute[] => {
+        const attrs = rows.map((row) => ioAttr(row, group))
+        const label = (access: IoRow['access']) =>
+          uniq(rows.filter((r) => r.access === access).map((r) => refLabel(r.table, refs)))
+        const [reads, writes] = [label('Read'), label('Write')]
+        if (!semantic || !reads.length || !writes.length) return attrs
+        const hop: Attribute = {
+          id: crypto.randomUUID(),
+          name: `${reads.join(', ')} → ${writes.join(', ')}`,
+          children: attrs,
+        }
+        // Tagged, so the hop is obvious on the card rather than inferred from
+        // the arrow in its name.
+        if (options.kindTags) props[hop.id] = { [TAGS_KEY]: 'Staged' }
+        return [hop]
+      }
+
       if (n.groups) {
         // One Group per activity, its tables inside. The notebooks are now IN
         // the model rather than merged away, and because an Attribute with
@@ -721,7 +717,7 @@ export function sequenceToModel(
           const group: Attribute = {
             id: crypto.randomUUID(),
             name: g.name,
-            children: g.io.map((row) => ioAttr(row, gi)),
+            children: stagedRows(g.io, gi),
           }
           // Tagged, not just propertied: a tag is what the viewer badges on the
           // row, so a notebook reads as one at a glance — the same reasoning as
@@ -730,7 +726,7 @@ export function sequenceToModel(
           object.children.push(group)
         })
       } else {
-        for (const row of n.io) object.children.push(ioAttr(row, -1))
+        object.children.push(...stagedRows(n.io, -1))
       }
       if (options.columns)
         for (const column of n.columns) {
@@ -789,19 +785,20 @@ export function sequenceToModel(
         // nb`, so the prefix is the orchestration the backend already resolved
         // — no second traversal, and one pipeline invoked twice stays two
         // groups because the whole prefix is the key.
-        const parent = parentPipeline(n.name)!
         object.name = leafName(n.name)
-        ;(pipelines.get(parent) ?? pipelines.set(parent, []).get(parent)!).push(object)
+        pipelineHolder(parentPipeline(n.name)).children.push(object)
       } else layer.objects.push(object)
     }
-    for (const [lake, tables] of grouped) {
-      const holder: ModelObject = { id: crypto.randomUUID(), name: lake, children: tables }
+    // Lakehouses in medallion order in the `stages` layout — the stage is what
+    // that view is FOR, and with one layer per workspace it is the order of the
+    // objects inside it that carries it. Unranked lakehouses keep their
+    // first-touch order, after the ones that name a stage.
+    const lakes = [...grouped.keys()]
+    if (layout === 'stages')
+      lakes.sort((a, b) => (stageRank(a) + 1 || Infinity) - (stageRank(b) + 1 || Infinity))
+    for (const lake of lakes) {
+      const holder: ModelObject = { id: crypto.randomUUID(), name: lake, children: grouped.get(lake)! }
       if (options.kindTags) props[holder.id] = { [TAGS_KEY]: 'Lakehouse' }
-      layer.objects.push(holder)
-    }
-    for (const [pipe, steps] of pipelines) {
-      const holder: ModelObject = { id: crypto.randomUUID(), name: pipe, children: steps }
-      if (options.kindTags) props[holder.id] = { [TAGS_KEY]: 'Pipeline' }
       layer.objects.push(holder)
     }
     layers.push(layer)

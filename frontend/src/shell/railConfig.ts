@@ -20,6 +20,7 @@ export type RailIconName =
   | 'scope'
   | 'filter'
   | 'fold'
+  | 'explain'
   | 'layout'
   | 'definitions'
   | 'products'
@@ -57,6 +58,7 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
     // the only NAVIGATION item among commands — it read as the odd one out.
     { key: 'properties', label: 'Properties', icon: 'properties', action: 'properties' },
     { key: 'views', label: 'Views', icon: 'filter', action: 'views' },
+    { key: 'explain', label: 'Explain', icon: 'explain', action: 'explain' },
     { key: 'fold', label: 'Collapse & expand', icon: 'fold', action: 'fold' },
     { key: 'assistant', label: 'Assistant', icon: 'assistant', action: 'assistant' },
     { key: 'tags', label: 'Tags', icon: 'tag', action: 'tags' },

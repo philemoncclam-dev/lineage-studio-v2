@@ -45,6 +45,7 @@ import ContextMenu, { type MenuItem } from './ContextMenu'
 import { EntityTagDialog, TagManager } from './TagPanel'
 import { applyProposals } from './applyProposals'
 import { AssistantPanel } from './AssistantPanel'
+import { ExplainPanel } from './ExplainPanel'
 import { ViewsPanel } from './ViewsPanel'
 import { PropertiesPanel } from './PropertiesPanel'
 import {
@@ -185,7 +186,7 @@ export default function ModelViewer({
    * rail buttons toggle between panels in one click instead of needing the
    * other one closed first.
    */
-  const [dock, setDock] = useState<'views' | 'properties' | 'assistant' | null>(null)
+  const [dock, setDock] = useState<'views' | 'properties' | 'assistant' | 'explain' | null>(null)
   /**
    * The last entity clicked WITHOUT a modifier — where a shift-range starts.
    *
@@ -346,6 +347,10 @@ export default function ModelViewer({
   }, [readOnly])
   useEffect(() => registerRailAction('mapping', () => setMapperOpen(true)), [])
   useEffect(() => registerRailAction('tags', () => setTagManagerOpen(true)), [])
+  useEffect(
+    () => registerRailAction('explain', () => setDock((d) => (d === 'explain' ? null : 'explain'))),
+    [],
+  )
   // Both docks toggle rather than open: a second click on the rail button is the
   // obvious way to put a docked panel away again.
   useEffect(
@@ -823,6 +828,7 @@ export default function ModelViewer({
       // The panel reads the SELECTION, and openMenu has already made this entity
       // the selection above — so there is nothing to pass it.
       { key: 'properties', label: 'Properties', separated: true, onSelect: () => setDock('properties') },
+      { key: 'explain', label: 'Explain this / what breaks', onSelect: () => setDock('explain') },
       { key: 'tags', label: 'Tags…', onSelect: () => setTagging([targetId]) },
       { key: 'rename', label: 'Rename', onSelect: () => setEditing(targetId) },
       {
@@ -1195,6 +1201,28 @@ export default function ModelViewer({
             setCollapsed((prev) => {
               // Walking to a parent or an endpoint is pointless if it is buried
               // under something collapsed — open the path, as search does.
+              const next = new Set(prev)
+              next.delete(id)
+              for (const ancestor of ancestorsOf(index, id)) next.delete(ancestor.id)
+              return next
+            })
+            setReveal(id)
+          }}
+          onClose={() => setDock(null)}
+        />
+      )}
+      {dock === 'explain' && (
+        <ExplainPanel
+          model={model}
+          index={index}
+          selection={[...selection]}
+          // Selecting from a sentence does not close the panel: the next
+          // question usually follows from the answer, the same reasoning the
+          // assistant dock uses.
+          onSelect={(id) => {
+            setSelection(new Set([id]))
+            setSelectedEdges(new Set())
+            setCollapsed((prev) => {
               const next = new Set(prev)
               next.delete(id)
               for (const ancestor of ancestorsOf(index, id)) next.delete(ancestor.id)

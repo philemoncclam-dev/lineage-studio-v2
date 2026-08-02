@@ -15,6 +15,7 @@ export type RailActionKey =
   | 'assistant'
   | 'share'
   | 'fold'
+  | 'explain'
 
 type Handler = () => void
 

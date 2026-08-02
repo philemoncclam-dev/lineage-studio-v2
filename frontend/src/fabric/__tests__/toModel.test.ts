@@ -785,23 +785,22 @@ function medallionRun() {
   return { steps: [s], results }
 }
 
-const layoutModel = (layout: 'workspace' | 'stages') => {
+const layoutModel = (layout: 'stages') => {
   const { steps, results } = medallionRun()
   return sequenceToModel(steps, results, 'M', 'flow', { ...DEFAULT_PORT_OPTIONS, layout }).model
 }
 
 describe('semantic layouts', () => {
   it('names layers after the workspace alone — a lakehouse is an object, not a layer', () => {
-    const model = layoutModel('workspace')
-    // Ordered by where the run STARTS, not by kind: the bronze table it reads
-    // is in Platform, so Platform heads the model and the notebook that reads
-    // it follows. The layout used to be steps-left/tables-right, which is two
-    // layers whatever the run contains and says nothing about ownership.
-    expect(model.layers.map((l) => l.name)).toEqual(['Platform', 'Engineering'])
+    const model = layoutModel('stages')
+    // The layer is the WORKSPACE and nothing else. It used to be
+    // steps-left/tables-right, which is two layers whatever the run contains
+    // and says nothing about ownership.
+    expect(model.layers.map((l) => l.name)).toEqual(['Engineering', 'Platform'])
   })
 
-  it('gives one layer per workspace in the workspace layout', () => {
-    expect(layoutModel('workspace').layers).toHaveLength(2)
+  it('gives one layer per workspace', () => {
+    expect(layoutModel('stages').layers).toHaveLength(2)
   })
 
   it('keeps the whole medallion in one layer in the Zig-Zag layout', () => {
@@ -861,7 +860,7 @@ describe('semantic layouts', () => {
   })
 
   it('makes the lakehouse the object and its tables the children', () => {
-    const platform = layoutModel('workspace').layers.find((l) => l.name === 'Platform')!
+    const platform = layoutModel('stages').layers.find((l) => l.name === 'Platform')!
     expect(platform.objects.map((o) => o.name).sort()).toEqual(['lh_bronze', 'lh_silver'])
     const bronze = platform.objects.find((o) => o.name === 'lh_bronze')!
     expect(bronze.children.map((c) => c.name)).toEqual(['orders'])
@@ -870,7 +869,7 @@ describe('semantic layouts', () => {
   })
 
   it('tags the lakehouse so it reads as one on the card', () => {
-    const model = layoutModel('workspace')
+    const model = layoutModel('stages')
     const platform = model.layers.find((l) => l.name === 'Platform')!
     expect(tagsOf(model, platform.objects[0].id)).toEqual(['Lakehouse'])
   })
@@ -887,7 +886,7 @@ describe('semantic layouts', () => {
         writes: [T],
         tables: { [T]: { workspace: 'Platform', lakehouse: 'lh_bronze', table: 'orders', resolved: true } },
       }))]]),
-      'M', 'flow', { ...DEFAULT_PORT_OPTIONS, layout: 'workspace' },
+      'M', 'flow', { ...DEFAULT_PORT_OPTIONS, layout: 'stages' },
     ).model
     const step = model.layers.find((l) => l.name === 'Engineering')!.objects[0]
     expect(step.children.map((c) => c.name)).toEqual(['orders (staged)'])
@@ -924,7 +923,7 @@ describe('pipeline grouping in the semantic layouts', () => {
   it('puts notebooks under the pipeline that reached them', () => {
     const { steps, results } = nestedRun()
     const model = sequenceToModel(steps, results, 'M', 'flow', {
-      ...DEFAULT_PORT_OPTIONS, layout: 'workspace',
+      ...DEFAULT_PORT_OPTIONS, layout: 'stages',
     }).model
     const eng = model.layers.find((l) => l.name === 'Engineering')!
     expect(eng.objects.map((o) => o.name)).toEqual(['invoke pl_20_bronze'])
@@ -959,7 +958,7 @@ describe('pipeline grouping in the semantic layouts', () => {
   it('leaves a directly-run notebook as its own object', () => {
     const { steps, results } = medallionRun()
     const model = sequenceToModel(steps, results, 'M', 'flow', {
-      ...DEFAULT_PORT_OPTIONS, layout: 'workspace',
+      ...DEFAULT_PORT_OPTIONS, layout: 'stages',
     }).model
     expect(model.layers.find((l) => l.name === 'Engineering')!.objects.map((o) => o.name)).toEqual([
       'nb_silver',

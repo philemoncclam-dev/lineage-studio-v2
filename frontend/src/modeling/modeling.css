@@ -2569,3 +2569,121 @@
   font-size: 12.5px;
   font-family: inherit;
 }
+
+/* Explain dock — the lineage of the selection, in sentences. Shares the Views
+   dock's frame (.vw-panel) and adds only what prose needs: a subject line, a
+   lede, and sections of one-line facts. Wider than Properties because a
+   sentence that wraps every four words stops being a sentence. */
+.xp-panel {
+  width: 340px;
+}
+.xp-subject {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.xp-name {
+  font-size: 15px;
+  color: #1c2333;
+}
+.xp-kind {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgb(28 35 51 / 0.07);
+  color: #4a5468;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.xp-headline {
+  margin: -6px 0 0;
+  color: #2c3446;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.xp-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.xp-sec-title {
+  margin: 0;
+  color: #6b7385;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.xp-empty {
+  margin: 0;
+  color: #7b8496;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.xp-count {
+  margin: 0;
+  color: #2c3446;
+  font-size: 12px;
+}
+.xp-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* One fact per row: what it is, where it lives, how it got there. Stacked
+   rather than inline so the name stays scannable down the left edge. */
+.xp-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  border: 1px solid rgb(28 35 51 / 0.1);
+  border-radius: 6px;
+}
+.xp-link {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1f6feb;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.xp-link:hover {
+  text-decoration: underline;
+}
+.xp-where,
+.xp-items {
+  color: #7b8496;
+  font-size: 11px;
+}
+.xp-how {
+  color: #16704a;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.xp-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  font-size: 12px;
+}
+.xp-facts > div {
+  display: contents;
+}
+.xp-facts dt {
+  color: #7b8496;
+}
+.xp-facts dd {
+  margin: 0;
+  color: #2c3446;
+}

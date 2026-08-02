@@ -86,6 +86,12 @@ const ICONS: Record<RailIconName, ReactNode> = {
   properties: (
     <svg viewBox="0 0 24 24"><path d="M4 7.5h16M4 12h16M4 16.5h16" /><circle cx="9" cy="7.5" r="1.9" /><circle cx="15" cy="12" r="1.9" /><circle cx="8" cy="16.5" r="1.9" /></svg>
   ),
+  // A line of text with a node feeding it: this pane says the lineage in
+  // words. Not a question mark, which reads as help about the app rather than
+  // an explanation of what is on the canvas.
+  explain: (
+    <svg viewBox="0 0 24 24"><circle cx="5" cy="6" r="2" /><path d="M7 6h4" /><path d="M13 11h8M13 15.5h8M13 20h5" /><path d="M11 6v14h2" /></svg>
+  ),
   // Two arrows pushing together onto a line — fold, the same idea as the
   // canvas's own layer-fold glyph, so the rail button and the twisty read as
   // the same operation at two scales.

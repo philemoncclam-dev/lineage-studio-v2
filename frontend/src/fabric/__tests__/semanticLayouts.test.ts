@@ -1,9 +1,9 @@
-// The two semantic canvas layouts. They were once relabellings of the flow and
-// sequence columns; these tests pin the two properties that made them worth
-// having as layouts of their own — Stages reads left to right, Workspace
-// zig-zags — plus the lakehouse and pipeline containers both of them draw.
+// Zig-Zag, the canvas layout that names its bands for what is in them. These
+// pin what makes it a layout of its own rather than a relabelled column order:
+// one band per owner with the steps' band first, lakehouses ordered by
+// medallion stage inside it, and a heading per lakehouse and pipeline.
 import { describe, expect, it } from 'vitest'
-import { layoutStages, layoutWorkspaces, stageRank, type FlowNode } from '../SequenceCanvas'
+import { layoutStages, stageRank, type FlowNode } from '../SequenceCanvas'
 
 const table = (name: string, lakehouse: string, ws = 'platform'): FlowNode => ({
   id: `t:${name}`,
@@ -124,41 +124,5 @@ describe('layoutStages', () => {
     // The lakehouse heading sits above both of its tables and nothing else.
     const lh = groups.find((g) => g.kind === 'lakehouse')!
     for (const id of ['t:bronze.a', 't:bronze.b']) expect(pos.get(id)!.y).toBeGreaterThan(lh.y)
-  })
-})
-
-describe('layoutWorkspaces', () => {
-  it('gives each workspace one band and descends on every hop', () => {
-    const { nodes, edges } = medallion()
-    const { pos, bands } = layoutWorkspaces(nodes, edges)
-    expect(bands.map((b) => b.label)).toEqual(['platform', 'engineering'])
-    // Depth runs down: every edge lands strictly lower than it left.
-    for (const e of edges) expect(pos.get(e.to)!.y).toBeGreaterThan(pos.get(e.from)!.y)
-  })
-
-  it('zig-zags — consecutive hops alternate direction across the bands', () => {
-    const { nodes, edges } = medallion()
-    const { pos } = layoutWorkspaces(nodes, edges)
-    const dir = edges.map((e) => Math.sign(pos.get(e.to)!.x - pos.get(e.from)!.x))
-    // platform -> engineering -> platform -> …, never two hops the same way.
-    expect(dir).toEqual([1, -1, 1, -1, 1, -1])
-  })
-
-  it('falls back to the lakehouse when no workspace resolved, and says so', () => {
-    // The common case: a notebook addressing `lh_bronze.orders` yields a ref
-    // with no workspace at all. Keying on the workspace alone put every card in
-    // one band, which is not a layout.
-    const nodes: FlowNode[] = [table('a', 'lh_bronze', ''), table('b', 'lh_silver', '')]
-    const { bands } = layoutWorkspaces(nodes, [])
-    expect(bands.map((b) => b.label)).toEqual([
-      'lh_bronze · workspace unknown',
-      'lh_silver · workspace unknown',
-    ])
-  })
-
-  it('sorts a card with neither workspace nor lakehouse last', () => {
-    const nodes: FlowNode[] = [table('a', '', ''), table('b', 'lh_bronze', 'platform')]
-    const { bands } = layoutWorkspaces(nodes, [])
-    expect(bands.map((b) => b.label)).toEqual(['platform', 'workspace unresolved'])
   })
 })

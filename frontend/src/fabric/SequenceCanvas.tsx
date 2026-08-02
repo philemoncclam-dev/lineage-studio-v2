@@ -188,10 +188,10 @@ function anchorY(n: FlowNode, rowKey?: string) {
  *
  * Both mirror the layout of the same name that Create model exports.
  */
-export type CanvasView = 'flow' | 'sequence' | 'stages' | 'workspace'
+export type CanvasView = 'flow' | 'sequence' | 'stages'
 
-/** The two views that name bands for what is in them rather than where it sits. */
-const SEMANTIC_VIEWS: readonly CanvasView[] = ['stages', 'workspace']
+/** The view that names bands for what is in them rather than where it sits. */
+const SEMANTIC_VIEWS: readonly CanvasView[] = ['stages']
 
 const uniq = (xs: (string | undefined)[]): string[] => [
   ...new Set(xs.filter((x): x is string => !!x)),
@@ -511,9 +511,9 @@ function stepsFirst(nodes: FlowNode[], spaces: string[], key: (n: FlowNode) => s
 /**
  * The owner bands, left to right: earliest in the run first, unresolved last.
  *
- * Shared by both semantic layouts — they differ in what they do with the axis,
- * not in who owns what, and two orderings of the same bands would have them
- * disagree about which workspace the run starts in.
+ * Kept apart from `layoutStages` because the ordering rule (earliest owner
+ * first) and the Zig-Zag override (steps first) are two decisions, and reading
+ * one inside the other hid which of them was doing the work.
  */
 function ownerOrder(nodes: FlowNode[], edges: FlowEdge[], key: (n: FlowNode) => string): string[] {
   const depth = depthsOf(nodes, edges)
@@ -558,46 +558,6 @@ function ownerOf(nodes: FlowNode[], edges: FlowEdge[]) {
   const label = (k: string) =>
     k.startsWith('lh:') ? `${k.slice(3)} · workspace unknown` : k || 'workspace unresolved'
   return { key, label }
-}
-
-/**
- * One band per workspace, with dependency depth running DOWN the canvas.
- *
- * Every node at depth d shares a horizontal slot, whatever workspace it is in,
- * so a hop between workspaces is a step sideways and a step down — a medallion
- * run that alternates platform and engineering on every write draws as the
- * zig-zag it actually is. Ownership is the x axis here, which is the one thing
- * the two positional views cannot show.
- */
-export function layoutWorkspaces(nodes: FlowNode[], edges: FlowEdge[]): Layout {
-  const depth = depthsOf(nodes, edges)
-  const owner = ownerOf(nodes, edges)
-  const wsOf = (n: FlowNode) => owner.key(n)
-  const spaces = ownerOrder(nodes, edges, wsOf)
-
-  const pos: Layout['pos'] = new Map()
-  const groups: Layout['groups'] = []
-  const maxDepth = Math.max(0, ...depth.values())
-  let y = 0
-  for (let d = 0; d <= maxDepth; d++) {
-    let slotBottom = y
-    spaces.forEach((ws, c) => {
-      const here = stableByContainer(nodes.filter((n) => wsOf(n) === ws && (depth.get(n.id) ?? 0) === d))
-      if (!here.length) return
-      const bottom = stackGrouped(here, c * (NW + GX), y, pos, groups)
-      slotBottom = Math.max(slotBottom, bottom)
-    })
-    y = slotBottom === y ? y : slotBottom + GY * 2
-  }
-
-  const lastCol = spaces.length - 1
-  return {
-    pos,
-    bands: spaces.map((ws, c) => band(c, owner.label(ws), c, lastCol)),
-    groups,
-    width: spaces.length * (NW + GX) - GX,
-    height: Math.max(1, y - GY * 2),
-  }
 }
 
 /**
@@ -759,11 +719,9 @@ function FlowCanvas({
     () =>
       view === 'stages'
         ? layoutStages(nodes, edges)
-        : view === 'workspace'
-          ? layoutWorkspaces(nodes, edges)
-          : view === 'sequence'
-            ? layoutSequence(nodes)
-            : layoutFlow(nodes, edges),
+        : view === 'sequence'
+          ? layoutSequence(nodes)
+          : layoutFlow(nodes, edges),
     [nodes, edges, view],
   )
   const w = width + PAD * 2
@@ -1277,8 +1235,8 @@ function ToModelBar({
         steps,
         results,
         defaultModelName(steps),
-        view === 'sequence' || view === 'workspace' ? 'sequence' : 'flow',
-        { ...options, layout: semantic ? (view as 'stages' | 'workspace') : 'view' },
+        view === 'sequence' ? 'sequence' : 'flow',
+        { ...options, layout: semantic ? 'stages' : 'view' },
       )
       await localStore.save(model)
       await navigate({ to: '/model/$modelId', params: { modelId: model.id } })
@@ -1297,7 +1255,6 @@ function ToModelBar({
             ['flow', 'Flow', 'One column per dependency depth'],
             ['sequence', 'Sequence', 'Tables in one column, steps in run order in the other'],
             ['stages', 'Zig-Zag', 'Steps on the left, their tables on the right — the run zig-zags between the two'],
-            ['workspace', 'Workspace', 'One band per workspace — a cross-workspace run zig-zags down the canvas'],
           ] as const
         ).map(([key, label, hint]) => (
           <button

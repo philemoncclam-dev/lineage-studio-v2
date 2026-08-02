@@ -368,26 +368,22 @@ export interface PortOptions {
    * user was looking at, so the exported model matches the picture they pressed
    * the button on.
    *
-   * The other two name layers after what is in them rather than after a
-   * position in a computed layout, and group tables under the lakehouse that
-   * holds them. Each mirrors the canvas view of the same name — pressing
-   * Create model from a view exports the arrangement on screen:
+   * The other names layers after what is in them rather than after a position
+   * in a computed layout, and groups tables under the lakehouse that holds
+   * them. It mirrors the canvas view of the same name — pressing Create model
+   * from a view exports the arrangement on screen:
    *
-   *   `workspace` — one layer per OWNER: the workspace, or the lakehouse
-   *     standing in for it where no workspace resolved. The most truthful about
-   *     ownership, and the reason it is not the default: a medallion run
-   *     crosses between owners on every hop, so some writes point back into the
-   *     layer on their left.
-   *
-   *   `stages`  — the same layers, with the lakehouses inside each one ordered
-   *     by medallion stage: landing, bronze, silver, gold. The whole medallion
-   *     is ONE layer because it is one workspace; the stage is an ordering
-   *     within it, not an owner of its own.
+   *   `stages`  — Zig-Zag: one layer per OWNER (the workspace, or the lakehouse
+   *     standing in for it where none resolved), the layers that RUN things
+   *     first, and the lakehouses inside each one ordered by medallion stage:
+   *     landing, bronze, silver, gold. The whole medallion is ONE layer because
+   *     it is one workspace; the stage is an ordering within it, not an owner
+   *     of its own.
    */
   layout?: ModelLayout
 }
 
-export type ModelLayout = 'view' | 'workspace' | 'stages'
+export type ModelLayout = 'view' | 'stages'
 
 export const DEFAULT_PORT_OPTIONS: PortOptions = {
   kindTags: true,

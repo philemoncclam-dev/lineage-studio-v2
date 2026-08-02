@@ -5,6 +5,7 @@
 
 import { useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
+import { toPng } from 'html-to-image'
 import {
   DEFAULT_EXPORT_OPTIONS,
   download,
@@ -15,7 +16,7 @@ import {
 } from '../model/exportTabular'
 import type { LineageModel } from '../model/types'
 
-type Format = 'csv' | 'xlsx' | 'json'
+type Format = 'csv' | 'xlsx' | 'json' | 'png'
 
 interface Props {
   model: LineageModel
@@ -30,8 +31,49 @@ export default function ExportDialog({ model, onClose }: Props) {
   // Minus the header row.
   const dataRows = Math.max(0, rows.length - 1)
 
+  const [shooting, setShooting] = useState(false)
+
+  /**
+   * The canvas, as a picture.
+   *
+   * Shot from the live DOM rather than re-drawn: the cards are DOM, the edges
+   * are a canvas beneath them, and the only thing that already composites the
+   * two correctly is the browser. `mv-world` is the whole scrolling world, so
+   * the image holds the entire model rather than the part in view.
+   *
+   * The tabular exports say what the model IS; this says what it LOOKS like,
+   * which is what goes in a deck.
+   */
+  const exportPng = async () => {
+    const world = document.querySelector<HTMLElement>('.mv-world')
+    if (!world) return
+    setShooting(true)
+    try {
+      const url = await toPng(world, {
+        // The world is transparent over the app's canvas colour, and a
+        // transparent PNG dropped in a document reads as a broken screenshot.
+        backgroundColor: getComputedStyle(document.body).backgroundColor || '#ffffff',
+        pixelRatio: 2,
+        // The scroll container's own width, not the world's, would crop it.
+        width: world.scrollWidth,
+        height: world.scrollHeight,
+      })
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${slugify(model.name)}.png`
+      a.click()
+      onClose()
+    } finally {
+      setShooting(false)
+    }
+  }
+
   const run = () => {
     const base = slugify(model.name)
+    if (format === 'png') {
+      void exportPng()
+      return
+    }
     if (format === 'json') {
       download(`${base}.json`, JSON.stringify(model, null, 2), 'application/json')
     } else if (format === 'csv') {
@@ -77,6 +119,7 @@ export default function ExportDialog({ model, onClose }: Props) {
                 ['csv', 'CSV', 'Round-trips back through the importer.'],
                 ['xlsx', 'Excel', 'One sheet, same columns as CSV.'],
                 ['json', 'JSON', 'The complete model, exactly as stored.'],
+                ['png', 'PNG', 'A picture of the canvas, exactly as drawn.'],
               ] as const
             ).map(([key, label, hint]) => (
               <button
@@ -91,7 +134,12 @@ export default function ExportDialog({ model, onClose }: Props) {
             ))}
           </div>
 
-          {format === 'json' ? (
+          {format === 'png' ? (
+            <p className="imp-hint">
+              The whole canvas is captured, including the parts scrolled off screen — collapsed
+              cards are captured collapsed, so fold what you don’t want in the picture first.
+            </p>
+          ) : format === 'json' ? (
             <p className="imp-hint">
               JSON always contains the whole model, so the include options below don’t apply.
             </p>
@@ -127,8 +175,8 @@ export default function ExportDialog({ model, onClose }: Props) {
             Cancel
           </button>
           <div className="imp-spacer" />
-          <button className="imp-btn imp-btn--primary" onClick={run}>
-            Export
+          <button className="imp-btn imp-btn--primary" onClick={run} disabled={shooting}>
+            {shooting ? 'Rendering…' : 'Export'}
           </button>
         </footer>
       </div>

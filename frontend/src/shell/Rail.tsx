@@ -86,6 +86,12 @@ const ICONS: Record<RailIconName, ReactNode> = {
   properties: (
     <svg viewBox="0 0 24 24"><path d="M4 7.5h16M4 12h16M4 16.5h16" /><circle cx="9" cy="7.5" r="1.9" /><circle cx="15" cy="12" r="1.9" /><circle cx="8" cy="16.5" r="1.9" /></svg>
   ),
+  // Two arrows pushing together onto a line — fold, the same idea as the
+  // canvas's own layer-fold glyph, so the rail button and the twisty read as
+  // the same operation at two scales.
+  fold: (
+    <svg viewBox="0 0 24 24"><path d="M3 12h18" /><path d="m8 6.5 4 4 4-4" /><path d="m8 17.5 4-4 4 4" /></svg>
+  ),
   // A speech bubble with a node-and-edge inside it: this is a conversation
   // ABOUT the graph. A bare bubble would read as comments or chat with a
   // person, and a bare sparkle would say "AI" without saying what it does.

@@ -1116,6 +1116,27 @@
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
+/* Focus toggle. The status pill ignores the pointer so it never eats a click
+   meant for the canvas beneath it; this one control takes it back. */
+.mv-status-toggle {
+  pointer-events: auto;
+  padding: 0 6px;
+  border: 1px solid rgb(28 35 51 / 0.14);
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.mv-status-toggle:hover {
+  border-color: rgb(28 35 51 / 0.3);
+  color: #232a3a;
+}
+.mv-status-toggle[data-on] {
+  border-color: color-mix(in oklab, var(--color-accent, #1f6feb) 45%, transparent);
+  color: var(--color-accent, #1f6feb);
+}
 /* The keystroke that ends a trace, set back from the count it follows. A trace
    is the one narrowing with no panel to switch it off, so the way out has to be
    on screen — quietly, since it is the same text every time. */

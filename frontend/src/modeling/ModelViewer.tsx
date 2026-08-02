@@ -68,6 +68,7 @@ import {
   type LayoutCard,
 } from '../model/layout'
 import type { EntityId, LineageModel } from '../model/types'
+import { foldTargets } from '../model/fold'
 import { LogoMark } from '../shell/Logo'
 import TransitionLayer from './TransitionLayer'
 import './modeling.css'
@@ -136,6 +137,17 @@ export default function ModelViewer({
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [scroll, setScroll] = useState({ x: 0, y: 0 })
   const [collapsed, setCollapsed] = useState<ReadonlySet<EntityId>>(new Set())
+  /**
+   * Focus mode: with something selected, everything not on its immediate path
+   * fades back.
+   *
+   * A dense model is a wall of curves and the question is always "what goes
+   * into this one" — the lines are all there, all equally dark, and the eye has
+   * nothing to follow. Fading is reversible and hides nothing, which is why it
+   * is the default; it is a toggle because a fade is still a loss of contrast,
+   * and someone reading the whole shape at once wants it off.
+   */
+  const [focusMode, setFocusMode] = useState(true)
   const [selection, setSelection] = useState<ReadonlySet<EntityId>>(new Set())
   /** Picked transitions, by transition id — kept separate from entity selection. */
   const [selectedEdges, setSelectedEdges] = useState<ReadonlySet<EntityId>>(new Set())
@@ -313,6 +325,22 @@ export default function ModelViewer({
     return out
   }, [selection, index])
 
+  /**
+   * What the CANVAS dims by, which is not always what the model is narrowed to.
+   *
+   * With focus mode on and nothing else narrowing, a selection dims everything
+   * off its immediate path — reusing the dim path the Views filter already
+   * draws rather than inventing a second faded state. `hideUnmatched` stays
+   * false here, so focus never removes anything: it is a contrast change, and
+   * a line you cannot find is still a line you can follow once you know it is
+   * there. A real filter or trace outranks it — those are explicit requests
+   * about what belongs on screen, and a selection should not quietly redefine
+   * them.
+   */
+  const focusing = focusMode && selection.size > 0 && !filtering
+  const dimBy = focusing ? highlighted : matched
+  const dimming = focusing || filtering
+
   useEffect(() => {
     const host = scrollRef.current
     if (!host) return
@@ -403,6 +431,55 @@ export default function ModelViewer({
     }
     setReveal(null)
   }, [reveal, layout])
+
+
+  /**
+   * Collapse/expand in bulk, as menu items — the rail button and the canvas's
+   * own right-click menu both serve these, so they are built once.
+   *
+   * Groups and objects fold separately because they answer different questions:
+   * folding the GROUPS leaves every object on screen with its top-level rows,
+   * which is the shape you want for reading structure, while folding the
+   * OBJECTS leaves the layers and the object names, which is the shape you want
+   * for reading flow between them. A single "collapse all" would have to pick
+   * one of those and would be wrong half the time.
+   */
+  const foldItems = (): MenuItem[] => {
+    const item = (kind: 'groups' | 'objects' | 'layers', label: string): MenuItem => {
+      const ids = foldTargets(model, kind)
+      return {
+        key: `fold-${kind}`,
+        label,
+        disabled: ids.length === 0,
+        onSelect: () => setCollapsed(new Set(ids)),
+      }
+    }
+    return [
+      item('groups', 'Collapse all groups'),
+      item('objects', 'Collapse all objects'),
+      item('layers', 'Collapse all layers'),
+      {
+        key: 'unfold-all',
+        label: 'Expand everything',
+        separated: true,
+        disabled: collapsed.size === 0,
+        onSelect: () => setCollapsed(new Set()),
+      },
+    ]
+  }
+
+  // The rail button opens the same menu the canvas does, parked beside the rail
+  // rather than at a pointer it has no position for.
+  useEffect(
+    () =>
+      registerRailAction('fold', () =>
+        setMenu({ x: 64, y: Math.round(window.innerHeight / 3), items: foldItems() }),
+      ),
+    // Rebuilt whenever the model or the fold state changes, so the items it
+    // opens with are not a snapshot of the model as it was at mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [model, collapsed],
+  )
 
   const toggle = (id: EntityId) => {
     setCollapsed((prev) => {
@@ -603,6 +680,7 @@ export default function ModelViewer({
         disabled: !canPaste,
         onSelect: () => doPaste({ mode: 'canvas' }),
       })
+      items.push(...foldItems().map((it, i) => ({ ...it, separated: i === 0 })))
       setMenu({ x: e.clientX, y: e.clientY, items })
       return
     }
@@ -875,6 +953,7 @@ export default function ModelViewer({
           separated: true,
           onSelect: () => setEditing(layer.id),
         },
+        ...foldItems().map((it, i) => ({ ...it, separated: i === 0 })),
         {
           key: 'delete-layer',
           label: `Delete ${layer.name}`,
@@ -1322,8 +1401,8 @@ export default function ModelViewer({
             parentOf={parentOf}
             highlighted={highlighted}
             selected={selectedEdges}
-            filtering={filtering}
-            matched={matched}
+            filtering={dimming}
+            matched={dimBy}
           />
 
           {visibleCards
@@ -1337,8 +1416,8 @@ export default function ModelViewer({
               card={card}
               view={view}
               selection={selection}
-              filtering={filtering}
-              matched={matched}
+              filtering={dimming}
+              matched={dimBy}
               hideUnmatched={hideUnmatched}
               traceOrigin={trace?.seeds ?? EMPTY_IDS}
               highlighted={highlighted}
@@ -1385,6 +1464,22 @@ export default function ModelViewer({
               </>
             )}
             {selection.size > 0 && <> · {selection.size} selected</>}
+            {' · '}
+            {/* A toggle on the status line rather than a rail button: it changes
+                how the canvas READS, like the counts beside it, and it has to be
+                visible for the fade to be attributable to a setting at all. */}
+            <button
+              className="mv-status-toggle"
+              data-on={focusMode || undefined}
+              onClick={() => setFocusMode((f) => !f)}
+              title={
+                focusMode
+                  ? 'Focus is on: selecting fades everything off its path. Click to show all lines equally.'
+                  : 'Focus is off: every line draws at full strength. Click to fade all but the selection.'
+              }
+            >
+              Focus {focusMode ? 'on' : 'off'}
+            </button>
             {selectedEdges.size > 0 && <> · {selectedEdges.size} line(s) selected</>}
             {(canUndo || canRedo) && <> · ⌃Z undo</>}
           </>

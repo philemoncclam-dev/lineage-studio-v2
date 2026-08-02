@@ -21,6 +21,12 @@ are the first consequence of taking that seriously; `_sqllineage` (columns from
 SQL text) and `_dflineage` (columns from DataFrame chains) are the second and
 third, and between them they are why a model built on prod now has attributes
 rather than bare table cards.
+
+Those two are no longer separate passes. `_dflineage` walks the notebook once, in
+order, and hands the SQL statements to `_sqllineage` as it reaches them, so a
+temp view either half registers is visible to the other (`_views`). Running them
+one after the other meant neither could see the other's work, and the seam
+between them was where a fabricated lakehouse table came from.
 """
 
 from __future__ import annotations
@@ -38,7 +44,7 @@ import _coverage  # noqa: E402
 import _dflineage  # noqa: E402
 import _isolation  # noqa: E402
 import _refs  # noqa: E402
-import _sqllineage  # noqa: E402
+import _views  # noqa: E402
 
 # The file formats a reader/writer names as a method. `spark.read.parquet(p)` is
 # every bit as normal as `spark.read.format('parquet').load(p)`, and only the
@@ -77,12 +83,22 @@ _WRITE = [
 _IMPORT = re.compile(r"^\s*(?:from\s+[\w.]+\s+import\b|import\s+[\w.]+)", re.M)
 
 
-def _find(patterns: list[re.Pattern[str]], text: str, ctx: dict) -> list[str]:
-    """Canonical refs for every table the patterns match in `text`."""
+def _find(patterns: list[re.Pattern[str]], text: str, ctx: dict, views: dict) -> list[str]:
+    """Canonical refs for every table the patterns match in `text`.
+
+    A name the notebook registered as a temp view is skipped: these regexes see
+    `FROM staged` and cannot tell it from a table, and `_refs.qualify` would then
+    resolve it against the notebook's own lakehouse and invent a table that does
+    not exist. The registry is the only thing that knows the difference, which is
+    why it is threaded down here — see `_views`.
+    """
     found: set[str] = set()
     for pat in patterns:
         for m in pat.finditer(text):
-            ref = _refs.qualify(m.group(1), **ctx)
+            raw = m.group(1)
+            if _views.is_view(views, raw):
+                continue
+            ref = _refs.qualify(raw, **ctx)
             if _refs.table_of(ref):
                 found.add(ref)
     return sorted(found)
@@ -131,13 +147,29 @@ def main() -> None:
     if table_schemas:
         log.append(f"[stub] carried {len(table_schemas)} table schema(s) through.")
 
+    # Read the notebook once, in order, both halves together (see _dflineage).
+    #
+    # This is where production stops producing attribute-less models. The regex
+    # pass below answers "which tables" and is blind to columns; this pass reads
+    # `spark.sql(...)` text with sqlglot and DataFrame chains symbolically, and
+    # — because it walks them interleaved, sharing one view registry — it also
+    # follows the temp views that join the two halves together. It sharpens the
+    # table answer too: a CTE, a subquery or a temp view that the regexes read as
+    # a table is resolved properly here.
+    reader = _dflineage.analyze_notebook(cells, table_schemas, ctx)
+    column_lineage = reader.flows
+    log.extend(reader.log)
+
     cell_results = []
-    all_reads: set[str] = set()
-    all_writes: set[str] = set()
+    all_reads: set[str] = set(reader.reads)
+    all_writes: set[str] = set(reader.writes)
     for i, cell in enumerate(cells):
         scannable = _IMPORT.sub("", cell)
-        reads = _find(_READ, scannable, ctx)
-        writes = _find(_WRITE, scannable, ctx)
+        # Runs after the reader so the view registry is populated: these regexes
+        # cannot tell `FROM staged` from a table, and the registry is what stops
+        # a temp view being reported as one.
+        reads = _find(_READ, scannable, ctx, reader.views)
+        writes = _find(_WRITE, scannable, ctx, reader.views)
         all_reads.update(reads)
         all_writes.update(writes)
         log.append(
@@ -148,63 +180,26 @@ def main() -> None:
             {"index": i, "status": "ok", "reads": reads, "writes": writes, "stdout": "", "error": None}
         )
 
-    # Column-level lineage for the SQL half of the notebook (see _sqllineage).
-    #
-    # The regex pass above answers "which tables" and is blind to columns. For a
-    # `spark.sql(...)` cell the columns ARE recoverable without an engine, so
-    # this is where production stops producing attribute-less models. It also
-    # sharpens the table answer: a CTE or a subquery that the regexes read as a
-    # table, or miss entirely, is resolved properly by the parser.
-    sql_reads, sql_writes, column_lineage, sql_log = _sqllineage.analyze_cells(
-        cells, table_schemas, ctx
-    )
-    all_writes |= sql_writes
-    all_reads |= sql_reads - all_writes
-    log.extend(sql_log)
-
-    # Column-level lineage for the DataFrame half (see _dflineage).
-    #
-    # The other half of production's blind spot, and the larger one: a notebook
-    # written against `spark.table(...).select(...).write.saveAsTable(...)` gave
-    # this engine nothing at all to work with, so every such model came out with
-    # tables and edges but no attributes. The chains are read symbolically —
-    # nothing runs — and anything not positively understood yields nothing
-    # rather than a guess.
-    #
-    # SQL wins on conflict: where both passes describe the same write, sqlglot
-    # resolved a real statement while this one reasoned about a chain, and the
-    # former is the stronger evidence.
-    df_flows, df_writes, df_log = _dflineage.analyze_cells(cells, table_schemas, ctx)
-    all_writes |= df_writes
-    log.extend(df_log)
-    sql_targets = {flow["to_table"] for flow in column_lineage}
-    seen = {
-        (f["to_table"], f["to_column"], f["from_table"], f["from_column"]) for f in column_lineage
-    }
-    for flow in df_flows:
-        if flow["to_table"] in sql_targets:
-            continue
-        key = (flow["to_table"], flow["to_column"], flow["from_table"], flow["from_column"])
-        if key in seen:
-            continue
-        seen.add(key)
-        column_lineage.append(flow)
-
     # A written table's columns, from the projection that produced it. The Spark
     # path gets these from the analyzer complete with types; here the names come
     # from the query and the types are unknown, which is still the difference
     # between a card with a schema and a bare one. Only filled for tables the
     # backend didn't already send a schema for.
+    #
+    # Taken from the reader's output columns rather than from the flows, because
+    # a column whose SOURCE could not be traced is still a column the table has —
+    # and it is exactly the case a run abstains on, so reading it off the edges
+    # would drop it precisely when the run was being careful.
     # Frozen before the loop below mutates `table_schemas`, so "did the backend
     # send this one" stays answerable.
     given = set(table_schemas)
-    for flow in column_lineage:
-        target = flow["to_table"]
+    for target, columns in reader.outputs.items():
         if target in given:
             continue
-        columns = table_schemas.setdefault(target, [])
-        if not any(c["name"] == flow["to_column"] for c in columns):
-            columns.append({"name": flow["to_column"], "type": None})
+        existing = table_schemas.setdefault(target, [])
+        for name in columns:
+            if not any(c["name"] == name for c in existing):
+                existing.append({"name": name, "type": None})
 
     # What could and could not be analysed. The stub's blind spot — the whole
     # DataFrame API — is production's blind spot, so it has to be reported rather

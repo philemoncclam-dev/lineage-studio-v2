@@ -59,6 +59,15 @@ _WRITE_TARGET_ONLY = re.compile(
 )
 #: The `USING` source of a MERGE, when it is a table rather than a subquery.
 _MERGE_USING = re.compile(r"\bUSING\s+(?P<t>[\w.`]+)(?!\s*\()", re.I)
+#: `CREATE [OR REPLACE] [GLOBAL] TEMP[ORARY] VIEW name` — the SQL half of the
+#: same thing `createOrReplaceTempView` does, and it has to be remembered for the
+#: same reason. Spark still executes it; only the name is noted. A non-temporary
+#: `CREATE VIEW` is a persisted lakehouse object and is deliberately not matched.
+_TEMP_VIEW_SQL = re.compile(
+    r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:GLOBAL\s+)?TEMP(?:ORARY)?\s+VIEW\s+"
+    r"(?:IF\s+NOT\s+EXISTS\s+)?(?P<v>[\w.`]+)",
+    re.I,
+)
 _VIEW_IN_PLAN = re.compile(r"View \(`([^`]+)`", re.I)
 _UNRESOLVED_IN_PLAN = re.compile(r"UnresolvedRelation \[([^\],]+)", re.I)
 
@@ -269,6 +278,24 @@ def main() -> None:
     if views:
         log.append(f"[spark] registered {len(views)} empty view(s): {sorted(views)}")
 
+    #: Names the NOTEBOOK parks a frame under with `createOrReplaceTempView`.
+    #: Distinct from `views` above, which is the empty stand-ins this executor
+    #: registered for real tables. A notebook's temp view is a session-local
+    #: projection and not a table at all — see `_views` on the stub side for why
+    #: resolving one as a table fabricates a lakehouse table that does not exist.
+    #: Spark registers them for real here, so nothing has to be reconstructed:
+    #: Catalyst inlines the view body into the analyzed plan, and the sources
+    #: underneath are found and attributed as usual. All that is needed is to
+    #: remember which names are views and refuse to read them as tables.
+    notebook_views: set[str] = set()
+
+    def _is_notebook_view(name: str) -> bool:
+        bare = name.strip("`").strip()
+        # `global_temp.staged` and `staged` are one view addressed two ways.
+        if bare.lower().startswith("global_temp."):
+            bare = bare.split(".", 1)[1]
+        return bare.casefold() in notebook_views
+
     writes: list[str] = []
     reads: set[str] = set()
     # Seed with the registered input views so read tables carry their columns
@@ -297,21 +324,32 @@ def main() -> None:
             log.append(f"[spark] could not publish {_refs.table_of(ref)} as a view: {exc}")
 
     def _resolve_read(token: str) -> str:
-        """A name out of a plan → a ref: a known view if it is one, else parsed."""
-        return views.get(token.strip("`"), "") or _refs.as_ref(token, **ctx)
+        """A name out of a plan → a ref: a known view if it is one, else parsed.
+
+        `""` for a name the notebook itself registered as a temp view — it names
+        a projection, not a table, and the real sources are found separately from
+        the inlined view body in the same plan.
+        """
+        stand_in = views.get(token.strip("`"), "")
+        if stand_in:
+            return stand_in
+        return "" if _is_notebook_view(token) else _refs.as_ref(token, **ctx)
 
     def _capture(target: str, df) -> None:
         # A SQL write's target may already have been rewritten to a view name
         # (when the notebook writes to a table it also reads); map it back.
-        ref = views.get(target.strip("`"), "") or _refs.as_ref(target, **ctx)
+        stand_in = views.get(target.strip("`"), "")
+        if not stand_in and _is_notebook_view(target):
+            return  # Writing into a temp view creates no table.
+        ref = stand_in or _refs.as_ref(target, **ctx)
         if ref not in writes:
             writes.append(ref)
         try:
             plan = df._jdf.queryExecution().analyzed().toString()
-            for m in _VIEW_IN_PLAN.findall(plan):
-                reads.add(_resolve_read(m))
-            for m in _UNRESOLVED_IN_PLAN.findall(plan):
-                reads.add(_resolve_read(m))
+            for m in _VIEW_IN_PLAN.findall(plan) + _UNRESOLVED_IN_PLAN.findall(plan):
+                source = _resolve_read(m)
+                if source:
+                    reads.add(source)
             table_schemas[ref] = [
                 {"name": f.name, "type": f.dataType.simpleString()} for f in df.schema.fields
             ]
@@ -329,7 +367,12 @@ def main() -> None:
         translated. Reading is also recorded here: even when nothing is
         registered under that name (so the cell will fail honestly), the *intent
         to read* is real lineage and belongs in the graph.
+
+        A name the notebook registered itself is passed straight back: Spark
+        already holds the real view under it, and there is no table to record.
         """
+        if _is_notebook_view(raw):
+            return raw.strip("`")
         ref = _refs.as_ref(raw, **ctx)
         reads.add(ref)
         for view, owned in views.items():
@@ -446,6 +489,14 @@ def main() -> None:
 
     def _sql(query, *a, **k):  # noqa: ANN001
         query = _rewrite_sql(query or "")
+        # A temp view defined in SQL is still a temp view. Noted, then executed
+        # normally — the view has to exist for the next statement's read.
+        temp_view = _TEMP_VIEW_SQL.match(query)
+        if temp_view:
+            name = temp_view.group("v").strip("`")
+            notebook_views.add(name.rsplit(".", 1)[-1].casefold())
+            return _orig_sql(query, *a, **k)
+
         m = _WRITE_SQL.match(query)
         if m:
             target = m.group("t1") or m.group("t2")
@@ -489,10 +540,48 @@ def main() -> None:
         stub.__getattr__ = lambda _name: (lambda *a, **k: None)  # type: ignore[attr-defined]
         sys.modules[mod] = stub
 
+    # The DataFrame class Spark actually hands back — NOT the one it exports.
+    #
+    # `pyspark.sql.DataFrame` is an ABSTRACT BASE in PySpark 4. The object a
+    # session produces is `pyspark.sql.classic.dataframe.DataFrame` (or the
+    # Connect one), and it defines these methods itself, so anything assigned to
+    # the exported name is shadowed and has no effect whatsoever. That is not
+    # hypothetical: the action-neutering below was written against the exported
+    # name and has been a silent no-op on PySpark 4 — it only looked fine because
+    # lineage never calls an action, so nothing ever tried to run one. Taking the
+    # type off a real instance gets whichever implementation is actually in play.
+    _DF = type(spark.createDataFrame([], StructType()))
+
+    # Remember every name the notebook parks a frame under, and let Spark go on
+    # registering it for real — the view has to work for the next cell's read to
+    # resolve. All that is added is the memory of which names are views.
+    def _view_recorder(verb: str):
+        original = getattr(_DF, verb, None)
+        if original is None:
+            return None
+
+        def record(self, viewName, *a, **k):  # noqa: ANN001,N803 — Spark's own name
+            try:
+                notebook_views.add(str(viewName).strip("`").casefold())
+            except Exception:  # noqa: BLE001 — remembering is a bonus, never a failure
+                pass
+            return original(self, viewName, *a, **k)
+
+        return record
+
+    for _verb in (
+        "createOrReplaceTempView",
+        "createTempView",
+        "createGlobalTempView",
+        "createOrReplaceGlobalTempView",
+        "registerTempTable",
+    ):
+        _recorder = _view_recorder(_verb)
+        if _recorder is not None:
+            setattr(_DF, _verb, _recorder)
+
     # Neuter actions: on this stack they crash the Python worker, and lineage
     # needs none of them. Benign return values keep cell control-flow alive.
-    from pyspark.sql import DataFrame as _DF
-
     _DF.show = lambda self, *a, **k: None
     _DF.collect = lambda self, *a, **k: []
     _DF.count = lambda self, *a, **k: 0

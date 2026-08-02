@@ -1,11 +1,24 @@
-"""Column-level lineage from DataFrame code, with no Spark session and no JVM.
+"""The notebook reader — column-level lineage with no Spark session and no JVM.
 
-The counterpart to `_sqllineage`, and it exists for the same reason: **production
-has no JVM**. That module recovers columns from `spark.sql(...)` text; this one
-recovers them from the other half of a notebook — `spark.table(...).select(...)
-.withColumn(...).write.saveAsTable(...)` — which until now produced no column
-edges at all on the deployed app, however well the Spark executor handled it
-locally.
+It exists because **production has no JVM**. `_sqllineage` recovers columns from
+`spark.sql(...)` text; this module recovers them from the other half of a
+notebook — `spark.table(...).select(...).withColumn(...).write.saveAsTable(...)`
+— which until now produced no column edges at all on the deployed app, however
+well the Spark executor handled it locally.
+
+AND IT DRIVES THE WHOLE NOTEBOOK, not just that half. The two halves are not
+independent: a cell parks a frame under a name with `createOrReplaceTempView`
+and the next cell joins that name in SQL, or a `spark.sql(...)` hands back a
+DataFrame that a chain carries on from. Running the two passes one after the
+other — which is what used to happen — meant neither could see the other's work,
+and the seam between them produced BOTH a fabricated lakehouse table (see
+`_views`) and, for `spark.sql(…).write.saveAsTable(…)`, no lineage whatsoever.
+
+So statements are walked once, in notebook order, and the SQL ones are handed to
+`_sqllineage` as they come. One view registry is shared, one variable
+environment carries across cells, and a name defined by either half is visible to
+the other. `_sqllineage` stays a pure statement analyser; this module owns the
+order things happen in, which could only ever live in one place.
 
 It is a *symbolic reader*, not an interpreter: nothing is evaluated. Each cell is
 parsed to an AST and the chains are walked, carrying a set of columns and, per
@@ -42,6 +55,8 @@ from __future__ import annotations
 import ast
 
 import _refs
+import _sqllineage
+import _views
 
 #: Methods that change neither the column set nor any column's provenance.
 #: Row-level operations, ordering, caching, partitioning — a filter removes rows
@@ -59,6 +74,17 @@ _FORMATS = {"parquet", "csv", "json", "orc", "text", "avro", "delta", "xml", "lo
 
 #: Write verbs that name their target directly.
 _TARGET_VERBS = {"saveAsTable", "insertInto"}
+
+#: The verbs that park a frame under a session-local name. All four mean the same
+#: thing for lineage; `createGlobalTempView` differs only in which database Spark
+#: files it under, which `_views.normalise` folds away.
+_VIEW_VERBS = {
+    "createOrReplaceTempView",
+    "createTempView",
+    "createGlobalTempView",
+    "createOrReplaceGlobalTempView",
+    "registerTempTable",
+}
 
 #: Column constructors — `col("x")`, `column("x")`, `F.col("x")`.
 _COL_FUNCS = {"col", "column"}
@@ -162,7 +188,9 @@ class _Reader:
     hold.
     """
 
-    def __init__(self, schemas: dict[str, list[dict]], ctx: dict) -> None:
+    def __init__(
+        self, schemas: dict[str, list[dict]], ctx: dict, views: dict | None = None
+    ) -> None:
         self.schemas = schemas
         self.ctx = ctx
         self.env: dict[str, Frame | Grouped | None] = {}
@@ -171,6 +199,24 @@ class _Reader:
         #: Written targets, so the caller can tell a covered write from a
         #: skipped one without re-deriving.
         self.writes: set[str] = set()
+        #: Every table the notebook read, from either half. A view is never in
+        #: here; the tables it was BUILT from are, which is how a chain that runs
+        #: through a temp view stays connected.
+        self.reads: set[str] = set()
+        #: The shared view registry — see `_views`. Written by both halves.
+        self.views: dict = views if views is not None else {}
+        #: Targets a SQL statement resolved. sqlglot resolved a real statement
+        #: where the chain reader only reasoned about one, so where both describe
+        #: the same write the SQL answer stands alone.
+        self.sql_targets: set[str] = set()
+        #: ref → the output columns of the write that produced it, in order. Lets
+        #: a written table carry a schema even where the run is only partly sure
+        #: where its columns came from.
+        self.outputs: dict[str, list[str]] = {}
+        #: SQL statements seen, and the column edges they yielded — the pair that
+        #: distinguishes "no SQL here" from "SQL that resolved nothing".
+        self.sql_statements = 0
+        self.sql_flows = 0
 
     # ---- sources -------------------------------------------------------
 
@@ -187,6 +233,23 @@ class _Reader:
             return None
         return Frame(list(columns), {c: {(ref, c)} for c in columns})
 
+    def _source_frame(self, raw: str) -> Frame | None:
+        """Whatever `raw` names, as a frame — a temp view or a real table.
+
+        The view is checked FIRST because in Spark it shadows a table of the same
+        name, and because resolving it as a table is not merely less accurate but
+        actively wrong: it invents a lakehouse table that does not exist.
+        """
+        if _views.is_view(self.views, raw):
+            view = _views.lookup(self.views, raw)
+            if view is None:
+                return None
+            return Frame(list(view.columns), {k: set(v) for k, v in view.prov.items()}, dict(view.transforms))
+        ref = _refs.as_ref(raw, **self.ctx)
+        if _refs.table_of(ref):
+            self.reads.add(ref)
+        return self._frame_for_ref(ref)
+
     def _read_source(self, call: ast.Call) -> Frame | None:
         """A read call → its base frame, or None if this isn't a read."""
         func = call.func
@@ -202,7 +265,83 @@ class _Reader:
             raw = _literal_str(call.args[0]) if call.args else None
         if raw is None:
             return None
-        return self._frame_for_ref(_refs.as_ref(raw, **self.ctx))
+        return self._source_frame(raw)
+
+    # ---- the SQL half ---------------------------------------------------
+
+    def _sql_literal(self, node: ast.AST) -> str | None:
+        """The query text of a `<something>.sql("…")` call, or None.
+
+        A non-literal argument — an f-string, a variable — is deliberately not
+        guessed at: its value is not knowable without running the cell, and
+        inventing one would produce lineage for a query that was never issued.
+        `Coverage.dynamic_sql_cells` counts those skips.
+        """
+        if not isinstance(node, ast.Call):
+            return None
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and func.attr == "sql" and node.args):
+            return None
+        return _literal_str(node.args[0])
+
+    def run_sql(self, sql: str, cell_index: int) -> None:
+        """Hand one statement to `_sqllineage` and record what it found.
+
+        Called in notebook order, so a `CREATE TEMPORARY VIEW` here is visible to
+        every DataFrame chain after it, and a view a chain registered is visible
+        to every statement after that.
+        """
+        self.sql_statements += 1
+        target, reads, flows, columns = _sqllineage.analyze(
+            sql, self.schemas, self.ctx, self.views
+        )
+        self.reads |= reads
+        if target:
+            self.writes.add(target)
+            self.sql_targets.add(target)
+            # Recorded even where no edge resolved: the table has these columns
+            # whether or not the run could say where each came from.
+            known = self.outputs.setdefault(target, [])
+            for name in columns:
+                if name not in known:
+                    known.append(name)
+        if flows:
+            self.sql_flows += len(flows)
+            self._add_flows(flows)
+            self.log.append(
+                f"[stub] cell {cell_index}: {len(flows)} column edge(s) into "
+                f"{_refs.table_of(target)}"
+            )
+
+    def _sql_frame(self, sql: str) -> Frame | None:
+        """What a `spark.sql(...)` hands back, as a frame to carry on from."""
+        view, reads = _sqllineage.projection(sql, self.schemas, self.ctx, self.views)
+        self.reads |= reads
+        if view is None:
+            return None
+        return Frame(list(view.columns), {k: set(v) for k, v in view.prov.items()}, dict(view.transforms))
+
+    def _register_view(self, call: ast.Call) -> bool:
+        """`df.createOrReplaceTempView("staged")` → the registry. True if it was one.
+
+        A name whose frame is unknown is registered as `None` rather than
+        skipped. Knowing the name is not a table is what stops it being drawn as
+        one, and that is worth having even when there is no lineage to carry
+        through it.
+        """
+        func = call.func
+        if not (isinstance(func, ast.Attribute) and func.attr in _VIEW_VERBS and call.args):
+            return False
+        name = _literal_str(call.args[0])
+        if not name:
+            return False
+        frame = self._eval(func.value)
+        view = None
+        if isinstance(frame, Frame):
+            view = _views.View(
+                name, list(frame.columns), {k: set(v) for k, v in frame.prov.items()}, dict(frame.transforms)
+            )
+        return bool(_views.register(self.views, name, view))
 
     # ---- column expressions --------------------------------------------
 
@@ -463,6 +602,13 @@ class _Reader:
         if not isinstance(node, ast.Call):
             return None
 
+        # `spark.sql("SELECT …")` is a source like any other read, and the one
+        # that used to end the chain: a write hanging off it had no frame to
+        # describe, so it produced nothing.
+        sql = self._sql_literal(node)
+        if sql is not None:
+            return self._sql_frame(sql)
+
         source = self._read_source(node)
         if source is not None:
             return source
@@ -520,11 +666,34 @@ class _Reader:
             else:
                 return None
 
+    def _add_flows(self, flows: list[dict]) -> None:
+        """Append flows, dropping exact duplicates and noting the output columns.
+
+        Both halves can describe the same edge — a table written by SQL and read
+        back by a chain, say — and the contract carries a flat list, so the
+        de-duplication has to happen here rather than being left to consumers.
+        """
+        seen = {
+            (f["to_table"], f["to_column"], f["from_table"], f["from_column"]) for f in self.flows
+        }
+        for flow in flows:
+            key = (flow["to_table"], flow["to_column"], flow["from_table"], flow["from_column"])
+            if key in seen:
+                continue
+            seen.add(key)
+            self.flows.append(flow)
+            columns = self.outputs.setdefault(flow["to_table"], [])
+            if flow["to_column"] not in columns:
+                columns.append(flow["to_column"])
+
     def _record_write(self, call: ast.Call) -> None:
         target = self._write_target(call)
         if target is None:
             return
         raw, frame_node = target
+        # Writing into a temp view creates no table; `_views` has the argument.
+        if _views.is_view(self.views, raw):
+            return
         ref = _refs.as_ref(raw, **self.ctx)
         if not _refs.table_of(ref):
             return
@@ -532,20 +701,30 @@ class _Reader:
         if not isinstance(frame, Frame):
             return
         self.writes.add(ref)
-        emitted = 0
+        # A target sqlglot already resolved keeps that answer: it parsed a real
+        # statement where this reader reasoned about a chain, and the two must
+        # not be merged into a union of both readings.
+        if ref in self.sql_targets:
+            return
+        self.outputs.setdefault(ref, [])
         for column in frame.columns:
-            transform = frame.transforms.get(column)
-            for from_table, from_column in sorted(frame.prov.get(column, set())):
-                self.flows.append(
-                    {
-                        "to_table": ref,
-                        "to_column": column,
-                        "from_column": from_column,
-                        "from_table": from_table,
-                        "transform": transform,
-                    }
-                )
-                emitted += 1
+            if column not in self.outputs[ref]:
+                self.outputs[ref].append(column)
+        before = len(self.flows)
+        self._add_flows(
+            [
+                {
+                    "to_table": ref,
+                    "to_column": column,
+                    "from_column": from_column,
+                    "from_table": from_table or None,
+                    "transform": frame.transforms.get(column),
+                }
+                for column in frame.columns
+                for from_table, from_column in sorted(frame.prov.get(column, set()))
+            ]
+        )
+        emitted = len(self.flows) - before
         if emitted:
             self.log.append(
                 f"[stub] {emitted} column edge(s) into {_refs.table_of(ref)} "
@@ -578,40 +757,91 @@ class _Reader:
             if isinstance(sub, ast.Name) and isinstance(sub.ctx, (ast.Store, ast.Del)):
                 self.env[sub.id] = None
 
-    def run_cell(self, cell: str) -> None:
+    def _sql_in(self, stmt: ast.AST) -> list[str]:
+        """Every literal query one statement hands to Spark, in source order.
+
+        The whole statement is walked, control-flow bodies included. A
+        `spark.sql(...)` inside an `if` is still a fixed piece of SQL naming
+        fixed tables — unlike a DataFrame chain, whose *value* depends on the
+        branch — so the tables it moves are real lineage whether or not that
+        branch runs. `ast.walk` is breadth-first, hence the re-sort: two
+        statements in one cell must be analysed in the order they were written,
+        because the first may define the view the second reads.
+        """
+        found: list[tuple[int, int, str]] = []
+        for node in ast.walk(stmt):
+            sql = self._sql_literal(node)
+            if sql is not None:
+                found.append((getattr(node, "lineno", 0), getattr(node, "col_offset", 0), sql))
+        return [sql for _line, _col, sql in sorted(found, key=lambda item: item[:2])]
+
+    def run_cell(self, cell: str, index: int = 0) -> None:
+        text = cell or ""
+        # A `%%sql` magic cell is not Python; its whole body is one statement.
+        if _sqllineage.is_sql_magic(text):
+            for sql in _sqllineage.sql_statements(text):
+                self.run_sql(sql, index)
+            return
+
         try:
-            tree = ast.parse(cell or "")
+            tree = ast.parse(text)
         except SyntaxError:
             return
 
         for stmt in tree.body:
+            # SQL first, so a `CREATE TEMPORARY VIEW` in this statement is
+            # registered before anything in it is evaluated as a frame.
+            for sql in self._sql_in(stmt):
+                self.run_sql(sql, index)
             if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
                 self._assign(stmt)
-            elif isinstance(stmt, ast.Expr):
-                if isinstance(stmt.value, ast.Call):
+            elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+                # A view registration and a write are both terminal calls on a
+                # chain, and a name parked as a view is not a table written.
+                if not self._register_view(stmt.value):
                     self._record_write(stmt.value)
             else:
                 # Control flow, function bodies, imports: names they bind are
-                # unknown from here on. Writes nested inside are deliberately
-                # not recorded — whether they run at all is not knowable.
+                # unknown from here on. DataFrame writes nested inside are
+                # deliberately not recorded — whether they run at all is not
+                # knowable, and neither is which frame they would write.
                 self._invalidate(stmt)
 
 
-def analyze_cells(
+def analyze_notebook(
     cells: list[str],
     schemas: dict[str, list[dict]],
     ctx: dict,
-) -> tuple[list[dict], set[str], list[str]]:
-    """Every DataFrame write across a notebook → `(flows, written refs, log)`.
+    views: dict | None = None,
+) -> _Reader:
+    """Walk a whole notebook in order and return the reader that did it.
+
+    The single entry point for deriving lineage without a JVM: both halves of
+    every cell, in the order they were written. The reader is handed back rather
+    than a tuple because it carries six related answers — reads, writes, flows,
+    per-target output columns, the view registry and the log — and they are only
+    meaningful together.
 
     Never raises. The stub engine's whole contract is that a run degrades rather
-    than fails, and a notebook doing something this module has never seen is the
+    than fails, and a notebook doing something this reader has never seen is the
     normal case, not an error.
     """
-    reader = _Reader(schemas, ctx)
-    for cell in cells or []:
+    reader = _Reader(schemas, ctx, views)
+    if not _sqllineage.AVAILABLE:
+        reader.log.append("[stub] sqlglot unavailable — no column lineage derived from SQL.")
+    for index, cell in enumerate(cells or []):
         try:
-            reader.run_cell(cell)
+            reader.run_cell(cell, index)
         except Exception as exc:  # noqa: BLE001
-            reader.log.append(f"[stub] DataFrame read gave up on a cell: {type(exc).__name__}")
-    return reader.flows, reader.writes, reader.log
+            reader.log.append(f"[stub] gave up on cell {index}: {type(exc).__name__}")
+    if reader.sql_statements and not reader.sql_flows:
+        reader.log.append(
+            f"[stub] {reader.sql_statements} SQL statement(s) parsed, "
+            "no column lineage resolved."
+        )
+    if reader.views:
+        reader.log.append(
+            f"[stub] {len(reader.views)} temp view(s) tracked as views rather than tables: "
+            + ", ".join(sorted(reader.views))
+        )
+    return reader

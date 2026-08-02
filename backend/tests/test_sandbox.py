@@ -155,6 +155,19 @@ def test_the_credential_probe_notices_a_reachable_token_cache(tmp_path, monkeypa
     assert any("azure" in item.lower() for item in _isolation.reachable_credentials())
 
     # A clean home is clean — the probe must not cry wolf on every run.
+    #
+    # The environment has to be scrubbed for this half, because the probe reads
+    # BOTH halves and this half is only about the home directory. Without it the
+    # assertion passed or failed on whatever the machine running the tests
+    # happened to export: a developer box or a CI runner with `GH_TOKEN` or
+    # `AWS_SECRET_ACCESS_KEY` set failed it, for the entirely correct reason that
+    # the probe saw those and said so.
+    for key in list(os.environ):
+        up = key.upper()
+        if up.startswith(_isolation._ENV_PREFIXES) or any(
+            s in up for s in _isolation._ENV_SUBSTRINGS
+        ):
+            monkeypatch.delenv(key, raising=False)
     clean = tmp_path / "clean"
     clean.mkdir()
     monkeypatch.setenv("HOME", str(clean))

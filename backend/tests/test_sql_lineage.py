@@ -20,6 +20,7 @@ from app.sandbox.runner import run_sandbox
 # The child modules are launched by path and import each other as siblings, so
 # the sandbox directory has to lead sys.path to import them here too.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app" / "sandbox"))
+import _dflineage  # noqa: E402
 import _sqllineage  # noqa: E402
 
 CTX = {"default_workspace": "Analytics", "default_lakehouse": "Bronze", "name_map": {}}
@@ -32,7 +33,7 @@ SCHEMAS = {
 
 
 def flows(sql, schemas=None):
-    _target, _reads, out = _sqllineage.analyze(sql, schemas or SCHEMAS, CTX)
+    _target, _reads, out, _columns = _sqllineage.analyze(sql, schemas or SCHEMAS, CTX)
     return {(f["to_column"], f["from_table"], f["from_column"]): f for f in out}
 
 
@@ -101,7 +102,7 @@ def test_star_is_expanded_from_the_schemas():
 
 
 def test_insert_into_is_a_write_like_ctas():
-    target, _reads, out = _sqllineage.analyze(
+    target, _reads, out, _columns = _sqllineage.analyze(
         "INSERT INTO Finance.Gold.customer_ltv SELECT customer_id FROM silver_orders",
         SCHEMAS,
         CTX,
@@ -111,14 +112,14 @@ def test_insert_into_is_a_write_like_ctas():
 
 
 def test_a_read_only_query_reports_reads_but_no_flows():
-    target, reads, out = _sqllineage.analyze("SELECT * FROM silver_orders", SCHEMAS, CTX)
+    target, reads, out, _columns = _sqllineage.analyze("SELECT * FROM silver_orders", SCHEMAS, CTX)
     assert target == ""
     assert reads == {ORDERS}
     assert out == []
 
 
 def test_a_cte_is_not_reported_as_a_table_that_was_read():
-    _target, reads, _out = _sqllineage.analyze(
+    _target, reads, _out, _columns = _sqllineage.analyze(
         "CREATE TABLE t2 AS WITH recent AS (SELECT * FROM silver_orders) SELECT * FROM recent",
         SCHEMAS,
         CTX,
@@ -127,7 +128,7 @@ def test_a_cte_is_not_reported_as_a_table_that_was_read():
 
 
 def test_unparseable_sql_degrades_instead_of_raising():
-    assert _sqllineage.analyze("SELCT ?? FRM (((", SCHEMAS, CTX) == ("", set(), [])
+    assert _sqllineage.analyze("SELCT ?? FRM (((", SCHEMAS, CTX) == ("", set(), [], [])
 
 
 def test_a_column_from_an_unknown_table_still_yields_an_edge():
@@ -228,11 +229,11 @@ def test_the_run_survives_sqlglot_being_unavailable(monkeypatch, missing):
     """A missing optional dependency must degrade to 'no column lineage',
     never fail the run."""
     monkeypatch.setattr(_sqllineage, "AVAILABLE", not missing)
-    reads, writes, out, log = _sqllineage.analyze_cells(
+    reader = _dflineage.analyze_notebook(
         ['spark.sql("CREATE TABLE t2 AS SELECT total FROM silver_orders")'], SCHEMAS, CTX
     )
     if missing:
-        assert (reads, writes, out) == (set(), set(), [])
-        assert any("unavailable" in line for line in log)
+        assert (reader.reads, reader.writes, reader.flows) == (set(), set(), [])
+        assert any("unavailable" in line for line in reader.log)
     else:
-        assert out
+        assert reader.flows

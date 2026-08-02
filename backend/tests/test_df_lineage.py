@@ -47,13 +47,13 @@ SCHEMAS = {
 
 
 def edges(cells, schemas=None):
-    flows, _writes, _log = _dflineage.analyze_cells(cells, schemas or SCHEMAS, CTX)
-    return {(f["to_column"], f["from_table"], f["from_column"]) for f in flows}
+    reader = _dflineage.analyze_notebook(cells, schemas or SCHEMAS, CTX)
+    return {(f["to_column"], f["from_table"], f["from_column"]) for f in reader.flows}
 
 
 def transforms(cells):
-    flows, _writes, _log = _dflineage.analyze_cells(cells, SCHEMAS, CTX)
-    return {f["to_column"]: f["transform"] for f in flows}
+    reader = _dflineage.analyze_notebook(cells, SCHEMAS, CTX)
+    return {f["to_column"]: f["transform"] for f in reader.flows}
 
 
 # --- the shapes that must resolve -----------------------------------------

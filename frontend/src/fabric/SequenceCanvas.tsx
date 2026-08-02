@@ -29,10 +29,11 @@ import { localStore } from '../model/store'
 
 type FlowKind = 'notebook' | 'pipeline' | 'table'
 /**
- * `read`/`write` are a step's I/O rows; `col` is a table's own column; `run` is
+ * `read`/`write` are a step's I/O rows; `hop` is the two of them folded into the
+ * single row of a step that does both; `col` is a table's own column; `run` is
  * one activity INSIDE a pipeline, heading the tables that activity touched.
  */
-type RowTone = 'read' | 'write' | 'col' | 'run'
+type RowTone = 'read' | 'write' | 'col' | 'run' | 'hop'
 /** The tone an edge can carry — a column row is never an edge endpoint. */
 type EdgeTone = 'read' | 'write'
 export interface FlowRow {
@@ -191,6 +192,10 @@ export type CanvasView = 'flow' | 'sequence' | 'stages' | 'workspace'
 
 /** The two views that name bands for what is in them rather than where it sits. */
 const SEMANTIC_VIEWS: readonly CanvasView[] = ['stages', 'workspace']
+
+const uniq = (xs: (string | undefined)[]): string[] => [
+  ...new Set(xs.filter((x): x is string => !!x)),
+]
 
 /**
  * A container drawn BEHIND a run of cards that belong to one thing — the
@@ -903,7 +908,7 @@ function FlowCanvas({
                         r.meta && <span className="sbx-flow-type">{r.meta}</span>
                       ) : (
                         <span className="sbx-flow-tag" data-tone={r.tone}>
-                          {r.tone === 'read' ? 'R' : 'W'}
+                          {r.tone === 'read' ? 'R' : r.tone === 'write' ? 'W' : 'R→W'}
                         </span>
                       )}
                     </div>
@@ -932,8 +937,19 @@ function collectSchemas(results: Map<string, StepResult>): Map<string, SandboxCo
   return out
 }
 
-// Build the flow graph from the steps and (optionally) their run results.
-export function buildFlow(steps: Step[], results: Map<string, StepResult>): { nodes: FlowNode[]; edges: FlowEdge[] } {
+/**
+ * Build the flow graph from the steps and (optionally) their run results.
+ *
+ * `fold` draws a step that both reads and writes as ONE hop row rather than two
+ * — what the semantic views and the layouts they port to do. The positional
+ * views keep the two rows: `flow` puts a step's inputs and outputs in different
+ * columns, so a single row would have to face both ways at once.
+ */
+export function buildFlow(
+  steps: Step[],
+  results: Map<string, StepResult>,
+  fold = false,
+): { nodes: FlowNode[]; edges: FlowEdge[] } {
   const nodes: FlowNode[] = []
   const edges: FlowEdge[] = []
   const schemas = collectSchemas(results)
@@ -1033,6 +1049,63 @@ export function buildFlow(steps: Step[], results: Map<string, StepResult>): { no
         group: rowKey,
       }))
 
+    /**
+     * One scope's tables as rows: a single HOP row where it both reads and
+     * writes, one row per access where it does only one of them.
+     *
+     * A notebook reading `customers_raw` and writing `customers` is one move,
+     * and a card drawing it as two rows made the lineage stop on the first and
+     * start again on the second. Folded, the incoming edge lands on the same row
+     * the outgoing one leaves, so the trace runs through the card — the shape
+     * `sequenceToModel` exports, and the reason Create model gives back the
+     * picture on screen.
+     *
+     * The columns beneath it are the UNION of both sides, keyed by name: a
+     * column carried through is one row both edges touch, and a column the step
+     * ADDS on write has no read side to arrive from, so it sits here with only
+     * its outgoing edge.
+     */
+    const ioRows = (reads: string[], writes: string[], depth: number, scope?: string) => {
+      const one = (ref: string, tone: 'read' | 'write') => {
+        const row = io(ref, tone, { depth, scope })
+        rows.push(row, ...nestedCols(ref, row.key, depth + 1))
+        ;(tone === 'read' ? readAnchors : writeAnchors).push([ref, row.key])
+      }
+      if (!fold || !reads.length || !writes.length) {
+        for (const r of reads) one(r, 'read')
+        for (const w of writes) one(w, 'write')
+        return
+      }
+      const label = (refs_: string[]) => uniq(refs_.map((r) => refLabel(r, refs))).join(', ')
+      const key = `h:${scope ? `${scope}:` : ''}${reads.join('|')}>${writes.join('|')}`
+      const ws = uniq([...reads, ...writes].map((r) => refWorkspace(r, refs))).filter(
+        (w) => own && w && w !== own,
+      )
+      rows.push({
+        key,
+        label: `${label(reads)} → ${label(writes)}`,
+        tone: 'hop',
+        meta: ws.join(' + ') || undefined,
+        depth,
+      })
+      const seen = new Set<string>()
+      for (const ref of [...reads, ...writes])
+        for (const c of schemas.get(ref) ?? []) {
+          if (seen.has(c.name)) continue
+          seen.add(c.name)
+          rows.push({
+            key: `${key}>c:${c.name}`,
+            label: c.name,
+            tone: 'col',
+            meta: c.type ?? undefined,
+            depth: depth + 1,
+            group: key,
+          })
+        }
+      for (const r of reads) readAnchors.push([r, key])
+      for (const w of writes) writeAnchors.push([w, key])
+    }
+
     const runs = res?.runs ?? []
     if (step.kind === 'pipeline' && runs.length) {
       // A pipeline's rows are its ACTIVITIES, each heading the tables it
@@ -1052,30 +1125,12 @@ export function buildFlow(steps: Step[], results: Map<string, StepResult>): { no
                 ? 'no tables'
                 : undefined,
         })
-        for (const r of runReads) {
-          const row = io(r, 'read', { depth: 1, scope })
-          rows.push(row, ...nestedCols(r, row.key, 2))
-          readAnchors.push([r, row.key])
-        }
-        for (const w of runWrites) {
-          const row = io(w, 'write', { depth: 1, scope })
-          rows.push(row, ...nestedCols(w, row.key, 2))
-          writeAnchors.push([w, row.key])
-        }
+        ioRows(runReads, runWrites, 1, scope)
       })
     } else {
       // A notebook step IS the notebook, so there is nothing to nest under —
       // its tables sit at the top level, and their columns one level in.
-      for (const r of stepReads(res)) {
-        const row = io(r, 'read')
-        rows.push(row, ...nestedCols(r, row.key, 1))
-        readAnchors.push([r, row.key])
-      }
-      for (const w of stepWrites(res)) {
-        const row = io(w, 'write')
-        rows.push(row, ...nestedCols(w, row.key, 1))
-        writeAnchors.push([w, row.key])
-      }
+      ioRows(stepReads(res), stepWrites(res), 0)
     }
 
     nodes.push({
@@ -1437,7 +1492,14 @@ function PortSettings({
 
 export function SequenceCanvas({ steps, results }: { steps: Step[]; results: Map<string, StepResult> }) {
   const [view, setView] = useState<CanvasView>('flow')
-  const flow = useMemo(() => buildFlow(steps, results), [steps, results])
+  // Rebuilt when the view changes, because the semantic views fold a step's
+  // read and write into one hop row and the positional ones do not — the same
+  // split `sequenceToModel` makes, so the card and the port always agree.
+  const semanticView = SEMANTIC_VIEWS.includes(view)
+  const flow = useMemo(
+    () => buildFlow(steps, results, semanticView),
+    [steps, results, semanticView],
+  )
   const ran = results.size > 0
 
   // Every executed notebook across all steps — a notebook step contributes one,

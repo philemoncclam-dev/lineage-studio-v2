@@ -1200,6 +1200,12 @@
   background: #d3f0e0;
   color: #114a2b;
 }
+/* A hop row is one row that is read AND write, so its tag is neither colour —
+   it takes the gradient between them, left to right, the way the data moves. */
+.sbx-flow-tag[data-tone='hop'] {
+  background: linear-gradient(90deg, #e2ebfa, #d3f0e0);
+  color: #1c447f;
+}
 /* A table card's column rows: name left, type right, in the muted weight the
    Modeling attribute rows use — the schema is context for the lineage, not
    the thing being traced. */

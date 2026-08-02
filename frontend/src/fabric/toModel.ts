@@ -703,6 +703,9 @@ export function sequenceToModel(
         const label = (access: IoRow['access']) =>
           uniq(rows.filter((r) => r.access === access).map((r) => refLabel(r.table, refs)))
         const [reads, writes] = [label('Read'), label('Write')]
+        // The semantic layouts only, and the canvas cards fold on exactly the
+        // same condition — a `flow` layer puts a step's inputs and outputs in
+        // different layers, where one row would have to face both ways at once.
         if (!semantic || !reads.length || !writes.length) return rows.map((row) => ioAttr(row, group))
 
         const hop: Attribute = {

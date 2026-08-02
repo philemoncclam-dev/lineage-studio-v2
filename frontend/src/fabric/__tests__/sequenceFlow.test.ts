@@ -361,3 +361,57 @@ describe('buildFlow across workspaces', () => {
     expect(foreign.meta).toBe('Finance')
   })
 })
+
+describe('buildFlow folded — the card the semantic views draw', () => {
+  /** A notebook reading landing `customers_raw` and writing bronze `customers`. */
+  const hopRun = () => {
+    const s = step('a', 'nb_bronze')
+    const [R, W] = ['lh_landing/customers_raw', 'lh_bronze/customers']
+    return {
+      s,
+      results: new Map([
+        [
+          s.key,
+          ran('nb_bronze', result({
+            reads: [R],
+            writes: [W],
+            table_schemas: {
+              [R]: [{ name: 'id', type: 'string' }],
+              [W]: [{ name: 'id', type: 'string' }, { name: 'loaded_at', type: 'timestamp' }],
+            },
+          })),
+        ],
+      ]),
+    }
+  }
+
+  it('draws a read and a write as one hop row, not two', () => {
+    const { s, results } = hopRun()
+    const nb = buildFlow([s], results, true).nodes.find((n) => n.kind === 'notebook')!
+    expect(nb.rows.filter((r) => r.tone !== 'col').map((r) => [r.tone, r.label])).toEqual([
+      ['hop', 'customers_raw → customers'],
+    ])
+    // the union of both schemas hangs under it, the added column included
+    expect(nb.rows.filter((r) => r.tone === 'col').map((r) => r.label)).toEqual(['id', 'loaded_at'])
+  })
+
+  it('lands the read and leaves the write on that same row', () => {
+    const { s, results } = hopRun()
+    const { nodes, edges } = buildFlow([s], results, true)
+    const nb = nodes.find((n) => n.kind === 'notebook')!
+    const hop = nb.rows.find((r) => r.tone === 'hop')!
+    const table = edges.filter((e) => e.kind === 'table')
+    expect(table.find((e) => e.tone === 'read')!.toRow).toBe(hop.key)
+    expect(table.find((e) => e.tone === 'write')!.fromRow).toBe(hop.key)
+    // and the carried column is one row with an edge in and an edge out
+    const col = `${hop.key}>c:id`
+    expect(edges.some((e) => e.kind === 'column' && e.toRow === col)).toBe(true)
+    expect(edges.some((e) => e.kind === 'column' && e.fromRow === col)).toBe(true)
+  })
+
+  it('keeps two rows unfolded, which is what the positional views need', () => {
+    const { s, results } = hopRun()
+    const nb = buildFlow([s], results).nodes.find((n) => n.kind === 'notebook')!
+    expect(nb.rows.filter((r) => r.tone !== 'col').map((r) => r.tone)).toEqual(['read', 'write'])
+  })
+})

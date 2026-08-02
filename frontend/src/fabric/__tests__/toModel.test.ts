@@ -824,17 +824,37 @@ describe('semantic layouts', () => {
     expect(stages.layers[0].objects.map((o) => o.name)).toEqual(['lh_bronze', 'lh_silver'])
   })
 
-  it('folds a read and a write into one staged hop', () => {
+  it('folds a read and a write into one staged hop, not two rows', () => {
     // The notebook reads bronze `orders` and writes silver `orders_enriched` —
-    // one move, so one group, tagged, with both rows inside it.
+    // one move, so ONE row. Two rows stopped the trace dead between them.
     const model = layoutModel('stages')
     const step = model.layers.find((l) => l.name === 'Engineering')!.objects[0]
     expect(step.children.map((c) => c.name)).toEqual(['orders → orders_enriched'])
     expect(tagsOf(model, step.children[0].id)).toEqual(['Staged'])
-    expect(step.children[0].children.map((c) => c.name)).toEqual([
-      'orders (staged)',
-      'orders_enriched (staged)',
-    ])
+    // and the column is one row too, so the read lands on it and the write
+    // leaves it — the pass-through that makes the zig-zag continuous.
+    const hop = step.children[0]
+    expect(hop.children.map((c) => c.name)).toEqual(['order_id'])
+    const into = model.transitions.filter((t) => t.target === hop.children[0].id)
+    const outOf = model.transitions.filter((t) => t.source === hop.children[0].id)
+    expect(into).toHaveLength(1)
+    expect(outOf).toHaveLength(1)
+  })
+
+  it('carries a column the step ADDS on the same hop row', () => {
+    const { steps, results } = medallionRun()
+    // The write side has a column the read side never had. It has no read edge
+    // to arrive on, so it simply appears on the hop with its write leaving.
+    const schemas = [...results.values()][0].runs[0].result!.table_schemas!
+    schemas['Platform/lh_silver/orders_enriched'].push({ name: 'loaded_at', type: 'timestamp' })
+    const model = sequenceToModel(steps, results, 'M', 'flow', {
+      ...DEFAULT_PORT_OPTIONS, layout: 'stages',
+    }).model
+    const hop = model.layers.find((l) => l.name === 'Engineering')!.objects[0].children[0]
+    expect(hop.children.map((c) => c.name)).toEqual(['order_id', 'loaded_at'])
+    const added = hop.children[1]
+    expect(model.transitions.filter((t) => t.target === added.id)).toHaveLength(0)
+    expect(model.transitions.filter((t) => t.source === added.id)).toHaveLength(1)
   })
 
   it('makes the lakehouse the object and its tables the children', () => {
@@ -852,22 +872,24 @@ describe('semantic layouts', () => {
     expect(tagsOf(model, platform.objects[0].id)).toEqual(['Lakehouse'])
   })
 
-  it('marks a table staged where it sits inside a step', () => {
-    // The step's own rows are the table AS THE NOTEBOOK SAW IT, which is not
-    // the table in the lakehouse layer even though both are called `orders`.
-    const step = layoutModel('workspace').layers.find((l) => l.name === 'Engineering')!.objects[0]
-    const names: string[] = []
-    const walk = (a: { name: string; children: { name: string; children: unknown[] }[] }) => {
-      names.push(a.name)
-      a.children.forEach((c) => walk(c as never))
-    }
-    step.children.forEach((c) => walk(c as never))
-    expect(names).toContain('orders (staged)')
-    expect(names).toContain('orders_enriched (staged)')
+  it('marks a one-sided access staged where it sits inside a step', () => {
+    // A step's own rows are the table AS THE NOTEBOOK SAW IT, which is not the
+    // table in the lakehouse layer even though both are called `orders`. A step
+    // that only writes has no hop to fold into, so it keeps the suffixed row.
+    const T = 'Platform/lh_bronze/orders'
+    const s: Step = { key: 'w', kind: 'notebook', ws: 'Engineering', itemId: 'it', name: 'nb_load' }
+    const model = sequenceToModel(
+      [s],
+      new Map([[s.key, ran('nb_load', result({
+        writes: [T],
+        tables: { [T]: { workspace: 'Platform', lakehouse: 'lh_bronze', table: 'orders', resolved: true } },
+      }))]]),
+      'M', 'flow', { ...DEFAULT_PORT_OPTIONS, layout: 'workspace' },
+    ).model
+    const step = model.layers.find((l) => l.name === 'Engineering')!.objects[0]
+    expect(step.children.map((c) => c.name)).toEqual(['orders (staged)'])
     // and the real table, in its lakehouse, keeps its plain name
-    const bronze = layoutModel('workspace')
-      .layers.find((l) => l.name === 'Platform')!
-      .objects.find((o) => o.name === 'lh_bronze')!
+    const bronze = model.layers.find((l) => l.name === 'Platform')!.objects[0]
     expect(bronze.children.map((c) => c.name)).toEqual(['orders'])
   })
 

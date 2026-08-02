@@ -683,29 +683,63 @@ export function sequenceToModel(
        * One step's rows, as ONE staged hop where it both reads and writes.
        *
        * A notebook reading `customers_raw` from lh_landing and writing
-       * `customers` to lh_bronze is a single move, and exporting it as two
-       * unrelated rows broke the trace exactly where it should be tightest: the
-       * reader saw a row that ends and another that begins, with nothing saying
-       * they are the same hop. Wrapped, the pair reads `customers_raw →
-       * customers` and the lineage zig-zags smoothly between the two layers.
+       * `customers` to lh_bronze is a single move, and exporting it as a read
+       * row and a separate write row broke the trace exactly where it should be
+       * tightest: the read arrived, stopped, and a second row started the write.
+       * One row named `customers_raw → customers` is what the run did — the
+       * read lands on it and the write leaves it, so the lineage passes
+       * straight through and the layers zig-zag without a break.
        *
-       * The rows themselves are untouched inside it, so every edge still lands
-       * on the access it belongs to — this adds a level, it does not merge.
+       * The columns under it are the UNION of both sides, keyed by name: a
+       * column read and written is one row that the incoming and outgoing edges
+       * both touch, and a column the step ADDS has no read side to come from,
+       * so it simply appears here with only its write edge leaving. Both are the
+       * true statement about it.
+       *
+       * Every access still resolves to this hop, so no edge is lost — the two
+       * anchors now point at the same row instead of at two.
        */
       const stagedRows = (rows: IoRow[], group: number): Attribute[] => {
-        const attrs = rows.map((row) => ioAttr(row, group))
         const label = (access: IoRow['access']) =>
           uniq(rows.filter((r) => r.access === access).map((r) => refLabel(r.table, refs)))
         const [reads, writes] = [label('Read'), label('Write')]
-        if (!semantic || !reads.length || !writes.length) return attrs
+        if (!semantic || !reads.length || !writes.length) return rows.map((row) => ioAttr(row, group))
+
         const hop: Attribute = {
           id: crypto.randomUUID(),
           name: `${reads.join(', ')} → ${writes.join(', ')}`,
-          children: attrs,
+          children: [],
+        }
+        const cols = new Map<string, EntityId>()
+        for (const row of rows) {
+          ioAttrOf.set(ioKey(n.id, group, row.access, row.table), hop.id)
+          if (!options.columns) continue
+          for (const c of schemas.get(row.table) ?? []) {
+            let id = cols.get(c.name)
+            if (!id) {
+              const col: Attribute = { id: crypto.randomUUID(), name: c.name, children: [] }
+              if (c.type) props[col.id] = { 'Data type': c.type }
+              hop.children.push(col)
+              cols.set(c.name, (id = col.id))
+            }
+            ioColAttrOf.set(ioColKey(ioKey(n.id, group, row.access, row.table), c.name), id)
+          }
         }
         // Tagged, so the hop is obvious on the card rather than inferred from
-        // the arrow in its name.
-        if (options.kindTags) props[hop.id] = { [TAGS_KEY]: 'Staged' }
+        // the arrow in its name. A table on the far side of a workspace boundary
+        // is still called out, as it is on an unmerged row.
+        const foreign = uniq(
+          rows.map((r) => {
+            const ws = refWorkspace(r.table, refs)
+            return ws && n.ws && ws !== n.ws ? ws : ''
+          }),
+        )
+        const bag = {
+          ...(options.kindTags ? { [TAGS_KEY]: 'Staged' } : {}),
+          ...(options.accessTags ? { Access: 'Read → Write' } : {}),
+          ...(foreign.length ? { Workspace: foreign.join(' + ') } : {}),
+        }
+        if (Object.keys(bag).length) props[hop.id] = bag
         return [hop]
       }
 

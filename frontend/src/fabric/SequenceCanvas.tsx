@@ -177,34 +177,20 @@ function anchorY(n: FlowNode, rowKey?: string) {
  * `flow`/`sequence` name bands for a POSITION in the layout ("Source tables").
  * The other two are arrangements in their own right, not relabellings:
  *
- * `stages` — one band per medallion STAGE (landing, bronze, silver, gold…),
- * with the steps that feed a stage in the band to its left. A table sits in the
- * stage that holds it however late it was written, so the whole run reads
- * left-to-right; the only edges pointing left are genuine write-backs into an
- * earlier stage, which is exactly the thing worth seeing.
+ * Both of the others put one band per OWNER — the workspace, or the lakehouse
+ * standing in where none resolved — because that is who the thing belongs to.
+ * They differ in the axis: `stages` stacks each band's lakehouses in medallion
+ * order (landing, bronze, silver, gold) so the boxes read down the band, while
+ * `workspace` runs dependency depth down the canvas, so a run hopping between a
+ * platform and an engineering workspace draws as a zig-zag: right, down, back
+ * left, down.
  *
- * `workspace` — one band per WORKSPACE, with depth running down the canvas. A
- * medallion run that hops between a platform and an engineering workspace on
- * every write therefore draws as a zig-zag: right, down, back left, down.
+ * Both mirror the layout of the same name that Create model exports.
  */
 export type CanvasView = 'flow' | 'sequence' | 'stages' | 'workspace'
 
 /** The two views that name bands for what is in them rather than where it sits. */
 const SEMANTIC_VIEWS: readonly CanvasView[] = ['stages', 'workspace']
-
-/** The WORKSPACE a band holds. A lakehouse is an object in it, not its name. */
-function semanticBand(inCol: FlowNode[]): string {
-  const uniq = (xs: (string | undefined)[]) => [...new Set(xs.filter((x): x is string => !!x))]
-  const ws = uniq(inCol.map((n) => n.ws))
-  if (ws.length) return ws.join(' + ')
-  // No workspace resolved anywhere in the band: name it for the lakehouses it
-  // holds instead of the useless 'Tables'. A lakehouse is not a workspace and
-  // the band does not pretend otherwise — it is simply the most specific true
-  // thing left to say.
-  const lakes = uniq(inCol.map((n) => n.lakehouse))
-  if (lakes.length) return lakes.join(' + ')
-  return inCol.some((n) => n.kind === 'table') ? 'Tables' : 'Notebooks & pipelines'
-}
 
 /**
  * A container drawn BEHIND a run of cards that belong to one thing — the
@@ -504,82 +490,55 @@ export function stageRank(name: string): number {
 }
 
 /**
- * One band per medallion stage, with the steps that FEED a stage in the band to
- * its left: stage k's tables sit at column 2k+1, and everything writing into
- * them at column 2k.
+ * One band per OWNER, with each band's lakehouses stacked in medallion order —
+ * landing, bronze, silver, gold, top to bottom.
  *
- * This is what makes the view read left-to-right end to end. Dependency depth
- * (the flow view) puts a table wherever its longest path lands, so a gold table
- * re-read by a late cleanup step drifts rightwards away from the rest of gold.
- * Here a table's column is a property OF THE TABLE, so the only leftward edges
- * left on the canvas are genuine write-backs into an earlier stage.
+ * A medallion platform holding four lakehouses is one workspace, so it is one
+ * band. This used to be a band per STAGE, which split that one workspace across
+ * four bands all carrying its name, and made a stage look like an owner of its
+ * own. The stage did not stop mattering: it is what orders the lakehouse boxes
+ * inside the band, which is where a reader looks for it.
+ *
+ * The same arrangement `sequenceToModel`'s `stages` layout exports, so pressing
+ * Create model gives back the picture on screen.
  */
 export function layoutStages(nodes: FlowNode[], edges: FlowEdge[]): Layout {
-  const tables = nodes.filter((n) => n.kind === 'table')
-  const stageKey = (n: FlowNode) => n.lakehouse || n.ws || ''
-  const depth = depthsOf(nodes, edges)
+  const owner = ownerOf(nodes, edges)
+  const spaces = ownerOrder(nodes, edges, owner.key)
+  const index = new Map(spaces.map((s, i) => [s, i]))
+  const colOf = new Map(nodes.map((n) => [n.id, index.get(owner.key(n)) ?? 0]))
 
-  // Distinct stages, medallion order first, then anything unrecognised in
-  // dependency order behind it.
-  const seen = new Map<string, { rank: number; depth: number; at: number }>()
-  tables.forEach((t, i) => {
-    const key = stageKey(t)
-    const d = depth.get(t.id) ?? 0
-    const prev = seen.get(key)
-    if (!prev) seen.set(key, { rank: stageRank(key), depth: d, at: i })
+  // Medallion order inside the column. `columnLayout` keeps array order within
+  // a column and `sort` is stable, so a lakehouse naming no stage — and every
+  // step, which has none — holds its first-touch place behind the ranked ones.
+  const rank = (n: FlowNode) => (n.kind === 'table' && stageRank(n.lakehouse || '') + 1) || Infinity
+  const byStage = [...nodes].sort((a, b) => rank(a) - rank(b))
+
+  return columnLayout(byStage, colOf, (inCol) => owner.label(owner.key(inCol[0])))
+}
+
+/**
+ * The owner bands, left to right: earliest in the run first, unresolved last.
+ *
+ * Shared by both semantic layouts — they differ in what they do with the axis,
+ * not in who owns what, and two orderings of the same bands would have them
+ * disagree about which workspace the run starts in.
+ */
+function ownerOrder(nodes: FlowNode[], edges: FlowEdge[], key: (n: FlowNode) => string): string[] {
+  const depth = depthsOf(nodes, edges)
+  const first = new Map<string, { depth: number; at: number }>()
+  nodes.forEach((n, i) => {
+    const k = key(n)
+    const d = depth.get(n.id) ?? 0
+    const prev = first.get(k)
+    if (!prev) first.set(k, { depth: d, at: i })
     else prev.depth = Math.min(prev.depth, d)
   })
-  const stages = [...seen.entries()]
-    .sort(([, a], [, b]) => {
-      const ar = a.rank < 0 ? Infinity : a.rank
-      const br = b.rank < 0 ? Infinity : b.rank
-      return ar - br || a.depth - b.depth || a.at - b.at
-    })
-    .map(([key]) => key)
-  const stageIndex = new Map(stages.map((s, i) => [s, i]))
-
-  // A step's column: just left of the stage it writes into, but never left of
-  // anything it reads. A back-fill job reading gold and writing bronze satisfies
-  // only one of those, and it must be the reads — then its single backward edge
-  // is the WRITE back into bronze, which is the true statement about the run.
-  // Anchoring on the write instead would draw the read as the back-edge and say
-  // the opposite.
-  const writesOf = new Map<string, string[]>()
-  const readsOf = new Map<string, string[]>()
-  for (const e of edges) {
-    if (e.dashed || e.kind === 'column') continue
-    if (e.tone === 'write') (writesOf.get(e.from) ?? writesOf.set(e.from, []).get(e.from)!).push(e.to)
-    if (e.tone === 'read') (readsOf.get(e.to) ?? readsOf.set(e.to, []).get(e.to)!).push(e.from)
-  }
-  const stageOfTable = (id: string) => stageIndex.get(stageKey(nodes.find((n) => n.id === id)!) ?? '') ?? 0
-  const colOf = new Map<string, number>()
-  for (const n of nodes) {
-    if (n.kind === 'table') {
-      colOf.set(n.id, 2 * (stageIndex.get(stageKey(n)) ?? 0) + 1)
-      continue
-    }
-    const w = writesOf.get(n.id) ?? []
-    const r = readsOf.get(n.id) ?? []
-    const afterReads = r.length ? 2 * Math.max(...r.map(stageOfTable)) + 2 : -Infinity
-    const beforeWrites = w.length ? 2 * Math.min(...w.map(stageOfTable)) : -Infinity
-    const c = Math.max(afterReads, beforeWrites)
-    colOf.set(n.id, Number.isFinite(c) ? c : 0)
-  }
-
-  return columnLayout(nodes, colOf, (inCol) => {
-    const inTables = inCol.filter((n) => n.kind === 'table')
-    if (!inTables.length) {
-      // A steps band: its workspace when the run resolved one, else the stage
-      // it feeds — "Into lh_silver". A step column has no lakehouse of its own,
-      // so without the fallback every one of them read 'Notebooks & pipelines'
-      // and the picture had unnamed gaps down the middle.
-      if (inCol.some((n) => n.ws)) return semanticBand(inCol)
-      const fed = inCol.flatMap((n) => (writesOf.get(n.id) ?? []).map((t) => stageKey(nodes.find((x) => x.id === t)!)))
-      const uniq = [...new Set(fed.filter(Boolean))]
-      return uniq.length ? `Into ${uniq.join(' + ')}` : 'Notebooks & pipelines'
-    }
-    return semanticBand(inTables)
-  })
+  // An unresolved workspace sorts last: it is the least trustworthy column and
+  // should not head the canvas.
+  return [...first.entries()]
+    .sort(([ka, a], [kb, b]) => (ka === '' ? 1 : kb === '' ? -1 : a.depth - b.depth || a.at - b.at))
+    .map(([k]) => k)
 }
 
 /**
@@ -623,20 +582,7 @@ export function layoutWorkspaces(nodes: FlowNode[], edges: FlowEdge[]): Layout {
   const depth = depthsOf(nodes, edges)
   const owner = ownerOf(nodes, edges)
   const wsOf = (n: FlowNode) => owner.key(n)
-
-  const first = new Map<string, { depth: number; at: number }>()
-  nodes.forEach((n, i) => {
-    const key = wsOf(n)
-    const d = depth.get(n.id) ?? 0
-    const prev = first.get(key)
-    if (!prev) first.set(key, { depth: d, at: i })
-    else prev.depth = Math.min(prev.depth, d)
-  })
-  // An unresolved workspace sorts last: it is the least trustworthy column and
-  // should not head the canvas.
-  const spaces = [...first.entries()]
-    .sort(([ka, a], [kb, b]) => (ka === '' ? 1 : kb === '' ? -1 : a.depth - b.depth || a.at - b.at))
-    .map(([key]) => key)
+  const spaces = ownerOrder(nodes, edges, wsOf)
 
   const pos: Layout['pos'] = new Map()
   const containers: Container[] = []

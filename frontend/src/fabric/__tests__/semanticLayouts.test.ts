@@ -57,54 +57,52 @@ describe('stageRank', () => {
 })
 
 describe('layoutStages', () => {
-  it('orders bands by medallion stage and runs every edge to the right', () => {
+  it('gives the whole medallion one band, because it is one workspace', () => {
     const { nodes, edges } = medallion()
     const { pos, bands } = layoutStages(nodes, edges)
-    // Table bands take the workspace holding them; a steps band takes its own,
-    // which here is the engineering workspace running every hop.
-    expect(bands.map((b) => b.label)).toEqual([
-      'platform',
-      'engineering',
-      'platform',
-      'engineering',
-      'platform',
-      'engineering',
-      'platform',
-    ])
-    for (const e of edges) expect(pos.get(e.from)!.x).toBeLessThan(pos.get(e.to)!.x)
+    // A band per OWNER, not per stage: four lakehouses of one platform are one
+    // band. It used to draw seven, four of them carrying the same name.
+    expect(bands.map((b) => b.label)).toEqual(['platform', 'engineering'])
+    // and every hop crosses between the two — the zig-zag the port exports.
+    const dir = edges.map((e) => Math.sign(pos.get(e.to)!.x - pos.get(e.from)!.x))
+    expect(dir).toEqual([1, -1, 1, -1, 1, -1])
   })
 
-  it('points a write back into an earlier stage leftwards, and only that one', () => {
+  it('stacks the lakehouse boxes in medallion order inside the band', () => {
     const { nodes, edges } = medallion()
-    // A gold job that back-fills bronze — the one thing this view exists to show.
-    nodes.push(step('backfill', 'engineering'))
-    edges.push(
-      { from: 't:gold.orders', to: 's:backfill', tone: 'read' as const, kind: 'table' as const },
-      { from: 's:backfill', to: 't:bronze.orders', tone: 'write' as const, kind: 'table' as const },
-    )
-    const { pos } = layoutStages(nodes, edges)
-    const backward = edges.filter((e) => pos.get(e.to)!.x < pos.get(e.from)!.x)
-    expect(backward).toEqual([{ from: 's:backfill', to: 't:bronze.orders', tone: 'write', kind: 'table' }])
+    const { containers } = layoutStages(nodes, edges)
+    // The stage did not stop mattering — it orders the boxes down the band,
+    // which is where a reader looks for it now the band is the workspace.
+    expect(
+      containers!
+        .filter((c) => c.kind === 'lakehouse')
+        .sort((a, b) => a.y - b.y)
+        .map((c) => c.label),
+    ).toEqual(['lh_landing', 'lh_bronze', 'lh_silver', 'lh_gold'])
   })
 
-  it('keeps a table in its own stage however late it is written', () => {
+  it('keeps a table in its own lakehouse box however late it is written', () => {
     const { nodes, edges } = medallion()
     // A late step that re-reads gold and re-writes bronze would drag the bronze
-    // table rightwards under dependency depth. Its stage is a property of the
-    // table, so it does not move.
-    const before = layoutStages(nodes, edges).pos.get('t:bronze.orders')!.x
+    // table under dependency depth. Its lakehouse is a property of the table,
+    // so it does not move.
+    const before = layoutStages(nodes, edges).pos.get('t:bronze.orders')!
     nodes.push(step('late', 'engineering'))
     edges.push(
       { from: 't:gold.orders', to: 's:late', tone: 'read' as const, kind: 'table' as const },
       { from: 's:late', to: 't:bronze.orders', tone: 'write' as const, kind: 'table' as const },
     )
-    expect(layoutStages(nodes, edges).pos.get('t:bronze.orders')!.x).toBe(before)
+    expect(layoutStages(nodes, edges).pos.get('t:bronze.orders')!).toEqual(before)
   })
 
-  it('names a steps band for what it feeds when no workspace resolved', () => {
+  it('says so when a band stands in for an unknown workspace', () => {
     const nodes: FlowNode[] = [table('bronze.a', 'lh_bronze', ''), step('nb', '')]
     const edges = [{ from: 's:nb', to: 't:bronze.a', tone: 'write' as const, kind: 'table' as const }]
-    expect(layoutStages(nodes, edges).bands.map((b) => b.label)).toEqual(['Into lh_bronze', 'lh_bronze'])
+    // The step falls back to the lakehouse it writes into, so it shares the
+    // band rather than sitting in an unnamed one of its own.
+    expect(layoutStages(nodes, edges).bands.map((b) => b.label)).toEqual([
+      'lh_bronze · workspace unknown',
+    ])
   })
 
   it('boxes each lakehouse, and each pipeline on its own', () => {

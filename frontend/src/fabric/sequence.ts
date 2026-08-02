@@ -47,6 +47,15 @@ export interface SequenceState {
   steps: Step[]
   results: Map<string, StepResult>
   running: boolean
+  /**
+   * The results the CURRENT run replaced, kept so Diff has something to compare
+   * against.
+   *
+   * Snapshotted when a run starts rather than when it ends: at that moment the
+   * old results are complete and about to be thrown away, which is exactly what
+   * "last time" means. Null until a second run — one run has no previous.
+   */
+  previous: Map<string, StepResult> | null
 }
 
 export const stepReads = (r?: StepResult): string[] =>
@@ -119,7 +128,7 @@ export function copyActivityRun(a: FabricPipelineActivity): RunEntry | null {
 let seq = 0
 const newKey = () => `step-${++seq}`
 
-let state: SequenceState = { steps: [], results: new Map(), running: false }
+let state: SequenceState = { steps: [], results: new Map(), running: false, previous: null }
 const listeners = new Set<() => void>()
 
 function set(next: Partial<SequenceState>) {
@@ -185,7 +194,11 @@ export async function runAll() {
   const steps = state.steps
   const next = new Map<string, StepResult>()
   steps.forEach((s) => next.set(s.key, { status: 'pending', runs: [] }))
-  set({ running: true, results: new Map(next) })
+  // The run about to be overwritten becomes "last time". Only a run that
+  // produced something counts — comparing against a sequence that never ran
+  // would report every table as newly added.
+  const had = [...state.results.values()].some((r) => r.runs.length > 0)
+  set({ running: true, results: new Map(next), previous: had ? state.results : state.previous })
 
   // Schemas observed so far, carried forward into every later step.
   //
@@ -294,6 +307,6 @@ export async function runAll() {
 
 /** Test seam — reset the module store between cases. */
 export function __resetSequence() {
-  state = { steps: [], results: new Map(), running: false }
+  state = { steps: [], results: new Map(), running: false, previous: null }
   listeners.forEach((l) => l())
 }

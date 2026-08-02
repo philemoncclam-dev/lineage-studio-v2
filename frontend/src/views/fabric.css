@@ -1607,3 +1607,105 @@
   background: transparent;
   border: 1px dashed rgb(28 35 51 / 0.42);
 }
+
+/* Diff sits beside the view tabs and reads as one of them, set apart by a
+   divider — it changes how the canvas READS rather than how it is arranged. */
+.sbx-diff {
+  margin-left: 6px;
+  border-left: 1px solid var(--color-border);
+  border-radius: 0 4px 4px 0;
+  padding-left: 12px;
+}
+.sbx-diff:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* One strip under the canvas bar: run progress, a diff summary, or how much of
+   the finished run actually resolved. Only ever one of the three, because they
+   answer the same question at three different moments. */
+.sbx-strip {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary, #4a5468);
+  font-size: var(--text-micro, 11px);
+}
+.sbx-strip-text {
+  position: relative;
+  z-index: 1;
+}
+/* The progress fill, behind the text rather than a separate bar — the strip is
+   already a full-width row, and a second one would be chrome about chrome. */
+.sbx-strip-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in oklab, var(--color-accent, #1f6feb) 18%, transparent);
+  transition: width 0.3s ease;
+}
+.sbx-strip[data-tone='warn'] {
+  background: rgb(180 120 20 / 0.08);
+}
+.sbx-strip[data-tone='diff'] {
+  background: rgb(31 111 235 / 0.07);
+}
+.sbx-strip[data-tone='ok'] {
+  background: rgb(22 143 92 / 0.07);
+}
+
+/* A note strip on a card: why this table is thin, or what the diff found. Part
+   of the card's geometry (see NOTE_H) — the rows below shift by exactly this,
+   so an edge still lands on the row it names. */
+.sbx-flow-note {
+  display: flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-bottom: 1px solid rgb(28 35 51 / 0.08);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: help;
+}
+.sbx-flow-note[data-level='columns-only'] {
+  background: rgb(180 120 20 / 0.12);
+  color: #7a5410;
+}
+.sbx-flow-note[data-level='bare'] {
+  background: rgb(190 60 60 / 0.12);
+  color: #8c2b2b;
+}
+.sbx-flow-note[data-level='lost'] {
+  background: rgb(190 60 60 / 0.16);
+  color: #8c2b2b;
+}
+/* A card whose schema never resolved is drawn as the outline it is, so it does
+   not read as a table we know the shape of. */
+.sbx-flow-card[data-coverage='bare'] {
+  border-style: dashed;
+}
+/* Run state, while a sequence is going. A step not reached yet is faded: the
+   canvas is a live picture during a run, and a pending card at full strength
+   claims a result it does not have. */
+.sbx-flow-card[data-status='pending'] {
+  opacity: 0.45;
+}
+.sbx-flow-card[data-status='running'] {
+  border-color: var(--color-accent, #1f6feb);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent, #1f6feb) 18%, transparent);
+}
+.sbx-flow-card[data-status='error'] {
+  border-color: #be3c3c;
+}
+/* Diff marks. Green for what is new, on the card and on the row — the same
+   colour the write edges use, because both mean "this run produced it". */
+.sbx-flow-card[data-change='added'] {
+  border-color: #168f5c;
+  box-shadow: 0 0 0 3px rgb(22 143 92 / 0.14);
+}
+.sbx-flow-row[data-change='added'] {
+  background: rgb(22 143 92 / 0.1);
+}

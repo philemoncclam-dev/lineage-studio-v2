@@ -1096,7 +1096,7 @@ function Detail({ sel }: { sel?: Selected }) {
 // sequence drawn as lineage plus its run report. Two tabs rather than two
 // pages; the sandbox has no route of its own any more.
 function DetailColumn({ sel }: { sel?: Selected }) {
-  const { steps, results, running } = useSequence()
+  const { steps, results, running, previous } = useSequence()
   const [tab, setTab] = useState<'detail' | 'sandbox' | 'report'>('detail')
 
   // A run is the moment the canvas matters, so surface it without being asked.
@@ -1151,6 +1151,8 @@ function DetailColumn({ sel }: { sel?: Selected }) {
           <SequenceCanvas
             steps={steps}
             results={results}
+            previous={previous}
+            running={running}
             pane={tab === 'report' ? 'report' : 'canvas'}
           />
         )}

@@ -18,7 +18,9 @@ import {
   type SandboxTableRef,
 } from '../api'
 import { StepIcon } from './SequencePanel'
-import { stepReads, stepTables, stepWrites, type Step, type StepResult } from './sequence'
+import { stepReads, stepTables, stepWrites, type Step, type StepResult, type StepStatus } from './sequence'
+import { coverageBadge, coverageOf, coverageSummary, type CoverageLevel } from './coverage'
+import { columnKey, diffIsClean, diffRuns, type RunDiff } from './runDiff'
 import {
   sequenceToModel,
   defaultModelName,
@@ -54,6 +56,8 @@ export interface FlowRow {
    * accesses.
    */
   depth?: number
+  /** New since the previous run, when Diff is on. */
+  change?: 'added'
   /**
    * For a column row nested under a table row inside a STEP card: the key of
    * that table row.
@@ -95,6 +99,19 @@ export interface FlowNode {
    * appearance differs, so only its appearance is carried here.
    */
   isFile?: boolean
+  /**
+   * What the run resolved about this table, and why not where it did not.
+   *
+   * A bare card and a fully-traced card looked identical, which overstates the
+   * result: the reasons a table comes back empty (schema unreadable, DataFrame
+   * write on a SQL-only engine, dynamic SQL) are different claims, and the run
+   * report knew all of them while the canvas showed none.
+   */
+  coverage?: { level: CoverageLevel; badge: string; reason: string }
+  /** How the step is going, while a sequence is running. Steps only. */
+  status?: StepStatus
+  /** Diff verdict against the previous run, when Diff is on. */
+  change?: 'added' | 'lost-lineage'
   /**
    * A table's full column list. `rows` is the truncated view the card shows
    * until it is expanded — a 60-column table would otherwise be a mile of card
@@ -147,11 +164,20 @@ const BAND_H = 26
 /** Bezier reach of a backward (write-back) edge. */
 const LOOP = 46
 
-const nodeHeight = (n: FlowNode) => HEAD_H + n.rows.length * ROW_H
+/** Height of one note strip under a card head — coverage, or a diff verdict. */
+const NOTE_H = 16
+/**
+ * How many note strips a card carries. Part of the geometry, not decoration:
+ * the rows below them shift down by exactly this, and an edge anchored without
+ * it lands on the wrong row.
+ */
+const notesOf = (n: FlowNode) => (n.coverage ? 1 : 0) + (n.change === 'lost-lineage' ? 1 : 0)
+const nodeHeight = (n: FlowNode) => HEAD_H + notesOf(n) * NOTE_H + n.rows.length * ROW_H
 /** Vertical centre of a row (or of the header when `rowKey` is undefined). */
 function anchorY(n: FlowNode, rowKey?: string) {
   const i = rowKey ? n.rows.findIndex((r) => r.key === rowKey) : -1
-  return i < 0 ? HEAD_H / 2 : HEAD_H + i * ROW_H + ROW_H / 2
+  const top = HEAD_H + notesOf(n) * NOTE_H
+  return i < 0 ? HEAD_H / 2 : top + i * ROW_H + ROW_H / 2
 }
 
 /**
@@ -802,6 +828,9 @@ function FlowCanvas({
                 key={n.id}
                 className="sbx-flow-card"
                 data-kind={n.isFile ? 'file' : n.kind}
+                data-status={n.status}
+                data-change={n.change}
+                data-coverage={n.coverage?.level}
                 style={{ left: p.x + PAD, top: p.y + PAD, width: NW }}
               >
                 <div className="sbx-flow-card-head" title={n.sub ? `${n.label} · ${n.sub}` : n.label}>
@@ -810,6 +839,19 @@ function FlowCanvas({
                   {n.sub && <span className="sbx-flow-card-sub">{n.sub}</span>}
                   {!n.sub && n.rows.length > 0 && <span className="sbx-flow-count">{n.rows.length}</span>}
                 </div>
+                {/* Why this card is thin, on the card. The reason was only ever
+                    in the run report, so a bare table and a fully traced one
+                    looked the same and the canvas overstated the result. */}
+                {n.coverage && (
+                  <div className="sbx-flow-note" data-level={n.coverage.level} title={n.coverage.reason}>
+                    {n.coverage.badge}
+                  </div>
+                )}
+                {n.change === 'lost-lineage' && (
+                  <div className="sbx-flow-note" data-level="lost" title="This table had column lineage in the previous run and has none now.">
+                    lineage lost
+                  </div>
+                )}
                 {n.rows.map((r) =>
                   r.key.startsWith('__more') ? (
                     <button
@@ -825,6 +867,7 @@ function FlowCanvas({
                       key={r.key}
                       className="sbx-flow-row"
                       data-tone={r.tone}
+                      data-change={r.change}
                       // Inline, like the Modeling canvas's row indent — the row
                       // height is fixed by the layout, so the nesting must not
                       // come from anything that could change it.
@@ -881,10 +924,13 @@ export function buildFlow(
   steps: Step[],
   results: Map<string, StepResult>,
   fold = false,
+  /** The previous run, when Diff is on. Marks what is new and what stopped resolving. */
+  diff?: RunDiff,
 ): { nodes: FlowNode[]; edges: FlowEdge[] } {
   const nodes: FlowNode[] = []
   const edges: FlowEdge[] = []
   const schemas = collectSchemas(results)
+  const coverage = coverageOf(results)
   // Ref → parts, merged over every step, so a table read by one notebook and
   // written by another is one card carrying one workspace.
   const refs: Record<string, SandboxTableRef> = Object.assign(
@@ -906,7 +952,10 @@ export function buildFlow(
         label: c.name,
         tone: 'col' as const,
         meta: c.type ?? undefined,
+        // A column that was not there last time, when Diff is on.
+        change: diff?.addedColumns.has(columnKey(ref, c.name)) ? ('added' as const) : undefined,
       }))
+      const cov = coverage.get(ref)
       nodes.push({
         id,
         kind: 'table',
@@ -917,6 +966,14 @@ export function buildFlow(
         // A raw file has no schema to count, so it says what it is instead of
         // showing "0 cols" — which would read as a table we failed to resolve.
         sub: refKind(ref, refs) === 'file' ? 'raw files' : allRows.length ? `${allRows.length} cols` : undefined,
+        coverage: cov && cov.level !== 'traced'
+          ? { level: cov.level, badge: coverageBadge(cov.level), reason: cov.reason }
+          : undefined,
+        change: diff?.lostLineage.has(ref)
+          ? 'lost-lineage'
+          : diff?.addedTables.has(ref)
+            ? 'added'
+            : undefined,
         rows: allRows,
         allRows,
       })
@@ -1075,6 +1132,7 @@ export function buildFlow(
       // cards out on. Empty when no run resolved one — the same "unresolved"
       // the tables column already distinguishes from a real name.
       ws: own,
+      status: res?.status,
       rows,
       // Every card carries its full row list; the canvas decides how much of
       // each column run to show.
@@ -1208,12 +1266,19 @@ function ToModelBar({
   ran,
   view,
   onView,
+  diffOn,
+  onDiff,
+  canDiff,
 }: {
   steps: Step[]
   results: Map<string, StepResult>
   ran: boolean
   view: CanvasView
   onView: (v: CanvasView) => void
+  diffOn: boolean
+  onDiff: (on: boolean) => void
+  /** False until a second run — one run has nothing to compare against. */
+  canDiff: boolean
 }) {
   const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
@@ -1270,6 +1335,21 @@ function ToModelBar({
           </button>
         ))}
       </div>
+      {/* Diff sits with the view tabs because it is a way of reading the same
+          canvas, not a separate mode with its own arrangement. */}
+      <button
+        className="sbx-view sbx-diff"
+        data-active={diffOn || undefined}
+        disabled={!canDiff}
+        title={
+          canDiff
+            ? 'Mark what changed since the previous run'
+            : 'Run the sequence twice — there is nothing to compare against yet'
+        }
+        onClick={() => onDiff(!diffOn)}
+      >
+        Diff
+      </button>
       {error && (
         <span className="fx-note" data-error="true">
           {error}
@@ -1431,20 +1511,31 @@ export function SequenceCanvas({
    * column to itself and the report gets a tab of its own.
    */
   pane = 'canvas',
+  previous = null,
+  running = false,
 }: {
   steps: Step[]
   results: Map<string, StepResult>
   pane?: 'canvas' | 'report'
+  /** The run this one replaced, for Diff. */
+  previous?: Map<string, StepResult> | null
+  running?: boolean
 }) {
   const [view, setView] = useState<CanvasView>('flow')
   // Rebuilt when the view changes, because the semantic views fold a step's
   // read and write into one hop row and the positional ones do not — the same
   // split `sequenceToModel` makes, so the card and the port always agree.
   const semanticView = SEMANTIC_VIEWS.includes(view)
+  const [diffOn, setDiffOn] = useState(false)
+  const diff = useMemo(() => diffRuns(previous, results), [previous, results])
   const flow = useMemo(
-    () => buildFlow(steps, results, semanticView),
-    [steps, results, semanticView],
+    () => buildFlow(steps, results, semanticView, diffOn && !diff.empty ? diff : undefined),
+    [steps, results, semanticView, diffOn, diff],
   )
+  const coverage = useMemo(() => coverageSummary(results), [results])
+  //: how far a running sequence has got — the canvas was a spinner until the
+  //  whole thing finished, on a pipeline that can be minutes.
+  const done = [...results.values()].filter((r) => r.status === 'ok' || r.status === 'error').length
   const ran = results.size > 0
 
   // Every executed notebook across all steps — a notebook step contributes one,
@@ -1509,7 +1600,54 @@ export function SequenceCanvas({
   if (pane === 'canvas')
     return (
       <div className="sbx-canvas-body">
-        <ToModelBar steps={steps} results={results} ran={ran} view={view} onView={setView} />
+        <ToModelBar
+          steps={steps}
+          results={results}
+          ran={ran}
+          view={view}
+          onView={setView}
+          diffOn={diffOn}
+          onDiff={setDiffOn}
+          canDiff={!diff.empty}
+        />
+        {/* One strip under the bar, carrying whichever of the three things is
+            true right now: a run in progress, a diff being read, or how much of
+            the finished run actually resolved. */}
+        {running ? (
+          <div className="sbx-strip" data-tone="running">
+            <span className="sbx-strip-bar" style={{ width: `${(done / Math.max(1, steps.length)) * 100}%` }} />
+            <span className="sbx-strip-text">
+              Running — step {Math.min(done + 1, steps.length)} of {steps.length}
+              {steps[done] ? `: ${steps[done].name}` : ''}
+            </span>
+          </div>
+        ) : diffOn && !diff.empty ? (
+          <div className="sbx-strip" data-tone={diffIsClean(diff) ? 'ok' : 'diff'}>
+            <span className="sbx-strip-text">
+              {diffIsClean(diff)
+                ? 'No change since the previous run — same tables, same columns, same lineage.'
+                : [
+                    diff.addedTables.size && `${diff.addedTables.size} table(s) new`,
+                    diff.removedTables.size &&
+                      `${diff.removedTables.size} no longer touched: ${[...diff.removedTables].join(', ')}`,
+                    diff.addedColumns.size && `${diff.addedColumns.size} column(s) new`,
+                    diff.removedColumns.size && `${diff.removedColumns.size} column(s) gone`,
+                    diff.lostLineage.size && `${diff.lostLineage.size} lost column lineage`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+            </span>
+          </div>
+        ) : ran && coverage.tables > 0 ? (
+          <div className="sbx-strip" data-tone={coverage.traced === coverage.tables ? 'ok' : 'warn'}>
+            <span className="sbx-strip-text">
+              {coverage.traced} of {coverage.tables} tables have column lineage
+              {coverage.columnsOnly > 0 && ` · ${coverage.columnsOnly} columns only`}
+              {coverage.bare > 0 && ` · ${coverage.bare} with no schema resolved`}
+              {coverage.traced < coverage.tables && ' — hover a card’s note for why'}
+            </span>
+          </div>
+        ) : null}
         <FlowCanvas nodes={flow.nodes} edges={flow.edges} view={view} />
       </div>
     )

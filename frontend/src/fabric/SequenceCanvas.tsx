@@ -326,75 +326,32 @@ function stableByContainer(column: FlowNode[]): FlowNode[] {
   return order.flatMap((k) => bins.get(k)!)
 }
 
-/** Extra vertical space between two workspace groups in the tables column. */
-const GROUP_GAP = 22
-/** Height reserved for a workspace header above its group of table cards. */
+/** Height reserved for a group heading above its run of cards. */
 const GROUP_H = 18
 
 /**
- * Order the tables column by workspace, keeping first-touched order within each
- * group, and return the group each table starts (so the card can be labelled).
+ * Two columns: steps on the left in run order, tables on the right in
+ * first-touch order.
  *
- * Grouping rather than one flat column because a notebook that writes into
- * another workspace is the thing that is hard to see otherwise: interleaved,
- * two `customers` cards from two workspaces read as a duplicate rather than as
- * a cross-workspace write. Unresolved workspaces sort last — they are the least
- * trustworthy rows and should not head the column.
- */
-function groupByWorkspace(tables: FlowNode[]): { table: FlowNode; startsGroup: boolean }[] {
-  const order: string[] = []
-  for (const t of tables) {
-    const ws = t.ws ?? ''
-    if (!order.includes(ws)) order.push(ws)
-  }
-  order.sort((a, b) => (a === '' ? 1 : b === '' ? -1 : 0))
-  const out: { table: FlowNode; startsGroup: boolean }[] = []
-  for (const ws of order) {
-    tables
-      .filter((t) => (t.ws ?? '') === ws)
-      .forEach((table, i) => out.push({ table, startsGroup: i === 0 }))
-  }
-  return out
-}
-
-/**
- * Two columns, tables then steps. Node order is preserved from `buildFlow`,
- * which pushes steps in sequence order — so "first step on top" needs no
- * sorting. The tables column is regrouped by workspace.
+ * Exactly what `sequenceToModel` exports from this view — two layers,
+ * `Notebooks & pipelines` then `Tables`, with the tables flat inside theirs.
+ * The canvas used to regroup the tables column by workspace, with its own
+ * headers, its own extra gap and a band reading `Tables · 2 workspaces`, none
+ * of which the ported model had: pressing Create model rearranged the picture
+ * you pressed it on. Grouping by owner is what Zig-Zag is for, and it does it
+ * on both sides.
+ *
+ * Node order is preserved from `buildFlow`, which pushes steps in sequence
+ * order, so "first step on top" needs no sorting.
  */
 function layoutSequence(nodes: FlowNode[]): Layout {
-  const steps = nodes.filter((n) => n.kind !== 'table')
-  const tables = nodes.filter((n) => n.kind === 'table')
   const pos: Layout['pos'] = new Map()
-  const stepH = stackColumn(steps, 0, pos)
-
-  const grouped = groupByWorkspace(tables)
-  const groups: Layout['groups'] = []
-  let y = 0
-  grouped.forEach(({ table, startsGroup }, i) => {
-    if (startsGroup) {
-      if (i > 0) y += GROUP_GAP
-      groups.push({
-        key: table.ws || '__unknown',
-        label: table.ws || 'workspace unresolved',
-        x: NW + GX,
-        y,
-      })
-      y += GROUP_H
-    }
-    pos.set(table.id, { x: NW + GX, y })
-    y += nodeHeight(table) + GY
-  })
-  const tableH = Math.max(0, y - GY)
-
-  const spaces = new Set(tables.map((t) => t.ws ?? '').filter(Boolean))
+  const stepH = stackColumn(nodes.filter((n) => n.kind !== 'table'), 0, pos)
+  const tableH = stackColumn(nodes.filter((n) => n.kind === 'table'), NW + GX, pos)
   return {
     pos,
-    bands: [
-      band(0, 'Notebooks & pipelines', 0, 1),
-      band(1, spaces.size > 1 ? `Tables · ${spaces.size} workspaces` : 'Tables', 1, 1),
-    ],
-    groups,
+    bands: [band(0, 'Notebooks & pipelines', 0, 1), band(1, 'Tables', 1, 1)],
+    groups: [],
     width: 2 * (NW + GX) - GX,
     height: Math.max(1, stepH, tableH),
   }
@@ -806,9 +763,9 @@ function FlowCanvas({
               key={g.key}
               className="sbx-flow-ws"
               data-kind={g.kind}
-              data-unknown={g.key === '__unknown' || undefined}
+
               style={{ left: g.x + PAD, top: g.y + PAD, width: NW, height: GROUP_H }}
-              title={g.key === '__unknown' ? 'the run could not resolve a workspace' : g.label}
+              title={g.label}
             >
               {g.label}
             </div>

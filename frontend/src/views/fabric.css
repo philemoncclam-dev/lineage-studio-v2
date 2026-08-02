@@ -1566,11 +1566,9 @@
   line-height: 1.35;
 }
 
-/* Workspace group header above a run of table cards in the sequence view.
-   Drawn once per group rather than badged on every card — the column is
-   already ordered by workspace, so repeating the name down the canvas would
-   be noise. `data-unknown` marks a table whose workspace the run could not
-   resolve: it must not read as belonging to the notebook's own. */
+/* Group heading above a run of cards in Zig-Zag — the lakehouse holding those
+   tables, or the pipeline running those steps. Drawn once per run rather than
+   badged on every card, since the band is already ordered by it. */
 .sbx-flow-ws {
   position: absolute;
   display: flex;
@@ -1596,16 +1594,6 @@
 .sbx-flow-ws[data-kind='pipeline'] {
   text-transform: none;
   letter-spacing: 0;
-}
-.sbx-flow-ws[data-unknown] {
-  color: rgb(28 35 51 / 0.42);
-  font-style: italic;
-  text-transform: none;
-  letter-spacing: 0;
-}
-.sbx-flow-ws[data-unknown]::before {
-  background: transparent;
-  border: 1px dashed rgb(28 35 51 / 0.42);
 }
 
 /* Diff sits beside the view tabs and reads as one of them, set apart by a

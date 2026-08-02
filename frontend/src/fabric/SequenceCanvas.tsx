@@ -158,6 +158,14 @@ const NW = 208
 const HEAD_H = 26
 const ROW_H = 20
 const GX = 76
+/**
+ * The gutter Zig-Zag uses instead.
+ *
+ * Two bands carry ALL of the traffic in that view — every read and every write
+ * crosses the same gap — and at the ordinary gutter the curves merged into one
+ * band of ink. Wider costs a little scrolling and buys separable lines.
+ */
+const ZIG_GX = 150
 const GY = 26
 const PAD = 18
 const BAND_H = 26
@@ -252,10 +260,10 @@ function stackColumn(column: FlowNode[], x: number, pos: Layout['pos']): number 
   return Math.max(0, y - GY)
 }
 
-function band(key: number, label: string, col: number, lastCol: number) {
-  const left = col * (NW + GX) - (col === 0 ? 0 : GX / 2)
-  const right = col * (NW + GX) + NW + (col === lastCol ? 0 : GX / 2)
-  return { key, label, left, width: right - left, centerX: col * (NW + GX) + NW / 2 }
+function band(key: number, label: string, col: number, lastCol: number, gap = GX) {
+  const left = col * (NW + gap) - (col === 0 ? 0 : gap / 2)
+  const right = col * (NW + gap) + NW + (col === lastCol ? 0 : gap / 2)
+  return { key, label, left, width: right - left, centerX: col * (NW + gap) + NW / 2 }
 }
 
 /**
@@ -489,35 +497,65 @@ export function stageRank(name: string): number {
 }
 
 /**
- * Zig-Zag: one band per OWNER, the bands that RUN things on the left and the
- * bands that HOLD things on the right, with each band's lakehouses stacked in
- * medallion order — landing, bronze, silver, gold, top to bottom.
+ * Zig-Zag: owner across, depth DOWN.
  *
- * A medallion platform holding four lakehouses is one workspace, so it is one
- * band. This used to be a band per STAGE, which split that one workspace across
- * four bands all carrying its name, and made a stage look like an owner of its
- * own. The stage did not stop mattering: it is what orders the lakehouses
- * inside the band, which is where a reader looks for it.
+ * The x axis is who owns the card — the workspace, or the lakehouse standing in
+ * where none resolved — with the bands that RUN things first, so the steps are
+ * on the left and the tables they touch on the right.
  *
- * Steps left, tables right is what makes the name true: every read crosses
- * rightward to a table and every write crosses back, so the run reads as one
- * zig-zag between two bands instead of a column order that changes with the
- * run. The same arrangement `sequenceToModel`'s `stages` layout exports, so
- * pressing Create model gives back the picture on screen.
+ * The y axis is dependency depth, and it is what earns the name. Both bands are
+ * laid out against the SAME vertical scale, so a step and the table it reads are
+ * one lane apart and every hop is a step sideways and a step down: right, down,
+ * back left, down. Stacking each band independently from the top — which is what
+ * this did — put step five beside the first lakehouse and drew the run as a
+ * fan of long diagonals crossing each other. Two columns with lines between them
+ * is not a zig-zag.
+ *
+ * Medallion stage survives as the tie-break INSIDE a lane: two tables at the
+ * same depth sort landing before bronze before silver. It cannot be the primary
+ * sort any more without breaking the vertical agreement that makes the hops
+ * read, and depth already puts the stages in order in the normal case, because
+ * that is what a medallion run does.
+ *
+ * The same arrangement `sequenceToModel`'s `stages` layout exports, so pressing
+ * Create model gives back the picture on screen.
  */
 export function layoutStages(nodes: FlowNode[], edges: FlowEdge[]): Layout {
+  const depth = depthsOf(nodes, edges)
   const owner = ownerOf(nodes, edges)
   const spaces = stepsFirst(nodes, ownerOrder(nodes, edges, owner.key), owner.key)
-  const index = new Map(spaces.map((s, i) => [s, i]))
-  const colOf = new Map(nodes.map((n) => [n.id, index.get(owner.key(n)) ?? 0]))
 
-  // Medallion order inside the column. `columnLayout` keeps array order within
-  // a column and `sort` is stable, so a lakehouse naming no stage — and every
-  // step, which has none — holds its first-touch place behind the ranked ones.
+  // Medallion order within a lane. `sort` is stable, so a lakehouse naming no
+  // stage — and every step, which has none — keeps its first-touch place.
   const rank = (n: FlowNode) => (n.kind === 'table' && stageRank(n.lakehouse || '') + 1) || Infinity
   const byStage = [...nodes].sort((a, b) => rank(a) - rank(b))
 
-  return columnLayout(byStage, colOf, (inCol) => owner.label(owner.key(inCol[0])))
+  const pos: Layout['pos'] = new Map()
+  const groups: Layout['groups'] = []
+  const maxDepth = Math.max(0, ...depth.values())
+  let y = 0
+  for (let d = 0; d <= maxDepth; d++) {
+    let lane = y
+    spaces.forEach((ws, c) => {
+      const here = stableByContainer(
+        byStage.filter((n) => owner.key(n) === ws && (depth.get(n.id) ?? 0) === d),
+      )
+      if (!here.length) return
+      lane = Math.max(lane, stackGrouped(here, c * (NW + ZIG_GX), y, pos, groups))
+    })
+    // An empty lane adds nothing: a depth no card lands on is not a gap in the
+    // run, it is an artefact of how the depths were numbered.
+    y = lane === y ? y : lane + GY * 2
+  }
+
+  const lastCol = spaces.length - 1
+  return {
+    pos,
+    groups,
+    bands: spaces.map((ws, c) => band(c, owner.label(ws), c, lastCol, ZIG_GX)),
+    width: spaces.length * (NW + ZIG_GX) - ZIG_GX,
+    height: Math.max(1, y - GY * 2),
+  }
 }
 
 /**
@@ -586,31 +624,6 @@ function ownerOf(nodes: FlowNode[], edges: FlowEdge[]) {
   return { key, label }
 }
 
-/**
- * Place nodes into the columns they were assigned, dropping empty ones, and
- * box each column's lakehouses and pipelines.
- *
- * Shared by `layoutStages` and anything else that decides "which column" for
- * itself: the column index a caller computes is semantic (stage 3), while the
- * one drawn has to be contiguous, or an unused stage leaves a blank band.
- */
-function columnLayout(
-  nodes: FlowNode[],
-  colOf: Map<string, number>,
-  label: (inCol: FlowNode[]) => string,
-): Layout {
-  const used = [...new Set(nodes.map((n) => colOf.get(n.id) ?? 0))].sort((a, b) => a - b)
-  const pos: Layout['pos'] = new Map()
-  const groups: Layout['groups'] = []
-  let height = 1
-  const bands = used.map((c, i) => {
-    const inCol = stableByContainer(nodes.filter((n) => (colOf.get(n.id) ?? 0) === c))
-    height = Math.max(height, stackGrouped(inCol, i * (NW + GX), 0, pos, groups))
-    return band(i, label(inCol), i, used.length - 1)
-  })
-  return { pos, bands, groups, width: used.length * (NW + GX) - GX, height }
-}
-
 function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
   const colOf = depthsOf(nodes, edges, true)
 
@@ -661,7 +674,17 @@ const groupKey = (nodeId: string, group?: string) => `${nodeId}::${group ?? ''}`
  * Runs here rather than in `buildFlow` so expanding is a pure re-layout: the
  * graph, and the edges derived from it, never change.
  */
-export function truncateRows(n: FlowNode, expanded: ReadonlySet<string>): FlowRow[] {
+export function truncateRows(
+  n: FlowNode,
+  expanded: ReadonlySet<string>,
+  /**
+   * How many column rows a run shows before it needs opening. Zig-Zag passes 0:
+   * card HEIGHT is what makes its diagonals long, and the first read of that
+   * view should be boxes and arrows with the schema one click away. The other
+   * views show a few, because their columns are the point.
+   */
+  caps: { table: number; nested: number } = { table: MAX_TABLE_ROWS, nested: MAX_NESTED_COLS },
+): FlowRow[] {
   const all = n.allRows ?? n.rows
   const out: FlowRow[] = []
   for (let i = 0; i < all.length; ) {
@@ -675,7 +698,7 @@ export function truncateRows(n: FlowNode, expanded: ReadonlySet<string>): FlowRo
     let end = i
     while (end < all.length && all[end].tone === 'col' && all[end].group === group) end++
     const run = all.slice(i, end)
-    const cap = group ? MAX_NESTED_COLS : MAX_TABLE_ROWS
+    const cap = group ? caps.nested : caps.table
     if (run.length <= cap) out.push(...run)
     else {
       const open = expanded.has(groupKey(n.id, group))
@@ -713,9 +736,18 @@ function FlowCanvas({
       return next
     })
 
+  // Zig-Zag opens with the columns shut: its lines are long because its cards
+  // are tall, and the schema is one click away on any card that needs it.
+  const caps = useMemo(
+    () =>
+      view === 'stages'
+        ? { table: 0, nested: 0 }
+        : { table: MAX_TABLE_ROWS, nested: MAX_NESTED_COLS },
+    [view],
+  )
   const nodes = useMemo(
-    () => rawNodes.map((n) => (n.allRows ? { ...n, rows: truncateRows(n, expanded) } : n)),
-    [rawNodes, expanded],
+    () => rawNodes.map((n) => (n.allRows ? { ...n, rows: truncateRows(n, expanded, caps) } : n)),
+    [rawNodes, expanded, caps],
   )
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
 
@@ -795,17 +827,27 @@ function FlowCanvas({
               if (!sn || !tn || !s || !t) return null
               const sy = s.y + anchorY(sn, e.fromRow) + PAD
               const ty = t.y + anchorY(tn, e.toRow) + PAD
-              // A backward edge — in the sequence view, a step writing to a
-              // table in the column on its LEFT. It leaves the step's left edge
-              // and lands on the table's right edge, so the return trip reads
-              // as a return trip rather than crossing straight through both
-              // cards. Forward edges keep the plain right-to-left curve.
-              const backward = t.x <= s.x
+              // A backward edge leaves the source's LEFT side and lands on the
+              // target's RIGHT, looping out so a return trip reads as one
+              // rather than crossing straight through both cards.
+              //
+              // Right-to-left is not enough to earn that treatment in Zig-Zag,
+              // where every READ crosses right-to-left by construction — half
+              // the traffic was drawn in the style that means "this one is
+              // unusual". There, an edge is backwards only when it also goes
+              // UP: back and above is a genuine write into something already
+              // passed, and back-and-down is just the other half of a hop.
+              const backward = view === 'stages' ? t.x <= s.x && t.y <= s.y : t.x <= s.x
               const sx = (backward ? s.x : s.x + NW) + PAD
               const tx = (backward ? t.x + NW : t.x) + PAD
+              // Control points at a third rather than the midpoint: two bands
+              // carrying every edge in the run share one gutter, and curves
+              // that all break in the middle merge into a single band of ink.
+              const c1 = sx + (tx - sx) * 0.36
+              const c2 = sx + (tx - sx) * 0.64
               const d = backward
                 ? `M${sx} ${sy}C${sx - LOOP} ${sy} ${tx + LOOP} ${ty} ${tx} ${ty}`
-                : `M${sx} ${sy}C${(sx + tx) / 2} ${sy} ${(sx + tx) / 2} ${ty} ${tx} ${ty}`
+                : `M${sx} ${sy}C${c1} ${sy} ${c2} ${ty} ${tx} ${ty}`
               return (
                 <path
                   key={i}

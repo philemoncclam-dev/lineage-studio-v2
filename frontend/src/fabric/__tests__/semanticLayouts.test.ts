@@ -82,18 +82,29 @@ describe('layoutStages', () => {
     ).toEqual(['lh_landing', 'lh_bronze', 'lh_silver', 'lh_gold'])
   })
 
-  it('keeps a table in its own lakehouse group however late it is written', () => {
+  it('keeps a table in its owner band however late it is written', () => {
     const { nodes, edges } = medallion()
-    // A late step that re-reads gold and re-writes bronze would drag the bronze
-    // table under dependency depth. Its lakehouse is a property of the table,
-    // so it does not move.
+    // A late step that re-reads gold and re-writes bronze pushes the bronze
+    // table DOWN — depth is the y axis now and its depth genuinely changed.
+    // What must not move is the band: ownership is not a function of the run,
+    // and a table hopping between columns is the thing this view exists to
+    // avoid.
     const before = layoutStages(nodes, edges).pos.get('t:bronze.orders')!
     nodes.push(step('late', 'engineering'))
     edges.push(
       { from: 't:gold.orders', to: 's:late', tone: 'read' as const, kind: 'table' as const },
       { from: 's:late', to: 't:bronze.orders', tone: 'write' as const, kind: 'table' as const },
     )
-    expect(layoutStages(nodes, edges).pos.get('t:bronze.orders')!).toEqual(before)
+    expect(layoutStages(nodes, edges).pos.get('t:bronze.orders')!.x).toBe(before.x)
+  })
+
+  it('descends on every hop, so the run reads top to bottom', () => {
+    const { nodes, edges } = medallion()
+    const { pos } = layoutStages(nodes, edges)
+    // Both bands share one vertical scale: every edge lands strictly lower
+    // than it left. Stacking each band from the top independently is what drew
+    // the run as a fan of crossing diagonals.
+    for (const e of edges) expect(pos.get(e.to)!.y).toBeGreaterThan(pos.get(e.from)!.y)
   })
 
   it('says so when a band stands in for an unknown workspace', () => {

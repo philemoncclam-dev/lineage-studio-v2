@@ -835,8 +835,15 @@ export function sequenceToModel(
       // the same shape (`{id, name, children}`) and a Transition may point at
       // either — so the object built above becomes the attribute verbatim, and
       // `objIdOf` keeps addressing it by the same id. No edge has to be rebuilt.
-      if (semantic && n.kind === 'table') {
-        const lake = refLakehouse(n.ref ?? n.name, refs) || 'Tables'
+      if (n.kind === 'table' && refLakehouse(n.ref ?? n.name, refs)) {
+        // The lakehouse is the object and its tables hang beneath it, in every
+        // layout — not just the semantic one. The canvas draws a lakehouse card
+        // holding its tables whichever view is on screen, and a port that
+        // flattened them back out restructured the picture it was pressed on.
+        // A table whose lakehouse never resolved stays a top-level object:
+        // there is nothing to nest it under, and a holder called `Tables` would
+        // claim a lakehouse that was never named.
+        const lake = refLakehouse(n.ref ?? n.name, refs)
         ;(grouped.get(lake) ?? grouped.set(lake, []).get(lake)!).push(object)
       } else if (semantic && parentPipeline(n.name)) {
         // A notebook reached through a pipeline belongs UNDER that pipeline.

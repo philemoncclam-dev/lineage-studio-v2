@@ -301,7 +301,7 @@ const refs = (...rs: [string, string, string][]) =>
   )
 
 describe('buildFlow across workspaces', () => {
-  it('keeps two same-named tables in different workspaces as separate cards', () => {
+  it('keeps two same-named lakehouses in different workspaces as separate cards', () => {
     const s = step('a', 'nb')
     const results = new Map<string, StepResult>([
       [
@@ -325,8 +325,12 @@ describe('buildFlow across workspaces', () => {
     const { nodes } = buildFlow([s], results)
     const tables = nodes.filter((n) => n.kind === 'table')
     expect(tables).toHaveLength(2)
-    // both display as `customers`, but carry different workspaces
-    expect(tables.map((t) => t.label)).toEqual(['customers', 'customers'])
+    // The lakehouse is the card and the table a row inside it, as in the
+    // ported model. Both lakehouses are called Gold and both hold a
+    // `customers` — which is two cards, not one with a duplicate row.
+    expect(tables.map((t) => t.label)).toEqual(['Gold', 'Gold'])
+    for (const t of tables)
+      expect(t.rows.filter((r) => r.tone === 'table').map((r) => r.label)).toEqual(['customers'])
     expect(tables.map((t) => t.ws).sort()).toEqual(['Finance', 'Marketing'])
   })
 
@@ -413,5 +417,70 @@ describe('buildFlow folded — the card the semantic views draw', () => {
     const { s, results } = hopRun()
     const nb = buildFlow([s], results).nodes.find((n) => n.kind === 'notebook')!
     expect(nb.rows.filter((r) => r.tone !== 'col').map((r) => r.tone)).toEqual(['read', 'write'])
+  })
+})
+
+describe('a lakehouse is the card, its tables are rows', () => {
+  /** Two tables of one lakehouse, plus one whose lakehouse never resolved. */
+  const run = () => {
+    const s = step('a', 'nb')
+    const [A, B, C] = ['Plat/lh_bronze/orders', 'Plat/lh_bronze/customers', 'loose_table']
+    return {
+      s,
+      results: new Map<string, StepResult>([
+        [
+          'a',
+          {
+            status: 'ok',
+            runs: [
+              {
+                name: 'nb',
+                status: 'ok',
+                result: result({
+                  reads: [C],
+                  writes: [A, B],
+                  table_schemas: { [A]: [{ name: 'id' }], [B]: [{ name: 'email' }] },
+                  tables: {
+                    [A]: { workspace: 'Plat', lakehouse: 'lh_bronze', table: 'orders', resolved: true },
+                    [B]: { workspace: 'Plat', lakehouse: 'lh_bronze', table: 'customers', resolved: true },
+                  },
+                }),
+              },
+            ],
+          },
+        ],
+      ]),
+    }
+  }
+
+  it('draws one card per lakehouse, with a row per table and its columns under it', () => {
+    const { s, results } = run()
+    const { nodes } = buildFlow([s], results)
+    const lake = nodes.find((n) => n.label === 'lh_bronze')!
+    expect(lake.rows.filter((r) => r.tone === 'table').map((r) => r.label)).toEqual([
+      'orders',
+      'customers',
+    ])
+    // and each table's columns hang under its own row, scoped by it — two
+    // tables in one lakehouse can both have `id`.
+    const cols = lake.rows.filter((r) => r.tone === 'col')
+    expect(cols.map((c) => c.label)).toEqual(['id', 'email'])
+    expect(new Set(cols.map((c) => c.group)).size).toBe(2)
+  })
+
+  it('leaves a table with no lakehouse as its own card', () => {
+    const { s, results } = run()
+    const { nodes } = buildFlow([s], results)
+    expect(nodes.find((n) => n.label === 'loose_table')).toBeDefined()
+  })
+
+  it('anchors an edge on the table row, not on the lakehouse card', () => {
+    const { s, results } = run()
+    const { nodes, edges } = buildFlow([s], results)
+    const lake = nodes.find((n) => n.label === 'lh_bronze')!
+    const write = edges.find((e) => e.kind === 'table' && e.to === lake.id)!
+    // Landing on the card alone would say "something in this lakehouse" where
+    // it used to say which table.
+    expect(write.toRow).toBe(lake.rows.find((r) => r.label === 'orders')!.key)
   })
 })

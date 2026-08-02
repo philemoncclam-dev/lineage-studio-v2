@@ -32,10 +32,11 @@ import { localStore } from '../model/store'
 type FlowKind = 'notebook' | 'pipeline' | 'table'
 /**
  * `read`/`write` are a step's I/O rows; `hop` is the two of them folded into the
- * single row of a step that does both; `col` is a table's own column; `run` is
- * one activity INSIDE a pipeline, heading the tables that activity touched.
+ * single row of a step that does both; `col` is a column; `run` is one activity
+ * INSIDE a pipeline, heading the tables that activity touched; `table` is one
+ * table inside its lakehouse's card, heading its own columns.
  */
-type RowTone = 'read' | 'write' | 'col' | 'run' | 'hop'
+type RowTone = 'read' | 'write' | 'col' | 'run' | 'hop' | 'table'
 /** The tone an edge can carry — a column row is never an edge endpoint. */
 type EdgeTone = 'read' | 'write'
 export interface FlowRow {
@@ -56,8 +57,12 @@ export interface FlowRow {
    * accesses.
    */
   depth?: number
-  /** New since the previous run, when Diff is on. */
-  change?: 'added'
+  /** What the previous run said about this row, when Diff is on. */
+  change?: 'added' | 'lost-lineage'
+  /** Hover text — the reason a table row is thin, where there is one. */
+  title?: string
+  /** Coverage verdict for a table row, for the badge tint. */
+  note?: CoverageLevel
   /**
    * For a column row nested under a table row inside a STEP card: the key of
    * that table row.
@@ -275,7 +280,9 @@ function band(key: number, label: string, col: number, lastCol: number, gap = GX
  * needs to see where one ends and the next notebook begins.
  */
 function containerOf(n: FlowNode): { key: string; label: string; kind: 'lakehouse' | 'pipeline' } | null {
-  if (n.kind === 'table') return n.lakehouse ? { key: `lh:${n.lakehouse}`, label: n.lakehouse, kind: 'lakehouse' } : null
+  // No lakehouse heading any more: the lakehouse IS the card, holding its
+  // tables as rows, which is what the ported model has. A heading above a run
+  // of table cards was the same information drawn as a different shape.
   if (n.kind === 'pipeline') return { key: `pl:${n.id}`, label: n.label, kind: 'pipeline' }
   return null
 }
@@ -872,14 +879,24 @@ function FlowCanvas({
                       // come from anything that could change it.
                       style={{ height: ROW_H, paddingLeft: 8 + (r.depth ?? 0) * 10 }}
                     >
-                      <span className="sbx-flow-row-name" title={r.meta ? `${r.label} · ${r.meta}` : r.label}>
+                      <span
+                        className="sbx-flow-row-name"
+                        title={r.title ?? (r.meta ? `${r.label} · ${r.meta}` : r.label)}
+                      >
                         {r.label}
                       </span>
-                      {r.tone === 'col' || r.tone === 'run' ? (
+                      {r.tone === 'col' || r.tone === 'run' || r.tone === 'table' ? (
                         // A run row heads its own tables; the R/W belongs to
                         // those, and a tag here would read as the activity
                         // itself being an access.
-                        r.meta && <span className="sbx-flow-type">{r.meta}</span>
+                        r.meta && (
+                          // A table row's meta is its coverage verdict where it
+                          // has one — the reason lives in the row's title, the
+                          // same place the card-level note kept it.
+                          <span className="sbx-flow-type" data-note={r.note}>
+                            {r.meta}
+                          </span>
+                        )
                       ) : (
                         <span className="sbx-flow-tag" data-tone={r.tone}>
                           {r.tone === 'read' ? 'R' : r.tone === 'write' ? 'W' : 'R→W'}
@@ -936,48 +953,103 @@ export function buildFlow(
     {},
     ...steps.map((s) => stepTables(results.get(s.key))),
   )
-  const tableSeen = new Set<string>()
-  const ensureTable = (ref: string) => {
-    // Keyed by the full ref, not the leaf name: two workspaces can hold a
-    // `customers`, and they are two tables, not one.
-    const id = `t:${ref.toLowerCase()}`
-    if (!tableSeen.has(id)) {
-      tableSeen.add(id)
-      // A table card carries its schema as attribute rows — the same reading as
-      // an object card in Modeling, and the reason the canvas is worth looking
-      // at rather than just the report.
-      const allRows: FlowRow[] = (schemas.get(ref) ?? []).map((c) => ({
-        key: `c:${c.name}`,
-        label: c.name,
-        tone: 'col' as const,
-        meta: c.type ?? undefined,
-        // A column that was not there last time, when Diff is on.
-        change: diff?.addedColumns.has(columnKey(ref, c.name)) ? ('added' as const) : undefined,
-      }))
-      const cov = coverage.get(ref)
-      nodes.push({
+  /**
+   * The card a table belongs to, and the row it is inside that card.
+   *
+   * The LAKEHOUSE is the card and its tables are rows inside it, which is what
+   * the ported model has always been: lakehouse object, table children, column
+   * grandchildren. The canvas drew one card per table with the lakehouse name
+   * floating above a run of them — the same information as two different
+   * shapes, so Create model restructured the picture it was pressed on.
+   *
+   * A table whose lakehouse the run could not resolve keeps a card of its own.
+   * There is nothing to nest it under, and inventing a holder called `Tables`
+   * would claim a lakehouse that was never named.
+   */
+  const cardOf = new Map<string, { node: string; row: string }>()
+  const cards = new Map<string, FlowNode>()
+  const ensureTable = (ref: string): { node: string; row: string } => {
+    const known = cardOf.get(ref)
+    if (known) return known
+    const lake = refLakehouse(ref, refs)
+    // Keyed by the full ref, or by WORKSPACE AND lakehouse — never by the leaf
+    // name. Two workspaces can each hold a `Gold` holding a `customers`, and
+    // they are two lakehouses with two tables, not one card with a duplicate.
+    const id = lake
+      ? `lh:${refWorkspace(ref, refs).toLowerCase()}/${lake.toLowerCase()}`
+      : `t:${ref.toLowerCase()}`
+    const rowKey = `t:${ref.toLowerCase()}`
+    const cov = coverage.get(ref)
+    const cols: FlowRow[] = (schemas.get(ref) ?? []).map((c) => ({
+      key: `${rowKey}>c:${c.name}`,
+      label: c.name,
+      tone: 'col' as const,
+      meta: c.type ?? undefined,
+      depth: lake ? 1 : 0,
+      group: rowKey,
+      // A column that was not there last time, when Diff is on.
+      change: diff?.addedColumns.has(columnKey(ref, c.name)) ? ('added' as const) : undefined,
+    }))
+    const file = refKind(ref, refs) === 'file'
+    //: the table's own row, heading its columns inside the lakehouse card.
+    const head: FlowRow = {
+      key: rowKey,
+      label: refLabel(ref, refs),
+      tone: 'table',
+      meta: cov && cov.level !== 'traced' ? coverageBadge(cov.level) : file ? 'raw files' : undefined,
+      title: cov?.reason || undefined,
+      note: cov && cov.level !== 'traced' ? cov.level : undefined,
+      change: diff?.addedTables.has(ref)
+        ? 'added'
+        : diff?.lostLineage.has(ref)
+          ? 'lost-lineage'
+          : undefined,
+    }
+
+    const existing = cards.get(id)
+    if (existing) {
+      // Another table of the same lakehouse. It joins the card it belongs to
+      // rather than starting one of its own.
+      existing.allRows = [...(existing.allRows ?? []), head, ...cols]
+      existing.rows = existing.allRows
+      existing.sub = `${(existing.allRows ?? []).filter((r) => r.tone === 'table').length} tables`
+    } else {
+      const node: FlowNode = {
         id,
         kind: 'table',
-        label: refLabel(ref, refs),
+        label: lake || refLabel(ref, refs),
         ws: refWorkspace(ref, refs),
-        lakehouse: refLakehouse(ref, refs),
-        isFile: refKind(ref, refs) === 'file',
-        // A raw file has no schema to count, so it says what it is instead of
-        // showing "0 cols" — which would read as a table we failed to resolve.
-        sub: refKind(ref, refs) === 'file' ? 'raw files' : allRows.length ? `${allRows.length} cols` : undefined,
-        coverage: cov && cov.level !== 'traced'
-          ? { level: cov.level, badge: coverageBadge(cov.level), reason: cov.reason }
-          : undefined,
-        change: diff?.lostLineage.has(ref)
-          ? 'lost-lineage'
-          : diff?.addedTables.has(ref)
-            ? 'added'
+        lakehouse: lake,
+        isFile: !lake && file,
+        // A lakehouse card counts its tables; a lone table card counts its
+        // columns, as it always did. A raw file has no schema to count and says
+        // what it is instead of showing "0 cols".
+        sub: lake ? '1 tables' : file ? 'raw files' : cols.length ? `${cols.length} cols` : undefined,
+        coverage:
+          !lake && cov && cov.level !== 'traced'
+            ? { level: cov.level, badge: coverageBadge(cov.level), reason: cov.reason }
             : undefined,
-        rows: allRows,
-        allRows,
-      })
+        change: !lake
+          ? diff?.lostLineage.has(ref)
+            ? 'lost-lineage'
+            : diff?.addedTables.has(ref)
+              ? 'added'
+              : undefined
+          : undefined,
+        rows: [],
+        allRows: [],
+      }
+      // A lone table keeps its columns at the top level, exactly as before; a
+      // lakehouse card heads each table's columns with the table.
+      node.allRows = lake ? [head, ...cols] : cols
+      node.rows = node.allRows
+      nodes.push(node)
+      cards.set(id, node)
     }
-    return id
+
+    const anchor = { node: id, row: lake ? rowKey : '' }
+    cardOf.set(ref, anchor)
+    return anchor
   }
 
   steps.forEach((step, i) => {
@@ -1147,21 +1219,27 @@ export function buildFlow(
      * has expanded, which is canvas state.
      */
     const access = (ref: string, key: string, tone: EdgeTone) => {
-      const tableId = ensureTable(ref)
+      // The card AND the row inside it: a lakehouse card holds many tables, so
+      // an edge that landed on the card alone would say "something in here"
+      // where it used to say which table.
+      const t = ensureTable(ref)
       const group = `${tone}|${stepId}|${key}`
       const read = tone === 'read'
+      const tableRow = t.row || undefined
       edges.push(
         read
-          ? { from: tableId, to: stepId, toRow: key, tone, kind: 'table', group }
-          : { from: stepId, fromRow: key, to: tableId, tone, kind: 'table', group },
+          ? { from: t.node, fromRow: tableRow, to: stepId, toRow: key, tone, kind: 'table', group }
+          : { from: stepId, fromRow: key, to: t.node, toRow: tableRow, tone, kind: 'table', group },
       )
       for (const c of schemas.get(ref) ?? []) {
-        const onTable = `c:${c.name}`
+        // The column's row key is scoped by the table row inside a lakehouse
+        // card, since two tables in one lakehouse can both have `id`.
+        const onTable = t.row ? `${t.row}>c:${c.name}` : `c:${c.name}`
         const onStep = `${key}>c:${c.name}`
         edges.push(
           read
-            ? { from: tableId, fromRow: onTable, to: stepId, toRow: onStep, tone, kind: 'column', group }
-            : { from: stepId, fromRow: onStep, to: tableId, toRow: onTable, tone, kind: 'column', group },
+            ? { from: t.node, fromRow: onTable, to: stepId, toRow: onStep, tone, kind: 'column', group }
+            : { from: stepId, fromRow: onStep, to: t.node, toRow: onTable, tone, kind: 'column', group },
         )
       }
     }

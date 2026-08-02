@@ -3,6 +3,7 @@ import { sequenceToModel, defaultModelName, DEFAULT_PORT_OPTIONS } from '../toMo
 import { tagsOf } from '../../model/tags'
 import type { Step, StepResult } from '../sequence'
 import type { SandboxRunResult } from '../../api'
+import type { LineageModel } from '../../model/types'
 
 const step = (key: string, name: string): Step => ({
   key,
@@ -25,6 +26,18 @@ const result = (over: Partial<SandboxRunResult>): SandboxRunResult => ({
   error: null,
   ...over,
 })
+
+/**
+ * Every object in the model, INCLUDING the tables nested inside a lakehouse.
+ *
+ * A table whose ref names a lakehouse is a child of that lakehouse's object in
+ * every layout now, the same way the canvas draws it. These tests ask "is
+ * `silver_orders` in the model" and should not care which of the two it is.
+ */
+const objectsOf = (m: LineageModel) =>
+  m.layers.flatMap((l) =>
+    l.objects.flatMap((o) => [o, ...(tagsOf(m, o.id).includes('Lakehouse') ? o.children : [])]),
+  )
 
 const ran = (name: string, r: SandboxRunResult): StepResult => ({
   status: 'ok',
@@ -460,7 +473,7 @@ describe('port options', () => {
   it('carries tags, access, provenance, columns and column edges by default', () => {
     const { steps, results } = simpleRun()
     const { model, stats } = sequenceToModel(steps, results, 'M')
-    const objects = model.layers.flatMap((l) => l.objects)
+    const objects = objectsOf(model)
     expect(objects.some((o) => tagsOf(model, o.id).includes('Notebook'))).toBe(true)
     expect(attrBags(model).some((b) => b.Access === 'Read')).toBe(true)
     expect(attrBags(model).some((b) => b.Access === 'Write')).toBe(true)
@@ -480,7 +493,7 @@ describe('port options', () => {
       columnEdges: true,
     })
 
-    const objects = bare.model.layers.flatMap((l) => l.objects)
+    const objects = objectsOf(bare.model)
     expect(objects.every((o) => tagsOf(bare.model, o.id).length === 0)).toBe(true)
     expect(attrBags(bare.model).every((b) => !b.Access)).toBe(true)
     expect(objects.every((o) => !bare.model.properties[o.id]?.Source)).toBe(true)
@@ -542,14 +555,14 @@ describe('the raw file layer becomes an object', () => {
   it('exports the file as an object named for the file itself', () => {
     const { s, results } = fileRun()
     const { model } = sequenceToModel([s], results, 'M')
-    const names = model.layers.flatMap((l) => l.objects.map((o) => o.name))
+    const names = objectsOf(model).map((o) => o.name)
     expect(names).toContain('Files/orders/*.csv')
   })
 
   it('tags it File, not Table', () => {
     const { s, results } = fileRun()
     const { model } = sequenceToModel([s], results, 'M')
-    const file = model.layers.flatMap((l) => l.objects).find((o) => o.name.startsWith('Files/'))!
+    const file = objectsOf(model).find((o) => o.name.startsWith('Files/'))!
     expect(tagsOf(model, file.id)).toEqual(['File'])
   })
 
@@ -557,7 +570,7 @@ describe('the raw file layer becomes an object', () => {
     // The whole point: bronze is no longer written from nowhere.
     const { s, results } = fileRun()
     const { model } = sequenceToModel([s], results, 'M')
-    const objects = model.layers.flatMap((l) => l.objects)
+    const objects = objectsOf(model)
     const file = objects.find((o) => o.name.startsWith('Files/'))!
     const ids = new Set([file.id, ...file.children.map((c) => c.id)])
     expect(model.transitions.some((t) => ids.has(t.source) || ids.has(t.target))).toBe(true)
@@ -607,7 +620,7 @@ describe('column edges with workspace-qualified refs', () => {
   it('routes the derivation through the step, on a qualified ref', () => {
     const { s, results } = qualifiedRun()
     const { model } = sequenceToModel([s], results, 'M')
-    const objects = model.layers.flatMap((l) => l.objects)
+    const objects = objectsOf(model)
     const nb = objects.find((o) => o.name === 'enrich')!
     const silver = objects.find((o) => o.name === 'silver_orders')!
     const onStep = nb.children.find((c) => c.name === 'silver_orders')!.children[0]
@@ -673,7 +686,7 @@ describe('columns under an access', () => {
   it('joins each nested column across to the same column on the table', () => {
     const { s, results } = run()
     const { model, stats } = sequenceToModel([s], results, 'M')
-    const objects = model.layers.flatMap((l) => l.objects)
+    const objects = objectsOf(model)
     const nb = objects.find((o) => o.name === 'enrich')!
     const silver = objects.find((o) => o.name === 'silver_orders')!
     const onStep = nb.children.find((c) => c.name === 'silver_orders')!.children.find((c) => c.name === 'total')!
@@ -689,7 +702,7 @@ describe('columns under an access', () => {
   it('points a read’s column edge from the table into the step, in flow view', () => {
     const { s, results } = run()
     const { model } = sequenceToModel([s], results, 'M', 'flow')
-    const objects = model.layers.flatMap((l) => l.objects)
+    const objects = objectsOf(model)
     const nb = objects.find((o) => o.name === 'enrich')!
     const raw = objects.find((o) => o.name === 'raw_orders')!
     const onStep = nb.children.find((c) => c.name === 'raw_orders')!.children.find((c) => c.name === 'id')!
@@ -700,7 +713,7 @@ describe('columns under an access', () => {
   it('runs every column edge step -> table in sequence view', () => {
     const { s, results } = run()
     const { model } = sequenceToModel([s], results, 'M', 'sequence')
-    const objects = model.layers.flatMap((l) => l.objects)
+    const objects = objectsOf(model)
     const nb = objects.find((o) => o.name === 'enrich')!
     const raw = objects.find((o) => o.name === 'raw_orders')!
     const onStep = nb.children.find((c) => c.name === 'raw_orders')!.children.find((c) => c.name === 'id')!

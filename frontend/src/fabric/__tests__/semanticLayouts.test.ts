@@ -69,17 +69,22 @@ describe('layoutStages', () => {
     expect(dir).toEqual([-1, 1, -1, 1, -1, 1])
   })
 
-  it('heads the lakehouses in medallion order inside the band', () => {
-    const { nodes, edges } = medallion()
-    const { groups } = layoutStages(nodes, edges)
-    // The stage did not stop mattering — it orders the groups down the band,
-    // which is where a reader looks for it now the band is the workspace.
-    expect(
-      groups
-        .filter((g) => g.kind === 'lakehouse')
-        .sort((a, b) => a.y - b.y)
-        .map((g) => g.label),
-    ).toEqual(['lh_landing', 'lh_bronze', 'lh_silver', 'lh_gold'])
+  it('orders the lakehouse cards by medallion stage within a lane', () => {
+    // Four lakehouses, all at the same depth, so only the stage tie-break
+    // decides. The lakehouse is the CARD now (its tables are rows inside it),
+    // so this is about card order, not about headings.
+    const nodes: FlowNode[] = [
+      table('gold.orders', 'lh_gold'),
+      table('bronze.orders', 'lh_bronze'),
+      table('landing.orders', 'lh_landing'),
+      table('silver.orders', 'lh_silver'),
+    ]
+    const { pos } = layoutStages(nodes, [])
+    const order = nodes
+      .map((n) => ({ lake: n.lakehouse!, y: pos.get(n.id)!.y }))
+      .sort((a, b) => a.y - b.y)
+      .map((n) => n.lake)
+    expect(order).toEqual(['lh_landing', 'lh_bronze', 'lh_silver', 'lh_gold'])
   })
 
   it('keeps a table in its owner band however late it is written', () => {
@@ -117,7 +122,7 @@ describe('layoutStages', () => {
     ])
   })
 
-  it('heads each lakehouse, and each pipeline on its own', () => {
+  it('heads each pipeline on its own', () => {
     const nodes: FlowNode[] = [
       table('bronze.a', 'lh_bronze'),
       table('bronze.b', 'lh_bronze'),
@@ -127,13 +132,9 @@ describe('layoutStages', () => {
       { from: 's:pl', to: 't:bronze.a', tone: 'write' as const, kind: 'table' as const },
       { from: 's:pl', to: 't:bronze.b', tone: 'write' as const, kind: 'table' as const },
     ]
-    const { groups, pos } = layoutStages(nodes, edges)
-    expect(groups.map((g) => [g.kind, g.label])).toEqual([
-      ['pipeline', 'pl'],
-      ['lakehouse', 'lh_bronze'],
-    ])
-    // The lakehouse heading sits above both of its tables and nothing else.
-    const lh = groups.find((g) => g.kind === 'lakehouse')!
-    for (const id of ['t:bronze.a', 't:bronze.b']) expect(pos.get(id)!.y).toBeGreaterThan(lh.y)
+    const { groups } = layoutStages(nodes, edges)
+    // Only pipelines get a heading. A lakehouse does not need one — it is the
+    // card, and a heading above it would name it twice.
+    expect(groups.map((g) => [g.kind, g.label])).toEqual([['pipeline', 'pl']])
   })
 })

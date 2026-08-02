@@ -1697,3 +1697,27 @@
 .sbx-flow-row[data-change='added'] {
   background: rgb(22 143 92 / 0.1);
 }
+
+/* A table row inside its lakehouse card: the object the model nests, drawn as
+   the row it is. Heavier than the column rows beneath it so the card reads as
+   a list of tables first and a schema second. */
+.sbx-flow-row[data-tone='table'] {
+  font-weight: 600;
+  color: #232a3a;
+  border-top: 1px solid rgb(28 35 51 / 0.07);
+}
+.sbx-flow-row[data-tone='table']:first-of-type {
+  border-top: 0;
+}
+/* Its coverage verdict, in the meta slot the column rows use for their type. */
+.sbx-flow-type[data-note='columns-only'] {
+  color: #7a5410;
+  font-weight: 600;
+}
+.sbx-flow-type[data-note='bare'] {
+  color: #8c2b2b;
+  font-weight: 600;
+}
+.sbx-flow-row[data-change='lost-lineage'] {
+  background: rgb(190 60 60 / 0.1);
+}

@@ -12,6 +12,7 @@ import {
   refLabel,
   refLakehouse,
   refWorkspace,
+  type SandboxCellResult,
   type SandboxColumn,
   type SandboxCoverage,
   type SandboxRunResult,
@@ -28,6 +29,7 @@ import {
   type StepStatus,
 } from './sequence'
 import { coverageBadge, coverageOf, coverageSummary, type CoverageLevel } from './coverage'
+import { runFailures, runNarrative } from './runSummary'
 import { observedAgrees, observedHeadline, observedSummary, runWhen } from './observed'
 import { columnKey, diffIsClean, diffRuns, type RunDiff } from './runDiff'
 import {
@@ -1332,6 +1334,45 @@ function TableRow({ name, columns }: { name: string; columns?: SandboxColumn[] }
 }
 
 /**
+ * What each cell did — the answer to "what actually happened in there".
+ *
+ * The executor has always returned this (status, stdout, error, per cell) and
+ * the frontend has always typed it; nothing rendered it, so a run that printed
+ * a diagnostic or raised halfway through looked exactly like one that sailed
+ * through. Collapsed by default because on a healthy run it is evidence rather
+ * than news — but OPEN when a cell failed, because then it is the whole story.
+ */
+function CellList({ cells }: { cells: SandboxCellResult[] }) {
+  if (cells.length === 0) return null
+  const failed = cells.filter((c) => c.status === 'error').length
+  return (
+    <details className="sbx-cells" open={failed > 0}>
+      <summary>
+        {cells.length} cell{cells.length === 1 ? '' : 's'}
+        {failed > 0 && ` · ${failed} failed`}
+      </summary>
+      <ol className="sbx-cell-list">
+        {cells.map((c) => (
+          <li className="sbx-cell" key={c.index} data-status={c.status}>
+            <span className="sbx-cell-num">{c.index + 1}</span>
+            <div className="sbx-cell-body">
+              {c.error && <div className="sbx-cell-error">{c.error}</div>}
+              {/* Truncated at the source (4KB) — shown verbatim, because a
+                  print() a user put there to debug is the first thing they
+                  will look for. */}
+              {c.stdout.trim() && <pre className="sbx-cell-out">{c.stdout.trimEnd()}</pre>}
+              {!c.error && !c.stdout.trim() && (
+                <span className="sbx-cell-quiet">no output</span>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </details>
+  )
+}
+
+/**
  * One side of a run's I/O. A vertical list of table names under a counted
  * heading, rather than a wrapping row of fat pills: table names are long and
  * similar, and a column lets the eye scan them.
@@ -1670,6 +1711,12 @@ export function SequenceCanvas({
     .filter((x): x is { s: Step; name: string; r: SandboxRunResult } => !!x.r)
 
   const anyBreach = notebookRuns.some(({ r }) => r.saw_credentials)
+  // Everything that went wrong, hoisted out of the per-step list at the bottom.
+  // A cell can raise while its step still reports `ok` — the executor keeps
+  // going — so "the run succeeded" and "every cell succeeded" are different
+  // claims and the report used to make only the first one.
+  const failures = runFailures(steps, results)
+  const narrative = runNarrative(notebookRuns.map(({ r }) => r), failures)
   // Distinct tables across the whole run — the same table read by three steps
   // is one table, which is what the summary line should say.
   const totalReads = new Set(notebookRuns.flatMap(({ r }) => r.reads)).size
@@ -1851,6 +1898,33 @@ export function SequenceCanvas({
               </>
             )}
           </header>
+
+          {/* The run in one sentence. Every number below is an answer to a
+              question; this is the question nobody had to ask. */}
+          <p className="sbx-narrative">{narrative}</p>
+
+          {/* Failures first, above everything that went RIGHT. They used to sit
+              one `data-status` deep in the last section on the page, under the
+              whole report — which is exactly where a reader who already thinks
+              the run worked will not look. */}
+          {(failures.cells.length > 0 || failures.steps.length > 0) && (
+            <section className="sbx-failures" aria-label="Failures">
+              {failures.steps.map((f) => (
+                <div className="sbx-failure" key={`s:${f.name}`}>
+                  <span className="sbx-failure-where">{f.name}</span>
+                  <span className="sbx-failure-what">{f.error}</span>
+                </div>
+              ))}
+              {failures.cells.map((f) => (
+                <div className="sbx-failure" key={`c:${f.run}:${f.cell}`}>
+                  <span className="sbx-failure-where">
+                    {f.run} · cell {f.cell}
+                  </span>
+                  <span className="sbx-failure-what">{f.error}</span>
+                </div>
+              ))}
+            </section>
+          )}
 
           {anyBreach && (
             <p className="sbx-breach" role="alert">
@@ -2081,18 +2155,21 @@ export function SequenceCanvas({
                         </div>
                       )}
                       {run.result && (
-                        <div className="sbx-io">
-                          <IoColumn
-                            tone="read"
-                            tables={run.result.reads}
-                            schemas={run.result.table_schemas ?? {}}
-                          />
-                          <IoColumn
-                            tone="write"
-                            tables={run.result.writes}
-                            schemas={run.result.table_schemas ?? {}}
-                          />
-                        </div>
+                        <>
+                          <div className="sbx-io">
+                            <IoColumn
+                              tone="read"
+                              tables={run.result.reads}
+                              schemas={run.result.table_schemas ?? {}}
+                            />
+                            <IoColumn
+                              tone="write"
+                              tables={run.result.writes}
+                              schemas={run.result.table_schemas ?? {}}
+                            />
+                          </div>
+                          <CellList cells={run.result.cells ?? []} />
+                        </>
                       )}
                     </div>
                   ))}

@@ -279,3 +279,44 @@ def test_an_unknown_path_degrades_instead_of_killing_the_notebook():
     assert make_ref("never_seen", "lh_landing", PLATFORM) in result.reads
     # And the later write still produced its schema.
     assert make_ref("orders_priced", "lh_silver", PLATFORM) in result.writes
+
+
+def test_each_cell_reports_what_it_touched():
+    """Per-cell reads/writes, not just the run-level totals.
+
+    The engine that knows the MOST reported `[]` for every cell while the stub
+    filled them in, so the report's per-cell view said "this cell touched
+    nothing" precisely where the analysis was strongest. Attribution comes from
+    snapshotting the accumulators either side of each cell.
+    """
+    result = _run()
+    assert result.ok, result.error
+    by_index = {c.index: c for c in result.cells}
+
+    # Cell 0 is a bare import — it touches nothing, and must not inherit the
+    # run's totals.
+    assert by_index[0].reads == []
+    assert by_index[0].writes == []
+    # Cell 1 builds the DataFrame: the read happens here.
+    assert by_index[1].reads == [RAW]
+    assert by_index[1].writes == []
+    # Cell 2 is the write, and it is not also reported as a read.
+    assert by_index[2].writes == [GOLD]
+    assert RAW not in by_index[2].reads
+
+
+def test_a_failing_cell_reports_its_error_and_lets_the_run_continue():
+    """The case the report now opens on. Cell 1 raises; cell 2 still writes."""
+    result = _run(cells=[
+        CELLS[0],
+        "raise ValueError('boom')",
+        "spark.table('raw_orders').write.mode('overwrite').saveAsTable('gold_region_totals')",
+    ])
+    assert result.ok, result.error
+    by_index = {c.index: c for c in result.cells}
+    assert by_index[1].status == "error"
+    assert "ValueError: boom" in (by_index[1].error or "")
+    # The run kept going, which is why "the step is ok" and "every cell is ok"
+    # are different claims.
+    assert by_index[2].status == "ok"
+    assert result.writes == [GOLD]

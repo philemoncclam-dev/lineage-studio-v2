@@ -594,6 +594,14 @@ def main() -> None:
     cell_results = []
     for i, cell in enumerate(cells):
         buf = io.StringIO()
+        # `reads` and `writes` accumulate as the cell runs — the write
+        # interceptor and the read shims append to them. Snapshotting either
+        # side of the exec attributes each ref to the cell that caused it,
+        # which is what the stub engine has always reported and this engine
+        # reported as `[]`. The report's per-cell view read as "this cell
+        # touched nothing" on the ENGINE THAT KNOWS MOST, which is the wrong
+        # way round.
+        seen_reads, seen_writes = set(reads), len(writes)
         try:
             with redirect_stdout(buf):
                 exec(compile(cell, f"<cell-{i}>", "exec"), glb)  # noqa: S102 — the sandbox's purpose
@@ -601,8 +609,21 @@ def main() -> None:
         except Exception as exc:  # noqa: BLE001
             status, err = "error", f"{type(exc).__name__}: {exc}"
             log.append(f"[spark] cell {i} error: {err}")
+        # A ref both read and written by one cell is reported as a write only,
+        # matching how the run-level totals below resolve the same overlap.
+        cell_writes = writes[seen_writes:]
+        cell_reads = sorted(
+            r for r in (set(reads) - seen_reads - set(cell_writes)) if _refs.table_of(r)
+        )
         cell_results.append(
-            {"index": i, "status": status, "reads": [], "writes": [], "stdout": buf.getvalue()[:4000], "error": err}
+            {
+                "index": i,
+                "status": status,
+                "reads": cell_reads,
+                "writes": sorted(set(cell_writes)),
+                "stdout": buf.getvalue()[:4000],
+                "error": err,
+            }
         )
 
     spark.stop()

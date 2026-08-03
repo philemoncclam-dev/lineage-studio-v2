@@ -552,13 +552,44 @@ export function sequenceToModel(
     return id
   }
 
-  steps.forEach((step, i) => {
-    const id = stepId(step.key)
+  const layout: ModelLayout = options.layout ?? 'view'
+
+  /**
+   * The objects one step contributes — itself, or one per activity when
+   * Medallion is splitting pipelines. Mirrors `buildFlow`'s `unitsOf` so the
+   * exported model has the same cards the canvas drew.
+   */
+  const stepUnits = (step: Step, i: number) => {
     const res = results.get(step.key)
+    const runs = res?.runs ?? []
+    if (layout === 'medallion' && step.kind === 'pipeline' && runs.length)
+      return runs.map((run, ri) => ({
+        id: `${stepId(step.key)}:a${ri}`,
+        name: run.name.includes(' / ') ? run.name.slice(run.name.lastIndexOf(' / ') + 3) : run.name,
+        kind: 'notebook' as const,
+        ordinal: i + 1,
+        io: [
+          ...(run.result?.reads ?? []).map((t) => ({ table: t, access: 'Read' as const })),
+          ...(run.result?.writes ?? []).map((t) => ({ table: t, access: 'Write' as const })),
+        ],
+        groups: undefined as IoGroup[] | undefined,
+        ws: run.result?.workspace || step.ws,
+      }))
+    return [{ id: stepId(step.key), name: step.name, kind: step.kind, ordinal: i + 1, io: [] as IoRow[], groups: undefined as IoGroup[] | undefined, ws: '' }]
+  }
+
+  steps.forEach((step, i) => {
+    const res = results.get(step.key)
+    for (const unit of stepUnits(step, i)) {
+    const id = unit.id
     // A pipeline groups by activity; a notebook step IS the notebook, so it has
     // nothing to nest under and keeps the flat merged list.
+    // Medallion splits a pipeline into its activities instead, for the reason
+    // `buildFlow`'s `splitPipelines` gives: the pipeline has no stage and its
+    // notebooks do. Grouping them under one object would put the whole thing in
+    // one layer and undo the arrangement the canvas just drew.
     const groups: IoGroup[] | undefined =
-      step.kind === 'pipeline' && res?.runs.length
+      step.kind === 'pipeline' && res?.runs.length && layout !== 'medallion'
         ? res.runs.map((run) => ({
             name: run.name,
             tag: activityTag(run.name, res.activities),
@@ -571,23 +602,25 @@ export function sequenceToModel(
 
     const io: IoRow[] = groups
       ? []
-      : [
-          ...stepReads(res).map((t) => ({ table: t, access: 'Read' as const })),
-          ...stepWrites(res).map((t) => ({ table: t, access: 'Write' as const })),
-        ]
+      : unit.io.length
+        ? unit.io
+        : [
+            ...stepReads(res).map((t) => ({ table: t, access: 'Read' as const })),
+            ...stepWrites(res).map((t) => ({ table: t, access: 'Write' as const })),
+          ]
 
     const n: Node = {
       id,
-      kind: step.kind,
-      name: step.name,
+      kind: unit.kind,
+      name: unit.name,
       columns: [],
       io,
       groups,
-      ordinal: i + 1,
+      ordinal: unit.ordinal,
       // The run echoes the notebook's own workspace NAME; `step.ws` is the GUID
       // the tree navigates by. The name is what tables carry, so comparing the
       // two is what makes a cross-workspace row detectable.
-      ws: res?.runs.find((r) => r.result?.workspace)?.result?.workspace || step.ws,
+      ws: unit.ws || res?.runs.find((r) => r.result?.workspace)?.result?.workspace || step.ws,
     }
     nodes.push(n)
     byId.set(id, n)
@@ -602,6 +635,7 @@ export function sequenceToModel(
     }
     if (groups) groups.forEach((g, gi) => g.io.forEach((row) => emit(row, gi)))
     else io.forEach((row) => emit(row, -1))
+    }
   })
 
   // --- build the model --------------------------------------------------
@@ -615,7 +649,6 @@ export function sequenceToModel(
   // Two fixed columns in the sequence view; dependency depth in the flow view.
   // Node order already has steps in run order and tables in first-touch order,
   // so the split alone gives "step 1 on top".
-  const layout: ModelLayout = options.layout ?? 'view'
   //: Layers named for the workspace, tables gathered under their lakehouse.
   const semantic = layout !== 'view'
 

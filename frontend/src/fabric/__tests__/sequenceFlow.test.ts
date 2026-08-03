@@ -484,3 +484,70 @@ describe('a lakehouse is the card, its tables are rows', () => {
     expect(write.toRow).toBe(lake.rows.find((r) => r.label === 'orders')!.key)
   })
 })
+
+describe('splitting a pipeline into its activities', () => {
+  // Medallion only. A pipeline has no medallion stage — it is orchestration,
+  // and the stage says how far along the DATA is. Its notebooks each have one.
+  const spanning = () => {
+    const p = pipelineStep('p', 'pl_master')
+    const results = new Map<string, StepResult>([
+      [
+        p.key,
+        {
+          status: 'ok',
+          runs: [
+            {
+              name: 'invoke pl_master / run nb_bronze',
+              status: 'ok',
+              result: result({ reads: ['lh_landing.raw'], writes: ['lh_bronze.orders'] }),
+            },
+            {
+              name: 'invoke pl_master / run nb_silver',
+              status: 'ok',
+              result: result({ reads: ['lh_bronze.orders'], writes: ['lh_silver.orders'] }),
+            },
+          ],
+        } as StepResult,
+      ],
+    ])
+    return { steps: [p], results }
+  }
+
+  it('keeps the pipeline whole unless asked to split it', () => {
+    const { steps, results } = spanning()
+    const { nodes } = buildFlow(steps, results)
+    expect(nodes.filter((n) => n.kind !== 'table')).toHaveLength(1)
+  })
+
+  it('draws one card per activity when splitting', () => {
+    const { steps, results } = spanning()
+    const { nodes } = buildFlow(steps, results, false, undefined, true)
+    const cards = nodes.filter((n) => n.kind !== 'table')
+    // Only the orchestration PREFIX is trimmed — `invoke pl_master /` on every
+    // card says nothing. The last segment is kept whole, verb and all, because
+    // that is exactly what `toModel`'s `leafName` keeps and the two must agree
+    // or Create model renames every card.
+    expect(cards.map((n) => n.label)).toEqual(['run nb_bronze', 'run nb_silver'])
+    // The pipeline is not lost — it is the subtitle, so the boundary is still
+    // readable where it still matters.
+    expect(cards.every((n) => n.sub === 'pl_master')).toBe(true)
+  })
+
+  it('gives each activity only its own tables', () => {
+    const { steps, results } = spanning()
+    const { nodes } = buildFlow(steps, results, false, undefined, true)
+    const [bronze, silver] = nodes.filter((n) => n.kind !== 'table')
+    expect(bronze.rows.map((r) => r.label)).toEqual(['lh_landing.raw', 'lh_bronze.orders'])
+    expect(silver.rows.map((r) => r.label)).toEqual(['lh_bronze.orders', 'lh_silver.orders'])
+  })
+
+  it('joins the split cards in order, so the sequence still reads', () => {
+    const { steps, results } = spanning()
+    const { nodes, edges } = buildFlow(steps, results, false, undefined, true)
+    const cards = nodes.filter((n) => n.kind !== 'table')
+    // An order edge to `s:p` would draw nothing at all now that no such card
+    // exists — the ids have to follow the split.
+    const order = edges.filter((e) => e.dashed)
+    expect(order).toEqual([{ from: cards[0].id, to: cards[1].id, dashed: true }])
+  })
+})

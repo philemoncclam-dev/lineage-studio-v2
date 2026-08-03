@@ -1000,3 +1000,72 @@ describe('pipeline grouping in the semantic layouts', () => {
     ])
   })
 })
+
+describe('a pipeline in the medallion layout', () => {
+  /** One pipeline whose two notebooks land in two different stages. */
+  const spanning = () => {
+    const p: Step = { key: 'p', kind: 'pipeline', ws: 'ws1', itemId: 'it-p', name: 'pl_master' }
+    const results = new Map<string, StepResult>([
+      [
+        'p',
+        {
+          status: 'ok',
+          runs: [
+            {
+              name: 'invoke pl_master / run nb_bronze',
+              status: 'ok',
+              result: result({
+                reads: ['lh_landing/lh_landing/raw'],
+                writes: ['plat/lh_bronze/orders'],
+                tables: {
+                  'lh_landing/lh_landing/raw': { workspace: 'plat', lakehouse: 'lh_landing', table: 'raw', resolved: true, kind: 'table' },
+                  'plat/lh_bronze/orders': { workspace: 'plat', lakehouse: 'lh_bronze', table: 'orders', resolved: true, kind: 'table' },
+                },
+              }),
+            },
+            {
+              name: 'invoke pl_master / run nb_silver',
+              status: 'ok',
+              result: result({
+                reads: ['plat/lh_bronze/orders'],
+                writes: ['plat/lh_silver/orders'],
+                tables: {
+                  'plat/lh_bronze/orders': { workspace: 'plat', lakehouse: 'lh_bronze', table: 'orders', resolved: true, kind: 'table' },
+                  'plat/lh_silver/orders': { workspace: 'plat', lakehouse: 'lh_silver', table: 'orders', resolved: true, kind: 'table' },
+                },
+              }),
+            },
+          ],
+        } as StepResult,
+      ],
+    ])
+    return { steps: [p], results }
+  }
+
+  it('puts each activity in the stage it produces, not the pipeline in one', () => {
+    const { steps, results } = spanning()
+    const model = sequenceToModel(steps, results, 'M', 'flow', {
+      ...DEFAULT_PORT_OPTIONS,
+      layout: 'medallion',
+    }).model
+    const named = model.layers.map((l) => [l.name, l.objects.map((o) => o.name)])
+    // The pipeline itself is nowhere: it has no stage, and filing it under one
+    // would have thrown its other edges across every column to reach them.
+    expect(JSON.stringify(named)).not.toContain('pl_master')
+    const bronze = model.layers.find((l) => l.name === 'Bronze')!
+    const silver = model.layers.find((l) => l.name === 'Silver')!
+    expect(bronze.objects.map((o) => o.name)).toContain('run nb_bronze')
+    expect(silver.objects.map((o) => o.name)).toContain('run nb_silver')
+  })
+
+  it('keeps the pipeline whole in the Zig-Zag layout', () => {
+    const { steps, results } = spanning()
+    const model = sequenceToModel(steps, results, 'M', 'flow', {
+      ...DEFAULT_PORT_OPTIONS,
+      layout: 'stages',
+    }).model
+    // Ownership is that view's axis, and a pipeline has an owner — so there it
+    // stays one object with its activities nested inside.
+    expect(JSON.stringify(model.layers.map((l) => l.objects.map((o) => o.name)))).toContain('pl_master')
+  })
+})

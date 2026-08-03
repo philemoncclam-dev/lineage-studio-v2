@@ -1005,6 +1005,21 @@ export function buildFlow(
   fold = false,
   /** The previous run, when Diff is on. Marks what is new and what stopped resolving. */
   diff?: RunDiff,
+  /**
+   * Draw a pipeline as one card per notebook ACTIVITY rather than one card
+   * holding them as nested rows.
+   *
+   * Medallion only, and it is what makes that view work. A pipeline has no
+   * medallion stage — it is orchestration, and the stage describes how far
+   * along the DATA is. Its notebooks do have one: the bronze notebook belongs
+   * in Bronze, the silver one in Silver. Kept whole, a pipeline spanning three
+   * stages had to be filed under one of them and threw long edges across every
+   * column to reach the other two, which is the clutter this removes.
+   *
+   * The pipeline is not lost — it becomes the subtitle on each of its cards,
+   * so the boundary is still readable where it is still relevant.
+   */
+  splitPipelines = false,
 ): { nodes: FlowNode[]; edges: FlowEdge[] } {
   const nodes: FlowNode[] = []
   const edges: FlowEdge[] = []
@@ -1115,17 +1130,55 @@ export function buildFlow(
     return anchor
   }
 
-  steps.forEach((step, i) => {
-    const stepId = `s:${step.key}`
+  /**
+   * The cards one step contributes: itself, or — when a pipeline is being
+   * split — one per activity it ran. `nest` says whether the card holds its
+   * runs as activity rows, which only a whole pipeline does.
+   */
+  const unitsOf = (step: Step, i: number) => {
     const res = results.get(step.key)
-    const sub =
-      res?.status === 'running'
-        ? 'running…'
-        : res?.status === 'error'
-          ? 'error'
-          : step.kind === 'pipeline' && res?.activities
-            ? `${res.activities.length} act · ${res.runs.length} run`
-            : undefined
+    const runs = res?.runs ?? []
+    if (splitPipelines && step.kind === 'pipeline' && runs.length)
+      return runs.map((run, ri) => ({
+        id: `s:${step.key}:a${ri}`,
+        // The activity's own name, with the orchestration prefix the backend
+        // builds (`invoke pl_x / run nb_y`) trimmed off the front.
+        label: run.name.includes(' / ') ? run.name.slice(run.name.lastIndexOf(' / ') + 3) : run.name,
+        sub: step.name,
+        badge: `${i + 1}.${ri + 1}`,
+        kind: 'notebook' as FlowKind,
+        runs: [run],
+        nest: false,
+        split: true,
+      }))
+    return [
+      {
+        id: `s:${step.key}`,
+        label: step.name,
+        sub:
+          res?.status === 'running'
+            ? 'running…'
+            : res?.status === 'error'
+              ? 'error'
+              : step.kind === 'pipeline' && res?.activities
+                ? `${res.activities.length} act · ${res.runs.length} run`
+                : undefined,
+        badge: String(i + 1),
+        kind: step.kind,
+        runs,
+        nest: step.kind === 'pipeline' && runs.length > 0,
+        split: false,
+      },
+    ]
+  }
+
+  const units = steps.flatMap((step, i) => unitsOf(step, i).map((u) => ({ ...u, step })))
+
+  units.forEach((unit) => {
+    const step = unit.step
+    const stepId = unit.id
+    const res = results.get(step.key)
+    const sub = unit.sub
     // The step's own workspace — anything else is a cross-workspace access,
     // which is the fact this view exists to make visible.
     const own = res?.runs.find((x) => x.result?.workspace)?.result?.workspace ?? ''
@@ -1229,8 +1282,8 @@ export function buildFlow(
       for (const w of writes) writeAnchors.push([w, key])
     }
 
-    const runs = res?.runs ?? []
-    if (step.kind === 'pipeline' && runs.length) {
+    const runs = unit.runs
+    if (unit.nest) {
       // A pipeline's rows are its ACTIVITIES, each heading the tables it
       // touched — the shape of the pipeline, not a merged inventory.
       runs.forEach((run, ri) => {
@@ -1253,15 +1306,23 @@ export function buildFlow(
     } else {
       // A notebook step IS the notebook, so there is nothing to nest under —
       // its tables sit at the top level, and their columns one level in.
-      ioRows(stepReads(res), stepWrites(res), 0)
+      //
+      // A split pipeline activity is a notebook card too, but its tables are
+      // its OWN run's, not the pipeline's merged set — taking the merged set
+      // put every table the pipeline touched on every one of its cards.
+      ioRows(
+        unit.split ? uniq(runs.flatMap((r) => r.result?.reads ?? [])) : stepReads(res),
+        unit.split ? uniq(runs.flatMap((r) => r.result?.writes ?? [])) : stepWrites(res),
+        0,
+      )
     }
 
     nodes.push({
       id: stepId,
-      kind: step.kind,
-      label: step.name,
+      kind: unit.kind,
+      label: unit.label,
       sub,
-      badge: String(i + 1),
+      badge: unit.badge,
       // The step's OWN workspace, which is the axis the workspace view lays
       // cards out on. Empty when no run resolved one — the same "unresolved"
       // the tables column already distinguishes from a real name.
@@ -1313,8 +1374,11 @@ export function buildFlow(
 
   // Faint order edges between consecutive steps so the sequence reads clearly
   // even before a run (and where steps share no table).
-  for (let i = 1; i < steps.length; i++) {
-    edges.push({ from: `s:${steps[i - 1].key}`, to: `s:${steps[i].key}`, dashed: true })
+  // Between consecutive CARDS, not steps: splitting a pipeline replaces one
+  // card with several, and an order edge to an id that no longer exists draws
+  // nothing at all.
+  for (let i = 1; i < units.length; i++) {
+    edges.push({ from: units[i - 1].id, to: units[i].id, dashed: true })
   }
   return { nodes, edges }
 }
@@ -1689,8 +1753,16 @@ export function SequenceCanvas({
   const [diffOn, setDiffOn] = useState(false)
   const diff = useMemo(() => diffRuns(previous, results), [previous, results])
   const predicted = useMemo(
-    () => buildFlow(steps, results, semanticView, diffOn && !diff.empty ? diff : undefined),
-    [steps, results, semanticView, diffOn, diff],
+    () =>
+      buildFlow(
+        steps,
+        results,
+        semanticView,
+        diffOn && !diff.empty ? diff : undefined,
+        // Medallion only: a pipeline has no stage, its notebooks do.
+        view === 'medallion',
+      ),
+    [steps, results, semanticView, diffOn, diff, view],
   )
   const coverage = useMemo(() => coverageSummary(results), [results])
   // What these notebooks last really did in Fabric, when the run asked for it.

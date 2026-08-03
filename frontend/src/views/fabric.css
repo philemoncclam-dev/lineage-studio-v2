@@ -1446,15 +1446,16 @@
   font-style: italic;
 }
 
-/* The toggle beside Run. Quiet — it is a setting, not an action — but present,
-   because it changes what Run costs. */
+/* The toggle beside Run. A setting rather than an action, so quieter than the
+   button — but not the 11px secondary it was: a user looking straight at this
+   panel could not find it, which is the same failure as not having it. */
 .sbx-compare-toggle {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: 8px;
-  font-size: var(--text-micro, 11px);
-  color: var(--color-text-secondary);
+  font-size: var(--text-sm, 12px);
+  color: var(--color-text, inherit);
   cursor: pointer;
   user-select: none;
 }

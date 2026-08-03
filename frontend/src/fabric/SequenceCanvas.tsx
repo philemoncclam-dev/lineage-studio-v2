@@ -1744,11 +1744,15 @@ export function SequenceCanvas({
           <div className="fx-detail-empty">
             <StepIcon kind="notebook" />
             <p>
-              {observed.empty
-                ? 'This run did not ask Fabric for history. Tick “Compare with last real run” beside Run sequence, then run again.'
-                : observed.available === 0
-                  ? 'No readable run history for these notebooks.'
-                  : 'The runs were readable, but none of their SQL executions named a table this parser could resolve.'}
+              {!ran
+                ? // Said first, because every other message here describes a run
+                  // that happened, and before Run none of them can be true.
+                  'Nothing has run yet. This view draws what a real Fabric run did, so press Run sequence with “Compare with last real run” ticked — both are at the bottom of the Sandbox sequence panel.'
+                : observed.empty
+                  ? 'That run did not ask Fabric for history. Tick “Compare with last real run” at the bottom of the Sandbox sequence panel, then run again.'
+                  : observed.available === 0
+                    ? 'No readable run history for these notebooks.'
+                    : 'The runs were readable, but none of their SQL executions named a table this parser could resolve.'}
             </p>
             {observed.notes.map((note) => (
               <p key={note} className="sbx-observed-notes">

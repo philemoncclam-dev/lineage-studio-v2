@@ -7,7 +7,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--spacing-6, 24px);
+  padding: var(--spacing-6);
 }
 .fo-page--center {
   display: flex;
@@ -34,7 +34,7 @@
 }
 .fo-title {
   margin: 0;
-  font-size: var(--text-heading, 18px);
+  font-size: var(--text-heading);
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -43,7 +43,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   color: var(--color-text-tertiary);
 }
 .fo-dot {
@@ -73,21 +73,23 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   color: var(--color-text-secondary);
   cursor: pointer;
 }
 .fo-sync {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 6px);
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  border: var(--border-width) solid var(--color-border);
+  /* No fallback: it said 6px while the token is 8px, so the two disagreed and
+     whichever won was an accident. */
+  border-radius: var(--radius-control);
   background: var(--color-surface-2);
   color: var(--color-text-primary);
   font: inherit;
-  font-size: var(--text-base, 13px);
+  font-size: var(--text-base);
   cursor: pointer;
 }
 /* A single-workspace scope puts its name in the button — clamp the label (not
@@ -125,9 +127,9 @@
 .fo-error {
   padding: 10px 12px;
   border: 1px solid var(--color-destructive);
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-control);
   color: var(--color-destructive);
-  font-size: var(--text-base, 13px);
+  font-size: var(--text-base);
 }
 
 /* --- workspace filter chips --- */
@@ -147,7 +149,7 @@
   background: transparent;
   color: var(--color-text-secondary);
   font: inherit;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   cursor: pointer;
 }
 .fo-chip:hover {
@@ -176,11 +178,11 @@
   gap: 8px;
   padding: 5px 10px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-control);
   background: var(--color-surface-1);
   color: var(--color-text-secondary);
   font: inherit;
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
   cursor: pointer;
 }
 .fo-ws-trigger:hover {
@@ -222,7 +224,7 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card, 8px);
+  border-radius: var(--radius-card);
   background: var(--color-surface-2, var(--color-surface-1));
   box-shadow: var(--shadow-overlay);
   overflow: hidden;
@@ -234,7 +236,7 @@
   background: transparent;
   color: var(--color-text-primary);
   font: inherit;
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
   outline: none;
 }
 .fo-ws-list {
@@ -245,7 +247,7 @@
 .fo-ws-empty {
   padding: 10px;
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
 }
 .fo-ws-row {
   display: flex;
@@ -254,11 +256,11 @@
   width: 100%;
   padding: 5px 6px;
   border: 0;
-  border-radius: var(--radius-control, 5px);
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--color-text-primary);
   font: inherit;
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
   text-align: left;
   cursor: pointer;
 }
@@ -279,7 +281,7 @@
 .fo-ws-check[data-on] {
   border-color: var(--color-accent);
   background: var(--color-accent);
-  color: var(--color-surface-canvas, #fff);
+  color: var(--color-surface-canvas);
 }
 .fo-ws-name {
   flex: 1;
@@ -303,11 +305,11 @@
   flex: 1;
   padding: 4px 6px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 5px);
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--color-text-secondary);
   font: inherit;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   cursor: pointer;
 }
 .fo-ws-foot button:hover:not(:disabled) {
@@ -329,7 +331,7 @@
   padding: 14px 16px;
   border: 1px solid var(--color-border);
   border-top: 2px solid var(--tone, var(--color-border-strong));
-  border-radius: var(--radius-card, 10px);
+  border-radius: var(--radius-card);
   background: var(--color-surface-1);
   box-shadow: var(--shadow-card);
 }
@@ -339,7 +341,7 @@
 .fo-tile[data-tone='neutral'] { --tone: var(--color-border-strong); }
 .fo-tile-label {
   margin: 0;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 600;
@@ -355,7 +357,7 @@
 }
 .fo-tile-caption {
   margin: 6px 0 0;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   color: var(--color-text-tertiary);
 }
 
@@ -371,7 +373,7 @@
 }
 .fo-card {
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card, 10px);
+  border-radius: var(--radius-card);
   background: var(--color-surface-1);
   box-shadow: var(--shadow-card);
   padding: 16px;
@@ -384,13 +386,13 @@
 }
 .fo-card-title {
   margin: 0 0 12px;
-  font-size: var(--text-base, 13px);
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--color-text-primary);
 }
 .fo-card-head .fo-card-title { margin-bottom: 12px; }
 .fo-card-note {
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   color: var(--color-text-tertiary);
 }
 
@@ -425,7 +427,7 @@
   color: var(--color-text-primary);
 }
 .fo-donut-label {
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   color: var(--color-text-tertiary);
 }
 .fo-legend {
@@ -441,7 +443,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   color: var(--color-text-secondary);
 }
 .fo-swatch {
@@ -463,13 +465,13 @@
 .fo-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--text-base, 13px);
+  font-size: var(--text-base);
 }
 .fo-table th {
   text-align: left;
   padding: 6px 10px;
   border-bottom: 1px solid var(--color-border);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 600;
@@ -525,12 +527,12 @@
 }
 .fo-empty h2 {
   margin: 0 0 8px;
-  font-size: var(--text-heading, 18px);
+  font-size: var(--text-heading);
   font-weight: 600;
   color: var(--color-text-primary);
 }
 .fo-empty p {
   margin: 0;
-  font-size: var(--text-base, 13px);
+  font-size: var(--text-base);
   color: var(--color-text-tertiary);
 }

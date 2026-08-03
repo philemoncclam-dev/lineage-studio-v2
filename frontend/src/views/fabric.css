@@ -13,7 +13,7 @@
   min-height: 0;
   display: flex;
   justify-content: center;
-  padding: var(--spacing-4, 16px);
+  padding: var(--spacing-4);
   overflow: hidden;
 }
 /* Three columns on Explore: tree | detail | sandbox sequence. Only the middle
@@ -28,14 +28,14 @@
   width: 100%;
   min-height: 0;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card, 10px);
+  border-radius: var(--radius-card);
   background: var(--color-surface-1, var(--color-surface-canvas));
   overflow: hidden;
 }
 .fx-explorer--single {
   grid-template-columns: 1fr;
   place-items: center;
-  padding: var(--spacing-8, 32px);
+  padding: var(--spacing-8);
 }
 
 .fx-explorer-tree {
@@ -95,10 +95,10 @@
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: var(--radius-pill, 999px);
+  border-radius: var(--radius-pill);
   background: var(--color-accent);
-  color: var(--color-surface-canvas, #0b0d10);
-  font-size: var(--text-micro, 10px);
+  color: var(--color-surface-canvas);
+  font-size: var(--text-micro);
   font-weight: 700;
 }
 .fx-detail-scroll {
@@ -114,7 +114,7 @@
   flex-direction: column;
   min-height: 0;
   border-left: 1px solid var(--color-border);
-  background: var(--color-surface-2, transparent);
+  background: var(--color-surface-2);
 }
 /* Very wide screens: the side columns take a little more, so the layout looks
    proportioned rather than like two thin strips beside an ocean. */
@@ -148,7 +148,7 @@
   padding: 0;
   color: var(--color-text-tertiary);
   font: inherit;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
@@ -184,7 +184,7 @@
   padding: 0 14px;
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 600;
@@ -204,8 +204,8 @@
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: var(--row-height, 32px);
-  border-radius: var(--radius-control, 6px);
+  min-height: var(--row-height);
+  border-radius: var(--radius-control);
 }
 .fx-row:hover {
   background: var(--color-surface-2, rgba(255, 255, 255, 0.04));
@@ -227,7 +227,7 @@
   padding: 4px 8px;
   background: none;
   border: none;
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-control);
   color: var(--color-text-primary);
   font: inherit;
   text-align: left;
@@ -249,7 +249,7 @@
   padding: 0;
   background: none;
   border: none;
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-control);
   color: var(--color-text-tertiary);
   cursor: pointer;
 }
@@ -273,7 +273,7 @@
   height: 26px;
   margin-right: 4px;
   color: var(--color-text-tertiary);
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-control);
   opacity: 0;
   transition: opacity 100ms ease, color 100ms ease, background 100ms ease;
 }
@@ -306,9 +306,9 @@
 .fx-add-n {
   min-width: 13px;
   padding: 0 3px;
-  border-radius: var(--radius-pill, 999px);
+  border-radius: var(--radius-pill);
   background: var(--color-accent);
-  color: var(--color-surface-canvas, #0b0d10);
+  color: var(--color-surface-canvas);
   font-size: 9px;
   font-weight: 700;
   line-height: 13px;
@@ -351,14 +351,14 @@
 .fx-meta {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   font-family: var(--font-mono);
 }
 
 .fx-note {
   padding: 4px 8px;
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
 }
 .fx-note[data-error='true'] {
   color: var(--color-destructive);
@@ -421,7 +421,7 @@
 }
 .fx-detail-sub {
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-top: 2px;
@@ -458,8 +458,8 @@
   gap: 6px;
   padding: 7px 12px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 6px);
-  background: var(--color-surface-2, transparent);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-2);
   color: var(--color-text-primary);
   font: inherit;
   font-size: var(--text-sm, 13px);
@@ -477,7 +477,7 @@
 }
 .fx-btn--primary {
   background: var(--color-accent);
-  color: var(--color-surface-canvas, #0b0d10);
+  color: var(--color-surface-canvas);
   border-color: transparent;
   font-weight: 600;
 }
@@ -493,7 +493,7 @@
   gap: 1px;
   margin: 0;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-control);
   overflow: hidden;
 }
 .fx-kv-row {
@@ -501,7 +501,7 @@
   grid-template-columns: 120px 1fr;
   gap: 12px;
   padding: 8px 12px;
-  background: var(--color-surface-2, transparent);
+  background: var(--color-surface-2);
 }
 .fx-kv-row dt {
   color: var(--color-text-tertiary);
@@ -516,7 +516,7 @@
 .fx-kv code,
 .fx-detail-body code {
   font-family: var(--font-mono);
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
 }
 
 /* column list */
@@ -525,14 +525,14 @@
   border-collapse: collapse;
   font-size: var(--text-sm, 13px);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-control);
   overflow: hidden;
 }
 .fx-cols th {
   text-align: left;
   padding: 8px 12px;
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-bottom: 1px solid var(--color-border);
@@ -548,7 +548,7 @@
 .fx-cols-type {
   font-family: var(--font-mono);
   color: var(--color-text-secondary);
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
 }
 
 /* Pipeline sequence — the sandbox Sequence view's reading, applied to a
@@ -561,7 +561,7 @@
    dark direction — visible as a grey box in a light app.) */
 .fx-pipe {
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card, 8px);
+  border-radius: var(--radius-card);
   background: #fff;
   overflow: auto;
   max-height: calc(100vh - 360px);
@@ -593,7 +593,7 @@
 .fx-seq-caption {
   margin: 0 0 8px;
   color: #6b7385;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
 }
 
 .fx-seq-card {
@@ -671,7 +671,7 @@
 .fx-seq-tag {
   flex: none;
   padding: 1px 5px;
-  border-radius: var(--radius-pill, 999px);
+  border-radius: var(--radius-pill);
   font-size: 10px;
 }
 .fx-seq-tag[data-tone='read'] {
@@ -687,7 +687,7 @@
 .fx-code {
   display: flex;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card, 8px);
+  border-radius: var(--radius-card);
   background: var(--color-surface-canvas, rgba(0, 0, 0, 0.25));
   overflow: auto;
   max-height: calc(100vh - 320px);
@@ -702,7 +702,7 @@
   border-right: 1px solid var(--color-border);
   user-select: none;
   font-family: var(--font-mono);
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
   line-height: 1.6;
 }
 .fx-code-body {
@@ -711,7 +711,7 @@
   padding: 12px 14px;
   overflow-x: auto;
   font-family: var(--font-mono);
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
   line-height: 1.6;
   color: var(--color-text-primary);
   white-space: pre;
@@ -735,8 +735,8 @@
   padding: 2px;
   gap: 2px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 6px);
-  background: var(--color-surface-2, transparent);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-2);
 }
 .sbx-view {
   padding: 3px 10px;
@@ -745,7 +745,7 @@
   background: none;
   color: var(--color-text-tertiary);
   font: inherit;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   font-weight: 600;
   cursor: pointer;
 }
@@ -754,12 +754,12 @@
 }
 .sbx-view[data-active] {
   background: var(--color-accent);
-  color: var(--color-surface-canvas, #0b0d10);
+  color: var(--color-surface-canvas);
 }
 .sbx-bar-title {
   flex: 1 1 auto;
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 600;
@@ -788,8 +788,8 @@
   gap: 8px;
   padding: 6px 8px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 6px);
-  background: var(--color-surface-2, transparent);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-2);
 }
 .sbx-step[data-status='error'] {
   border-color: var(--color-destructive);
@@ -801,10 +801,10 @@
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: var(--radius-pill, 999px);
+  border-radius: var(--radius-pill);
   background: var(--color-accent);
-  color: var(--color-surface-canvas, #0b0d10);
-  font-size: var(--text-micro, 11px);
+  color: var(--color-surface-canvas);
+  font-size: var(--text-micro);
   font-weight: 700;
 }
 .sbx-step-name {
@@ -822,7 +822,7 @@
   flex: 0 0 auto;
 }
 .sbx-step-dot[data-ok] {
-  background: var(--color-success, #4ade80);
+  background: var(--color-success);
 }
 .sbx-step-dot[data-err] {
   background: var(--color-destructive);
@@ -838,7 +838,7 @@
   border: none;
   background: none;
   color: var(--color-text-tertiary);
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-control);
   cursor: pointer;
   font-size: 13px;
   line-height: 1;
@@ -863,14 +863,14 @@
   gap: 6px;
   padding: 8px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-control);
   background: var(--color-surface-canvas, rgba(0, 0, 0, 0.2));
 }
 .sbx-picker-input {
   padding: 7px 10px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 6px);
-  background: var(--color-surface-1, transparent);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-1);
   color: var(--color-text-primary);
   font: inherit;
   font-size: var(--text-sm, 13px);
@@ -889,7 +889,7 @@
   padding: 6px 8px;
   border: none;
   background: none;
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-control);
   color: var(--color-text-primary);
   font: inherit;
   text-align: left;
@@ -909,7 +909,7 @@
 .sbx-picker-ws {
   flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
 }
 .sbx-picker-close {
   align-self: flex-end;
@@ -932,7 +932,7 @@
   gap: 10px;
   padding: 12px 14px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card, 8px);
+  border-radius: var(--radius-card);
   background: var(--color-surface-1);
 }
 .sbx-step-report[data-status='error'] {
@@ -956,7 +956,7 @@
 .sbx-step-report-note {
   margin: 0;
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
 }
 
 /* Status as a pill, so ok/error is legible at a glance instead of grey
@@ -964,16 +964,16 @@
 .sbx-status-pill {
   flex: none;
   padding: 2px 8px;
-  border-radius: var(--radius-pill, 999px);
+  border-radius: var(--radius-pill);
   border: 1px solid var(--color-border);
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 10px);
+  font-size: var(--text-micro);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 .sbx-status-pill[data-status='ok'] {
-  border-color: color-mix(in oklab, var(--color-success, #16a34a) 45%, transparent);
-  color: var(--color-success, #16a34a);
+  border-color: color-mix(in oklab, var(--color-success) 45%, transparent);
+  color: var(--color-success);
 }
 .sbx-status-pill[data-status='error'] {
   border-color: color-mix(in oklab, var(--color-destructive) 45%, transparent);
@@ -1263,7 +1263,7 @@
 }
 .sbx-report-title {
   margin: 0;
-  font-size: var(--text-base, 13px);
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -1274,10 +1274,10 @@
   align-items: center;
   gap: 6px;
   padding: 2px 10px;
-  border-radius: var(--radius-pill, 999px);
-  border: 1px solid color-mix(in oklab, var(--color-success, #16a34a) 45%, transparent);
-  color: var(--color-success, #16a34a);
-  font-size: var(--text-micro, 11px);
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in oklab, var(--color-success) 45%, transparent);
+  color: var(--color-success);
+  font-size: var(--text-micro);
 }
 .sbx-verdict::before {
   content: '';
@@ -1296,7 +1296,7 @@
   border-left: 3px solid var(--color-destructive);
   background: color-mix(in oklab, var(--color-destructive) 8%, transparent);
   color: var(--color-text-primary);
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
 }
 
 /* Unreadable input schemas. Deliberately NOT destructive-red: the run is
@@ -1305,9 +1305,9 @@
    itself. */
 .sbx-schema-gap {
   padding: 8px 12px;
-  border-left: 3px solid var(--color-warning, #d97706);
-  background: color-mix(in oklab, var(--color-warning, #d97706) 8%, transparent);
-  font-size: var(--text-micro, 12px);
+  border-left: 3px solid var(--color-warning);
+  background: color-mix(in oklab, var(--color-warning) 8%, transparent);
+  font-size: var(--text-micro);
   color: var(--color-text-primary);
 }
 .sbx-schema-gap > summary {
@@ -1316,7 +1316,7 @@
 .sbx-schema-gap ul {
   margin: 6px 0 0;
   padding-left: 18px;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   color: var(--color-text-secondary);
 }
 /* The verbatim reasons — a second tier, since the refs above are the answer
@@ -1326,7 +1326,7 @@
   color: var(--color-text-tertiary, var(--color-text-secondary));
 }
 .sbx-report-meta dd[data-warn] {
-  color: var(--color-warning, #d97706);
+  color: var(--color-warning);
 }
 
 /* ===== What actually ran =====
@@ -1349,7 +1349,7 @@
 }
 .sbx-observed-title {
   margin: 0;
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1364,10 +1364,10 @@
   align-items: center;
   gap: 6px;
   padding: 2px 10px;
-  border-radius: var(--radius-pill, 999px);
-  border: 1px solid color-mix(in oklab, var(--color-success, #16a34a) 45%, transparent);
-  color: var(--color-success, #16a34a);
-  font-size: var(--text-micro, 11px);
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in oklab, var(--color-success) 45%, transparent);
+  color: var(--color-success);
+  font-size: var(--text-micro);
 }
 .sbx-observed-verdict::before {
   content: '';
@@ -1377,18 +1377,18 @@
   background: currentColor;
 }
 .sbx-observed-verdict[data-differs] {
-  border-color: color-mix(in oklab, var(--color-accent, #6366f1) 50%, transparent);
-  color: var(--color-accent, #6366f1);
+  border-color: color-mix(in oklab, var(--color-accent) 50%, transparent);
+  color: var(--color-accent);
 }
 
 .sbx-observed-when {
   margin-left: auto;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   color: var(--color-text-tertiary, var(--color-text-secondary));
 }
 .sbx-observed-line {
   margin: 0;
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
   color: var(--color-text-primary);
 }
 
@@ -1398,9 +1398,9 @@
    discovery, not a failure. */
 .sbx-observed-find {
   padding: 8px 12px;
-  border-left: 3px solid var(--color-accent, #6366f1);
-  background: color-mix(in oklab, var(--color-accent, #6366f1) 8%, transparent);
-  font-size: var(--text-micro, 12px);
+  border-left: 3px solid var(--color-accent);
+  background: color-mix(in oklab, var(--color-accent) 8%, transparent);
+  font-size: var(--text-micro);
   color: var(--color-text-primary);
 }
 .sbx-observed-find p {
@@ -1409,19 +1409,19 @@
 .sbx-observed-find ul {
   margin: 6px 0 0;
   padding-left: 18px;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   color: var(--color-text-secondary);
 }
 
 .sbx-observed-notes {
   margin: 0;
   padding-left: 18px;
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
   color: var(--color-text-tertiary, var(--color-text-secondary));
 }
 
 .sbx-observed-detail {
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
   color: var(--color-text-secondary);
 }
 .sbx-observed-detail > summary {
@@ -1477,7 +1477,7 @@
 }
 .sbx-report-meta dt {
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 10px);
+  font-size: var(--text-micro);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -1485,7 +1485,7 @@
   margin: 0;
   color: var(--color-text-primary);
   font-family: var(--font-mono);
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1507,7 +1507,7 @@
 }
 .sbx-run-name {
   color: var(--color-text-secondary);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
 }
 
 /* Reads and writes side by side, each a scannable column keyed by a coloured
@@ -1518,26 +1518,26 @@
   gap: 12px;
 }
 .sbx-io-col {
-  --io: var(--color-edge-reads, #38bdf8);
+  --io: var(--color-edge-reads);
   min-width: 0;
   padding-left: 8px;
   border-left: 2px solid color-mix(in oklab, var(--io) 60%, transparent);
 }
 .sbx-io-col[data-tone='write'] {
-  --io: var(--color-edge-writes, #f59e0b);
+  --io: var(--color-edge-writes);
 }
 .sbx-io-label {
   display: flex;
   align-items: center;
   gap: 6px;
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 10px);
+  font-size: var(--text-micro);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 .sbx-io-n {
   padding: 0 5px;
-  border-radius: var(--radius-pill, 999px);
+  border-radius: var(--radius-pill);
   background: color-mix(in oklab, var(--io) 18%, transparent);
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
@@ -1555,7 +1555,7 @@
   overflow: hidden;
   color: var(--color-text-primary);
   font-family: var(--font-mono);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
 }
 /* A touched table row: click to disclose the schema the run resolved for it.
    Collapsed by default — a run touches many tables, and an open stack of
@@ -1567,7 +1567,7 @@
   width: 100%;
   padding: 1px 2px;
   border: none;
-  border-radius: var(--radius-control, 4px);
+  border-radius: var(--radius-control);
   background: none;
   color: inherit;
   font: inherit;
@@ -1607,16 +1607,16 @@
 .sbx-io-none {
   margin: 4px 0 0;
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
 }
 
 .sbx-log {
   padding: 10px 12px;
-  border-radius: var(--radius-card, 8px);
+  border-radius: var(--radius-card);
   background: var(--color-surface-canvas, rgba(0, 0, 0, 0.25));
   border: 1px solid var(--color-border);
   font-family: var(--font-mono);
-  font-size: var(--text-micro, 12px);
+  font-size: var(--text-micro);
   color: var(--color-text-secondary);
   overflow-x: auto;
 }
@@ -1637,8 +1637,8 @@
 }
 .fx-btn[data-quiet='true'] {
   padding: 6px 10px;
-  color: var(--color-text-secondary, #5b6478);
-  font-size: var(--text-micro, 11px);
+  color: var(--color-text-secondary);
+  font-size: var(--text-micro);
 }
 /* The count of switched-off settings, so a model ported with things missing is
    never a surprise — the button says so without being opened. */
@@ -1646,7 +1646,7 @@
   padding: 1px 5px;
   border-radius: 999px;
   background: var(--color-surface-canvas, rgba(0, 0, 0, 0.06));
-  color: var(--color-text-tertiary, #7b8496);
+  color: var(--color-text-tertiary);
   font-size: 10px;
   font-weight: 600;
 }
@@ -1658,13 +1658,13 @@
   width: 292px;
   padding: 10px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 6px);
-  background: var(--color-surface-1, #fff);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-1);
   box-shadow: 0 8px 24px rgb(16 20 30 / 0.16);
 }
 .sbx-portset-lead {
   margin: 0 0 8px;
-  color: var(--color-text-tertiary, #7b8496);
+  color: var(--color-text-tertiary);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -1695,7 +1695,7 @@
   font-size: var(--text-sm, 13px);
 }
 .sbx-portset-hint {
-  color: var(--color-text-tertiary, #7b8496);
+  color: var(--color-text-tertiary);
   font-size: 11px;
   line-height: 1.35;
 }
@@ -1722,8 +1722,8 @@
   overflow: hidden;
   padding: 4px 12px;
   border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-secondary, #4a5468);
-  font-size: var(--text-micro, 11px);
+  color: var(--color-text-secondary);
+  font-size: var(--text-micro);
 }
 .sbx-strip-text {
   position: relative;
@@ -1734,7 +1734,7 @@
 .sbx-strip-bar {
   position: absolute;
   inset: 0 auto 0 0;
-  background: color-mix(in oklab, var(--color-accent, #1f6feb) 18%, transparent);
+  background: color-mix(in oklab, var(--color-accent) 18%, transparent);
   transition: width 0.3s ease;
 }
 .sbx-strip[data-tone='warn'] {
@@ -1786,8 +1786,8 @@
   opacity: 0.45;
 }
 .sbx-flow-card[data-status='running'] {
-  border-color: var(--color-accent, #1f6feb);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent, #1f6feb) 18%, transparent);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 18%, transparent);
 }
 .sbx-flow-card[data-status='error'] {
   border-color: #be3c3c;
@@ -1877,14 +1877,14 @@
 .fx-lineage-hint {
   margin-left: auto;
   color: var(--color-text-tertiary);
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
 }
 .fx-lineage-note,
 .fx-lineage-error {
   flex: 0 0 auto;
   margin: 0;
   padding: 6px 12px;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
   border-bottom: 1px solid var(--color-border);
 }
 .fx-lineage-note {
@@ -1944,14 +1944,14 @@
   margin-bottom: 10px;
   padding: 8px 10px;
   border: 1px solid var(--color-destructive);
-  border-radius: var(--radius-control, 6px);
+  border-radius: var(--radius-control);
   background: color-mix(in oklab, var(--color-destructive) 7%, transparent);
 }
 .sbx-failure {
   display: flex;
   gap: 8px;
   align-items: baseline;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
 }
 .sbx-failure-where {
   flex: 0 0 auto;
@@ -1961,14 +1961,14 @@
 .sbx-failure-what {
   min-width: 0;
   color: var(--color-destructive);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
 
 /* Per-cell detail. Open only when something failed — see the note on CellList. */
 .sbx-cells {
   margin-top: 6px;
-  font-size: var(--text-micro, 11px);
+  font-size: var(--text-micro);
 }
 .sbx-cells > summary {
   color: var(--color-text-tertiary);
@@ -1988,7 +1988,7 @@
   padding: 4px 6px;
   border-left: 2px solid var(--color-border);
   border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
-  background: var(--color-surface-2, transparent);
+  background: var(--color-surface-2);
 }
 /* The only colour in the list, so a failed cell is findable by scanning the
    left edge rather than by reading every row. */
@@ -2008,7 +2008,7 @@
 }
 .sbx-cell-error {
   color: var(--color-destructive);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
 /* Scrolls rather than stretching the report: a cell that printed a dataframe
@@ -2018,8 +2018,8 @@
   max-height: 160px;
   overflow: auto;
   color: var(--color-text-secondary);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-micro, 11px);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

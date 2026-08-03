@@ -66,6 +66,13 @@
      retired green, which sat close to Bronze's orange under CVD
      simulation. */
   --amber-1: light-dark(oklch(0.48 0.15 48), oklch(0.65 0.15 48)); /* bronze */
+  /* Caution. A separate primitive from bronze rather than a reuse of it: bronze
+     is a DOMAIN identity (a medallion layer) and this is a STATUS, and the two
+     appear on the same screen — a bronze card beside a warning that were the
+     same swatch would make the legend a lie. Pushed yellow-ward (hue 75 vs 48)
+     and lighter, which is also the direction that reads as caution rather than
+     as a material. */
+  --amber-2: light-dark(oklch(0.58 0.14 75), oklch(0.76 0.14 75)); /* warning */
   --rose-1: light-dark(oklch(0.56 0.16 350), oklch(0.72 0.16 350)); /* notebook */
   --steel-1: light-dark(oklch(0.35 0.03 235), oklch(0.45 0.03 235)); /* silver */
   /* Silver's hue (235 degrees) sits only ~2-3 degrees from the accent's
@@ -129,6 +136,15 @@
   --color-grid-dot: var(--slate-4); /* dot-grid canvas background on both canvases */
   --color-destructive: var(--red-1);
   --color-success: var(--green-1);
+  /* Caution WITHOUT failure — a run that is valid but incomplete, an item drawn
+     without its dependencies, a schema that could not be read. Distinct from
+     destructive on purpose: painting "your column lineage is thin" the same red
+     as "this deletes data" teaches people to ignore both. Referenced by
+     `.sbx-schema-gap` and the report's `[data-warn]` figures, which until now
+     named a token that did not exist and silently painted a literal — so they
+     never followed the theme. Shares amber-1 with the bronze domain colour: the
+     hue already exists, and no new one enters the system. */
+  --color-warning: var(--amber-2);
 
   /* Elevation (DS-05): on dark, shadow is supplementary only — lightness stepping plus the border token carry elevation there, because a near-black canvas has almost no headroom to go darker, which is why shadow-as-primary silently stops reading. On light, shadow is a legitimate primary mechanism — white has almost no lightness headroom, so shadow plus border do the perceptual work instead. Each shadow layer's colour switches between themes via the primitive mechanism; the dark theme's second layer is transparent so all three tiers share one visible reference shadow rather than a fabricated multi-layer dark shadow. */
   --shadow-card: 0 1px 2px light-dark(rgb(28 35 51 / 0.04), rgb(0 0 0 / 0.35)), 0 4px 12px light-dark(rgb(28 35 51 / 0.08), transparent);
@@ -208,6 +224,27 @@
 /* ===== Base reset ===== */
 * {
   box-sizing: border-box;
+}
+
+/* One focus ring for the whole app.
+   Before this there were four `:focus-visible` rules in the entire frontend, so
+   keyboard focus was invisible on almost every control on every screen — and
+   where it did show, it showed differently. Wrapped in `:where()` so it carries
+   ZERO specificity: it is a floor, and any component that wants its own ring
+   still wins without needing `!important` or a longer selector.
+   `:focus-visible` rather than `:focus` keeps it off mouse clicks, which is why
+   a visible ring is affordable on everything at once. */
+:where(
+  a[href],
+  button,
+  input,
+  select,
+  summary,
+  textarea,
+  [tabindex]:not([tabindex='-1'])
+):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 body {

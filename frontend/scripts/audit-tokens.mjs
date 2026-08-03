@@ -265,7 +265,7 @@ const CHANNEL_PATTERNS = [
   ['domain', /^--color-domain-(gold|bronze|notebook|silver)$/],
   ['edge', /^--color-edge-/],
   ['state', /^--color-accent/],
-  ['status', /^--color-(destructive|success)$/],
+  ['status', /^--color-(destructive|success|warning)$/],
   // Surface and text are the structural/neutral channels — deliberately
   // ordered last since --color-domain-neutral (a documented net-new alias of
   // text-tertiary's primitive, see tokens.css) is intentionally classified

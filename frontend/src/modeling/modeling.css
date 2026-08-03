@@ -2676,7 +2676,7 @@
 }
 .xp-how {
   color: #16704a;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   overflow-wrap: anywhere;
 }

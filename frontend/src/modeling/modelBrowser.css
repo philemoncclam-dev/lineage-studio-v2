@@ -79,7 +79,9 @@ a.mb-seg:hover { background: var(--color-surface-2); color: var(--color-text-pri
 
 .mb-btn {
   border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-input);
+  /* Controls, not inputs: every other button in the app is --radius-control,
+     and 5px vs 8px is exactly the sort of difference that reads as two apps. */
+  border-radius: var(--radius-control);
   background: var(--color-surface-2);
   color: var(--color-text-primary);
   font: inherit;

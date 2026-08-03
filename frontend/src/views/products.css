@@ -41,7 +41,7 @@
 }
 
 .dp-tree {
-  border: var(--border-width, 1px) solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface-1);
   padding: 0.5rem;
@@ -94,7 +94,7 @@
   display: block;
   text-decoration: none;
   color: inherit;
-  border: var(--border-width, 1px) solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface-1);
   padding: 1rem 1.1rem;
@@ -143,7 +143,7 @@
   letter-spacing: 0.06em;
   padding: 0.2rem 0.55rem;
   border-radius: var(--radius-pill);
-  border: var(--border-width, 1px) solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   color: var(--color-text-secondary);
 }
 .dp-pill[data-status='published'] { color: var(--color-success); border-color: color-mix(in oklch, var(--color-success) 40%, transparent); }
@@ -178,7 +178,7 @@
 .dp-usecases li { margin: 0.25rem 0; }
 
 .dp-aside {
-  border: var(--border-width, 1px) solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface-1);
   padding: 1.1rem;
@@ -226,7 +226,7 @@
 /* --- assets + column drill-in --- */
 
 .dp-asset {
-  border: var(--border-width, 1px) solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface-1);
   margin-bottom: 0.5rem;
@@ -251,21 +251,21 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-text-tertiary);
-  border: var(--border-width, 1px) solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-pill);
   padding: 0.1rem 0.45rem;
 }
 .dp-asset-chevron { margin-left: auto; color: var(--color-text-tertiary); transition: transform 120ms ease; }
 .dp-asset[data-open='true'] .dp-asset-chevron { transform: rotate(90deg); }
 
-.dp-cols { border-top: var(--border-width, 1px) solid var(--color-border); }
+.dp-cols { border-top: var(--border-width) solid var(--color-border); }
 .dp-col {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 1rem;
   padding: 0.4rem 0.9rem 0.4rem 2rem;
   font: var(--text-base);
-  border-bottom: var(--border-width, 1px) solid color-mix(in oklch, var(--color-border) 50%, transparent);
+  border-bottom: var(--border-width) solid color-mix(in oklch, var(--color-border) 50%, transparent);
 }
 .dp-col:last-child { border-bottom: none; }
 .dp-col-name { font-family: var(--font-mono); color: var(--color-text-primary); }
@@ -279,7 +279,7 @@
 .dp-field label { font: var(--text-micro); text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-tertiary); }
 .dp-field input, .dp-field textarea, .dp-field select {
   background: var(--color-surface-1);
-  border: var(--border-width, 1px) solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-input);
   color: var(--color-text-primary);
   padding: 0.55rem 0.7rem;
@@ -292,9 +292,11 @@
 }
 
 .dp-btn {
-  padding: 0.55rem 1.1rem;
+  /* Was 0.55rem/1.1rem — the only button in the app measured in rem, and so
+     the only one that did not sit on the 4px grid everything else uses. */
+  padding: var(--spacing-2) var(--spacing-4);
   border-radius: var(--radius-control);
-  border: var(--border-width, 1px) solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   background: var(--color-surface-2);
   color: var(--color-text-primary);
   font: var(--text-base);
@@ -309,7 +311,7 @@
 .dp-error {
   color: var(--color-destructive);
   font: var(--text-base);
-  border: var(--border-width, 1px) solid color-mix(in oklch, var(--color-destructive) 40%, transparent);
+  border: var(--border-width) solid color-mix(in oklch, var(--color-destructive) 40%, transparent);
   border-radius: var(--radius-control);
   padding: 0.6rem 0.8rem;
 }
@@ -317,7 +319,7 @@
   color: var(--color-text-secondary);
   font: var(--text-base);
   background: var(--color-surface-1);
-  border: var(--border-width, 1px) solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-control);
   padding: 0.7rem 0.9rem;
 }
@@ -326,7 +328,7 @@
 /* --- requests inbox --- */
 
 .dp-req {
-  border: var(--border-width, 1px) solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface-1);
   padding: 1rem 1.1rem;

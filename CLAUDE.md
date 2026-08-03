@@ -40,8 +40,16 @@ cd backend && .venv/Scripts/python -m evals.run
 # frontend — standard Vite: npm install && npm run dev (http://localhost:5173)
 ```
 
-Note: Phase 2's PySpark needs Python 3.11/3.12 — the local `py` is 3.14, so the
-sandbox executor will get its own pinned venv when we build it.
+Note: the sandbox executor runs PySpark 4.0 on Python 3.12 — the local `py` is
+3.14, so it needs its own pinned venv locally (the container installs PySpark
+into the app interpreter and the runner detects that). It tracks **Fabric
+Runtime 2.0** (Spark 4.1, Delta 4.2, Python 3.13, Java 21), one Spark minor
+behind on purpose; see the note in `backend/requirements.txt`.
+
+Notebook SQL is parsed with sqlglot's **`databricks`** dialect, not `spark` —
+Spark 4.x VARIANT path access (`payload:user.id`) is a parse error in the
+latter, and `analyze` degrades silently, so the table vanishes from the graph
+with nothing said.
 
 ## Conventions
 

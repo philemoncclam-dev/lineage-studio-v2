@@ -31,7 +31,15 @@ psycopg[binary]>=3.2
 pytest>=8.3
 httpx>=0.28          # required by fastapi.testclient
 
-# Phase 2 (sandbox executor) — install in a Python 3.11/3.12 venv:
-# pyspark==3.5.4
+# Phase 2 (sandbox executor) — install in a Python 3.12 venv:
+# pyspark==4.0.0
 # openlineage-integration-common
 # openlineage-python
+#
+# Tracks Fabric Runtime 2.0 (Spark 4.1, Delta 4.2, Python 3.13, Java 21), which
+# is what a Fabric notebook now runs on — deliberately one minor behind on
+# Spark. The sandbox only ANALYZES plans, so matching the runtime exactly buys
+# nothing on its own; it matters when a notebook uses syntax the older parser
+# rejects, and Spark 4.0 already covers the 4.x SQL surface (VARIANT, pipe
+# syntax, SQL UDFs, session variables). Bump when a 4.1-only construct actually
+# fails a run — the Dockerfile pin and its JRE move together.

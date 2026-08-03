@@ -237,3 +237,31 @@ def test_the_run_survives_sqlglot_being_unavailable(monkeypatch, missing):
         assert any("unavailable" in line for line in reader.log)
     else:
         assert reader.flows
+
+
+# --- Fabric Runtime 2.0 (Spark 4.x) syntax ---------------------------------
+# Runtime 2.0 brings VARIANT, and with it the `:` path operator. sqlglot's
+# `spark` dialect rejects it, and `analyze` never raises — so a cell using it
+# went silently missing from the graph rather than failing loudly. Hence
+# DIALECT = "databricks".
+
+RAW = make_ref("bronze_events", "Bronze", "Analytics")
+RAW_SCHEMA = {RAW: [{"name": "payload", "type": "variant"}, {"name": "id", "type": "bigint"}]}
+
+
+def test_traces_a_column_read_out_of_a_variant_path():
+    got = flows(
+        "CREATE TABLE gold_users AS SELECT payload:user.id::string AS uid FROM bronze_events",
+        RAW_SCHEMA,
+    )
+    assert ("uid", RAW, "payload") in got
+
+
+def test_pipe_syntax_still_resolves_its_source():
+    """Spark 4.0's `|>`. Table-level reach is the bar here, not columns."""
+    target, reads, _flows, _cols = _sqllineage.analyze(
+        "CREATE TABLE gold_big AS FROM silver_orders |> WHERE total > 0 |> SELECT customer_id",
+        SCHEMAS,
+        CTX,
+    )
+    assert target and ORDERS in reads

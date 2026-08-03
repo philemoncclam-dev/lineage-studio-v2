@@ -66,7 +66,17 @@ try:  # sqlglot is a backend dependency, but the run must survive without it.
 except Exception:  # noqa: BLE001 — any import failure means "degrade", not "crash"
     AVAILABLE = False
 
-DIALECT = "spark"
+#: sqlglot's `databricks` dialect, not `spark` — it SUBCLASSES Spark, so it is
+#: Spark SQL plus the Delta-era extensions, which is exactly what a Fabric
+#: notebook writes.
+#:
+#: The difference that forced it is VARIANT path access, `payload:user.id` — the
+#: headline SQL feature of Fabric Runtime 2.0 (Spark 4.x). The `spark` dialect
+#: rejects the `:` operator outright, and `analyze` never raises: a cell using it
+#: returned no target, no reads and no flows, so the table simply went missing
+#: from the graph with nothing said. `databricks` parses it, and everything the
+#: `spark` dialect handled it still handles.
+DIALECT = "databricks"
 
 #: A `%%sql` / `%%spark-sql` magic cell — the whole body is one statement.
 _SQL_MAGIC = re.compile(r"^\s*%%\s*(?:spark-)?sql\b[^\n]*\n(?P<body>.*)$", re.I | re.S)

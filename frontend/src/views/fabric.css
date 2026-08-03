@@ -1329,6 +1329,139 @@
   color: var(--color-warning, #d97706);
 }
 
+/* ===== What actually ran =====
+   The only outside evidence in the report — everything else is the analysis
+   grading its own homework. Set off with a rule and a slightly heavier title so
+   it reads as a second section rather than a third warning box, because on a
+   healthy run it is good news and must not look like a problem. */
+.sbx-observed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--color-border);
+}
+.sbx-observed-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sbx-observed-title {
+  margin: 0;
+  font-size: var(--text-micro, 12px);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+/* Matches / Differs. Shaped like the isolation verdict but deliberately NOT
+   sharing its palette: a difference here is a discovery, not a breach, and
+   destructive-red would make the most valuable thing this feature produces look
+   like something to suppress. Green when they line up, accent when they do not. */
+.sbx-observed-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid color-mix(in oklab, var(--color-success, #16a34a) 45%, transparent);
+  color: var(--color-success, #16a34a);
+  font-size: var(--text-micro, 11px);
+}
+.sbx-observed-verdict::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.sbx-observed-verdict[data-differs] {
+  border-color: color-mix(in oklab, var(--color-accent, #6366f1) 50%, transparent);
+  color: var(--color-accent, #6366f1);
+}
+
+.sbx-observed-when {
+  margin-left: auto;
+  font-size: var(--text-micro, 11px);
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+.sbx-observed-line {
+  margin: 0;
+  font-size: var(--text-micro, 12px);
+  color: var(--color-text-primary);
+}
+
+/* The find: a table the run really touched that nothing predicted. Open by
+   default and given accent weight, because it is the one thing here that
+   cannot be learned any other way. Accent rather than destructive — it is a
+   discovery, not a failure. */
+.sbx-observed-find {
+  padding: 8px 12px;
+  border-left: 3px solid var(--color-accent, #6366f1);
+  background: color-mix(in oklab, var(--color-accent, #6366f1) 8%, transparent);
+  font-size: var(--text-micro, 12px);
+  color: var(--color-text-primary);
+}
+.sbx-observed-find p {
+  margin: 0;
+}
+.sbx-observed-find ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--color-text-secondary);
+}
+
+.sbx-observed-notes {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--text-micro, 12px);
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+
+.sbx-observed-detail {
+  font-size: var(--text-micro, 12px);
+  color: var(--color-text-secondary);
+}
+.sbx-observed-detail > summary {
+  cursor: pointer;
+}
+.sbx-observed-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 0 4px 18px;
+}
+.sbx-observed-row-name {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.sbx-observed-row-fact {
+  margin-left: auto;
+  text-align: right;
+}
+.sbx-observed-row-fact[data-muted] {
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  font-style: italic;
+}
+
+/* The toggle beside Run. Quiet — it is a setting, not an action — but present,
+   because it changes what Run costs. */
+.sbx-compare-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: var(--text-micro, 11px);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.sbx-compare-toggle input {
+  cursor: pointer;
+}
+
 /* Run shape as labelled figures — the metadata the old green banner crammed
    into one sentence. */
 .sbx-report-meta {

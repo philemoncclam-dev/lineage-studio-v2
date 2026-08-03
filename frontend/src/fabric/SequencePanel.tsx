@@ -7,7 +7,15 @@
 // The lineage those steps produce is drawn by `SequenceCanvas` in the detail
 // column's Sandbox tab; both read the one module store in `fabric/sequence.ts`.
 import { BarsSpinner } from '../shell/BarsSpinner'
-import { useSequence, removeStep, moveStep, clearSteps, runAll, type StepKind } from './sequence'
+import {
+  useSequence,
+  removeStep,
+  moveStep,
+  clearSteps,
+  runAll,
+  setCompareWithReal,
+  type StepKind,
+} from './sequence'
 
 export function StepIcon({ kind }: { kind: StepKind }) {
   return (
@@ -30,7 +38,7 @@ export function StepIcon({ kind }: { kind: StepKind }) {
 }
 
 export function SequencePanel({ title = 'Sandbox sequence' }: { title?: string }) {
-  const { steps, results, running } = useSequence()
+  const { steps, results, running, compareWithReal } = useSequence()
 
   return (
     <>
@@ -84,6 +92,20 @@ export function SequencePanel({ title = 'Sandbox sequence' }: { title?: string }
       </div>
 
       <div className="sbx-run-bar">
+        {/* Sits next to Run rather than in a settings menu, because it changes
+            what Run costs — two extra Fabric reads per notebook — and because
+            the comparison it produces is the least obvious thing the sandbox
+            can tell you. A capability nobody can find is a capability nobody
+            has. */}
+        <label className="sbx-compare-toggle" title="Read each notebook's last real Fabric run and diff it against this one">
+          <input
+            type="checkbox"
+            checked={compareWithReal}
+            disabled={running}
+            onChange={(e) => setCompareWithReal(e.target.checked)}
+          />
+          Compare with last real run
+        </label>
         <button className="fx-btn fx-btn--primary" onClick={runAll} disabled={steps.length === 0 || running}>
           {running ? 'Running…' : `Run sequence${steps.length ? ` (${steps.length})` : ''}`}
         </button>

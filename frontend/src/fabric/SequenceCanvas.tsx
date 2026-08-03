@@ -20,6 +20,7 @@ import {
 import { StepIcon } from './SequencePanel'
 import { stepReads, stepTables, stepWrites, type Step, type StepResult, type StepStatus } from './sequence'
 import { coverageBadge, coverageOf, coverageSummary, type CoverageLevel } from './coverage'
+import { observedAgrees, observedHeadline, observedSummary, runWhen } from './observed'
 import { columnKey, diffIsClean, diffRuns, type RunDiff } from './runDiff'
 import {
   sequenceToModel,
@@ -1610,6 +1611,8 @@ export function SequenceCanvas({
     [steps, results, semanticView, diffOn, diff],
   )
   const coverage = useMemo(() => coverageSummary(results), [results])
+  // What these notebooks last really did in Fabric, when the run asked for it.
+  const observed = useMemo(() => observedSummary(results), [results])
   //: how far a running sequence has got — the canvas was a spinner until the
   //  whole thing finished, on a pipeline that can be minutes.
   const done = [...results.values()].filter((r) => r.status === 'ok' || r.status === 'error').length
@@ -1788,6 +1791,17 @@ export function SequenceCanvas({
                       </dd>
                     </div>
                   )}
+                  {/* How much of the prediction the real run backs up. Every
+                      other figure here is the analysis grading its own homework;
+                      this one is the only outside marker. */}
+                  {!observed.empty && observed.available > 0 && (
+                    <div>
+                      <dt>Confirmed</dt>
+                      <dd data-warn={observed.observedOnly.size > 0 || undefined}>
+                        {observed.agreed.size}/{observed.agreed.size + observed.predictedOnly.size}
+                      </dd>
+                    </div>
+                  )}
                 </dl>
               </>
             )}
@@ -1858,6 +1872,131 @@ export function SequenceCanvas({
                 </ul>
               )}
             </details>
+          )}
+
+          {/* ===== What actually ran =====
+              Everything above is the analysis grading its own homework: it
+              says what these notebooks WOULD do and how sure it is. This is the
+              only outside evidence in the report — the physical plans Fabric
+              kept from the last time they really ran.
+
+              Placed after the gaps and before the per-step detail because it
+              answers the question those gaps raise. "3 writes got no column
+              lineage" is worrying in the abstract; "…and the real run touched
+              exactly the tables we predicted" tells you the shape is right even
+              where the columns are thin. */}
+          {!observed.empty && (
+            <section className="sbx-observed" aria-label="What actually ran">
+              <header className="sbx-observed-head">
+                <h4 className="sbx-observed-title">What actually ran</h4>
+                {/* Its OWN pill, not the isolation verdict's. Reusing that one
+                    painted "Differs" destructive-red, which is the wrong claim
+                    entirely: a difference here is a DISCOVERY — the run touched
+                    something the analysis could not predict — not a failure.
+                    Red would train people to treat the most valuable output of
+                    this whole feature as a problem to make go away. */}
+                {observed.available > 0 && (
+                  <span
+                    className="sbx-observed-verdict"
+                    data-differs={!observedAgrees(observed) || undefined}
+                  >
+                    {observedAgrees(observed) ? 'Matches' : 'Differs'}
+                  </span>
+                )}
+                {observed.lastRunAt && (
+                  <span className="sbx-observed-when">
+                    {observed.lastRunState || 'Last run'} · {runWhen(observed.lastRunAt)}
+                    {observed.lastRunBy && ` · ${observed.lastRunBy}`}
+                  </span>
+                )}
+              </header>
+
+              <p className="sbx-observed-line">{observedHeadline(observed)}</p>
+
+              {/* THE FIND. A table the real run touched that no amount of
+                  reading the source predicted — almost always a cell the static
+                  readers deliberately abstain on (an f-string query, a chain
+                  they would not guess at, a write inside a loop). There is no
+                  other way to learn this, which is why it is the one thing here
+                  that is open by default. */}
+              {observed.observedOnly.size > 0 && (
+                <div className="sbx-observed-find">
+                  <p>
+                    {observed.observedOnly.size} table
+                    {observed.observedOnly.size === 1 ? '' : 's'} the real run touched that this
+                    analysis did not predict — most likely written by a cell it abstained on rather
+                    than a table that does not belong.
+                  </p>
+                  <ul>
+                    {[...observed.observedOnly].sort().map((ref) => (
+                      <li key={ref}>{refLabel(ref, observed.tables)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Deliberately NOT presented as an error. The last real run may
+                  predate this code, or the branch that writes the table may
+                  simply not have executed that night — a prediction the history
+                  cannot confirm is unconfirmed, not wrong. */}
+              {observed.predictedOnly.size > 0 && (
+                <details className="sbx-schema-gap">
+                  <summary>
+                    {observed.predictedOnly.size} predicted table
+                    {observed.predictedOnly.size === 1 ? '' : 's'} not seen in the last real run —
+                    unconfirmed, not necessarily wrong.
+                  </summary>
+                  <ul>
+                    {[...observed.predictedOnly].sort().map((ref) => (
+                      <li key={ref}>{refLabel(ref, { ...observed.tables })}</li>
+                    ))}
+                  </ul>
+                  <ul className="sbx-schema-why">
+                    <li>
+                      A run only records a plan where an ACTION executed, so a branch that did not
+                      run that night leaves no trace. The run may also predate the current code.
+                    </li>
+                  </ul>
+                </details>
+              )}
+
+              {/* Every way of finding nothing, told apart — the backend refuses
+                  to answer an empty question with an empty answer, and this is
+                  where the reasons it gives are read. */}
+              {observed.available === 0 && observed.notes.length > 0 && (
+                <ul className="sbx-observed-notes">
+                  {observed.notes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              )}
+
+              {/* Per notebook, the run that was compared and what it touched.
+                  Collapsed: the summary above is the answer, this is the
+                  evidence, and a healthy comparison should not have to argue
+                  its case. */}
+              {observed.rows.some((r) => r.observed.available) && (
+                <details className="sbx-observed-detail">
+                  <summary>Per notebook</summary>
+                  {observed.rows.map((row) => (
+                    <div className="sbx-observed-row" key={row.name}>
+                      <span className="sbx-observed-row-name">{row.name}</span>
+                      {row.observed.available ? (
+                        <span className="sbx-observed-row-fact">
+                          {row.observed.statements_resolved} of {row.observed.statements_seen} SQL
+                          execution{row.observed.statements_seen === 1 ? '' : 's'} named a table ·{' '}
+                          {row.observed.reads.length} read, {row.observed.writes.length} written
+                        </span>
+                      ) : (
+                        <span className="sbx-observed-row-fact" data-muted>
+                          {row.observed.notes[0] ?? 'no readable run history'}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </details>
+              )}
+            </section>
           )}
 
           <div className="sbx-report-list">

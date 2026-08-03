@@ -56,6 +56,15 @@ export interface SequenceState {
    * "last time" means. Null until a second run — one run has no previous.
    */
   previous: Map<string, StepResult> | null
+  /**
+   * Also fetch what each notebook ACTUALLY did last time it ran in Fabric.
+   *
+   * On by default, because the comparison is the reason to have it and a
+   * feature nobody switches on is a feature nobody has. It costs two extra
+   * Fabric reads per notebook, so the toggle sits next to Run rather than being
+   * buried — a sequence of twenty notebooks is where someone will want it off.
+   */
+  compareWithReal: boolean
 }
 
 export const stepReads = (r?: StepResult): string[] =>
@@ -128,7 +137,13 @@ export function copyActivityRun(a: FabricPipelineActivity): RunEntry | null {
 let seq = 0
 const newKey = () => `step-${++seq}`
 
-let state: SequenceState = { steps: [], results: new Map(), running: false, previous: null }
+let state: SequenceState = {
+  steps: [],
+  results: new Map(),
+  running: false,
+  previous: null,
+  compareWithReal: true,
+}
 const listeners = new Set<() => void>()
 
 function set(next: Partial<SequenceState>) {
@@ -189,9 +204,17 @@ export function orderActivities(activities: FabricPipelineActivity[]): FabricPip
   return [...out, ...pending]
 }
 
+/** Turn the "compare with the last real run" enrichment on or off. */
+export function setCompareWithReal(on: boolean) {
+  set({ compareWithReal: on })
+}
+
 export async function runAll() {
   if (state.running || state.steps.length === 0) return
   const steps = state.steps
+  // Read once, up front: the toggle must not change meaning halfway through a
+  // sequence, or half the steps come back with a comparison and half without.
+  const compareWithReal = state.compareWithReal
   const next = new Map<string, StepResult>()
   steps.forEach((s) => next.set(s.key, { status: 'pending', runs: [] }))
   // The run about to be overwritten becomes "last time". Only a run that
@@ -231,6 +254,7 @@ export async function runAll() {
           workspace_id: step.ws,
           item_id: step.itemId,
           carried_schemas: carried,
+          include_observed: compareWithReal,
         })
         carry(result)
         next.set(step.key, {
@@ -273,6 +297,7 @@ export async function runAll() {
               workspace_id: a.workspace_id ?? step.ws,
               item_id: a.notebook_id,
               carried_schemas: carried,
+              include_observed: compareWithReal,
             })
             // A pipeline's activities run in dependency order, so the carry
             // matters most here — this IS the medallion chain, declared.
@@ -307,6 +332,12 @@ export async function runAll() {
 
 /** Test seam — reset the module store between cases. */
 export function __resetSequence() {
-  state = { steps: [], results: new Map(), running: false, previous: null }
+  state = {
+    steps: [],
+    results: new Map(),
+    running: false,
+    previous: null,
+    compareWithReal: true,
+  }
   listeners.forEach((l) => l())
 }

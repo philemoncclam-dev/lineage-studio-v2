@@ -9,6 +9,11 @@ export type NodeKind =
   // Workspace-level lineage only (see fetchWorkspaceLineage). `item` is an item
   // this app has no reader for — drawn, but never with edges.
   | 'pipeline'
+  // The BI half, from the Power BI metadata scanner — present only when the
+  // tenant permits a scan. See backend/app/fabric/scanner.py.
+  | 'semanticmodel'
+  | 'report'
+  | 'dashboard'
   | 'item'
 
 export interface Column {

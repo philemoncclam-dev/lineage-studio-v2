@@ -44,6 +44,8 @@ const ICONS: Record<ItemKind, React.ReactNode> = {
   dataflow: <path d="M4 6h7a4 4 0 0 1 0 8H8a4 4 0 0 0 0 8h8M16 4l4 2-4 2" />,
   eventhouse: <path d="M4 18V9M9 18V5M14 18v-7M19 18v-4M3 21h18" />,
   table: <path d="M4 5h16v14H4z M4 10h16M4 15h16M10 5v14" />,
+  // A dashboard is tiles — the one BI shape everybody recognises at a glance.
+  dashboard: <path d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z" />,
   item: <path d="M4 5h6v5H4zM14 14h6v5h-6zM10 7.5h2.5a1.5 1.5 0 0 1 1.5 1.5v6" />,
 }
 

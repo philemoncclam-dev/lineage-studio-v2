@@ -33,6 +33,9 @@ FABRIC_SCOPE = "https://api.fabric.microsoft.com/.default"
 ONELAKE_SCOPE = "https://storage.azure.com/.default"
 ONELAKE_BASE = "https://onelake.dfs.fabric.microsoft.com"
 
+#: Power BI service audience — the admin/scanner API refuses a Fabric token.
+POWERBI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
+
 _BASE = "https://api.fabric.microsoft.com/v1"
 _TIMEOUT = 120
 
@@ -183,6 +186,47 @@ class FabricClient:
     def _headers(self) -> dict[str, str]:
         token = self._user_token or self._credential.get_token(FABRIC_SCOPE).token
         return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    def powerbi_request(self, method: str, url: str, **kwargs: Any) -> tuple[int, dict]:
+        """A call to the Power BI admin API, returning `(status, body)`.
+
+        A DIFFERENT audience from everything else here — `POWERBI_SCOPE`, not
+        `FABRIC_SCOPE`. A Fabric token is refused by these endpoints with a
+        message that reads like a permissions problem, so mixing them up costs
+        an afternoon.
+
+        Service principal only, deliberately. The metadata scanner requires a
+        Fabric administrator or an SP enabled in the tenant's metadata-scanning
+        settings; a signed-in user's token, acquired by the browser for the
+        Fabric scope, is the wrong audience AND almost never carries
+        `Tenant.Read.All`. Rather than send it and let the caller read a
+        confusing 401, this says which credential is missing.
+
+        Status is returned rather than raised because the scanner treats several
+        of them as information — 403 means "not enabled for this tenant", which
+        is a normal answer, not a failure of the crawl around it.
+        """
+        if self._credential is None:
+            raise FabricError(
+                "The Power BI metadata scanner needs the service principal "
+                "(PURVIEW_TENANT_ID / PURVIEW_CLIENT_ID / PURVIEW_CLIENT_SECRET). "
+                "A signed-in user's Fabric token is the wrong audience for the "
+                "admin API and would be refused."
+            )
+        token = self._credential.get_token(POWERBI_SCOPE).token
+        resp = self._session.request(
+            method,
+            url,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=_TIMEOUT,
+            **kwargs,
+        )
+        if not resp.ok:
+            log.warning("powerbi %s %s failed [%s]: %s", method, url, resp.status_code, resp.text[:500])
+        try:
+            return resp.status_code, (resp.json() if resp.content else {})
+        except ValueError:
+            return resp.status_code, {}
 
     def request(self, method: str, path: str, **kwargs: Any) -> dict:
         resp = self._session.request(

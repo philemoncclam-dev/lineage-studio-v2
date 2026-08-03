@@ -191,3 +191,79 @@ def test_every_edge_lands_on_a_node_that_exists():
     )
     ids = {n.id for n in graph.nodes}
     assert ids >= {e.source for e in graph.edges} | {e.target for e in graph.edges}
+
+
+# --- the BI half (Power BI metadata scanner) ---------------------------------
+
+from app.fabric.scanner import BiDashboard, BiDataset, BiDatasource, BiReport, ScanResult
+
+
+def scan(**over) -> ScanResult:
+    base = ScanResult(
+        datasets=[BiDataset(id="ds1", name="Finance Model", workspace_id=WS, datasource_ids=["src1"])],
+        reports=[BiReport(id="rep1", name="Exec Summary", workspace_id=WS, dataset_id="ds1")],
+        dashboards=[BiDashboard(id="dash1", name="Board", workspace_id=WS, report_ids=["rep1"])],
+        datasources={"src1": BiDatasource(id="src1", kind="Sql", details={"database": "Silver"})},
+    )
+    for k, v in over.items():
+        setattr(base, k, v)
+    return base
+
+
+def test_the_chain_runs_from_lakehouse_through_the_model_to_the_report():
+    """The half a business reader recognises: "who sees this number"."""
+    graph = build(
+        lakehouses=[LakehouseTables(id="lh2", name="Silver", tables=["clean"])],
+        scan=scan(),
+    )
+    edges = edge_pairs(graph)
+    assert ("lakehouse.lh2", "semanticmodel.ds1", "reads") in edges
+    assert ("semanticmodel.ds1", "report.rep1", "reads") in edges
+    assert ("report.rep1", "dashboard.dash1", "reads") in edges
+
+
+def test_a_model_reading_something_we_never_crawled_is_left_unconnected():
+    """A fabricated upstream edge is worse than an honest orphan."""
+    graph = build(
+        lakehouses=[LakehouseTables(id="lh2", name="Silver", tables=[])],
+        scan=scan(
+            datasources={
+                "src1": BiDatasource(
+                    id="src1", kind="Sql", details={"server": "sql.contoso.com", "database": "Sales"}
+                )
+            }
+        ),
+    )
+    assert not any(t == "semanticmodel.ds1" for _s, t, _k in edge_pairs(graph))
+    # ...but the model is still on the canvas.
+    assert any(n.id == "semanticmodel.ds1" for n in graph.nodes)
+
+
+def test_a_scanned_item_is_not_also_drawn_as_an_opaque_box():
+    """It would appear twice — once explained, once as a mystery."""
+    graph = build(
+        other_items=[("rep1", "Exec Summary", "Report")],
+        scan=scan(),
+    )
+    assert not any(n.id == "item.rep1" for n in graph.nodes)
+    assert any(n.id == "report.rep1" for n in graph.nodes)
+
+
+def test_without_a_scan_the_graph_is_exactly_what_it_was():
+    graph = build(other_items=[("rep1", "Exec Summary", "Report")])
+    assert any(n.id == "item.rep1" and n.meta.get("opaque") for n in graph.nodes)
+    assert not any(n.kind == NodeKind.REPORT for n in graph.nodes)
+
+
+def test_a_report_whose_model_was_not_scanned_gets_no_dangling_edge():
+    graph = build(scan=scan(datasets=[]))
+    assert not any(s == "semanticmodel.ds1" for s, _t, _k in edge_pairs(graph))
+
+
+def test_every_bi_edge_lands_on_a_node_that_exists():
+    graph = build(
+        lakehouses=[LakehouseTables(id="lh2", name="Silver", tables=["clean"])],
+        scan=scan(),
+    )
+    ids = {n.id for n in graph.nodes}
+    assert ids >= {e.source for e in graph.edges} | {e.target for e in graph.edges}

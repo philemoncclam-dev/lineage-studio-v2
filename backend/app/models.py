@@ -25,6 +25,13 @@ class NodeKind(str, Enum):
     # producer and consumer of the older kinds is untouched, which is the
     # promise `LineageGraph` makes.
     PIPELINE = "pipeline"
+    # The BI half, from the Power BI metadata scanner. Separate kinds rather
+    # than one "BI item" because they are different shapes of thing and the
+    # canvas draws each with its own icon — a report and the model behind it are
+    # not interchangeable to anyone reading the picture.
+    SEMANTIC_MODEL = "semanticmodel"
+    REPORT = "report"
+    DASHBOARD = "dashboard"
     #: An item this app has no reader for — a report, a semantic model, an
     #: Eventhouse. Drawn, but never with edges: see the note in
     #: `workspace_lineage` about why an isolated box must not imply "nothing

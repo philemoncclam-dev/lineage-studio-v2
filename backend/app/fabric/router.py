@@ -36,6 +36,7 @@ from .notebooks import NotebookDecodeError, fetch_notebook_source
 from ..sandbox._refs import workspace_of
 from .pipelines import PipelineActivity, expand_pipeline_activities
 from .schema import fetch_table_schema, guid_name_map, table_dirs_for_lakehouse
+from .scanner import ScannerClient, ScannerError
 
 router = APIRouter(prefix="/fabric", tags=["fabric"])
 
@@ -411,6 +412,7 @@ def get_pipeline_definition(workspace_id: str, item_id: str, token: Annotated[st
 @router.get("/workspaces/{workspace_id}/lineage", response_model=LineageGraph)
 def get_workspace_lineage(
     workspace_id: str,
+    include_bi: bool = True,
     token: Annotated[str | None, Depends(user_token)] = None,
     lake: Annotated[str | None, Depends(onelake_token)] = None,
 ) -> LineageGraph:
@@ -479,6 +481,22 @@ def get_workspace_lineage(
         else:
             others.append((iid, iname, itype))
 
+    # The BI half, when the tenant allows it. Best-effort in the strongest
+    # sense: the scanner needs an authority most tenants have not granted, and
+    # a refusal is a normal answer rather than a failure — the graph without it
+    # is exactly the graph this endpoint returned before it existed.
+    scan = None
+    # `getattr` rather than a bare call: the scanner is an optional capability
+    # of the client, and a client that does not offer it (a stub, a future
+    # read-only transport) must degrade to the table-level graph rather than
+    # failing the whole crawl on an AttributeError.
+    powerbi = getattr(client, "powerbi_request", None)
+    if include_bi and callable(powerbi):
+        try:
+            scan = ScannerClient(powerbi).scan([workspace_id])
+        except (ScannerError, FabricError):
+            scan = None
+
     return build_workspace_lineage(
         workspace_id=workspace_id,
         workspace_name=workspace_name,
@@ -487,4 +505,5 @@ def get_workspace_lineage(
         pipelines=pipelines,
         other_items=others,
         name_map=name_map,
+        scan=scan,
     )

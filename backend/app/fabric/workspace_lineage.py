@@ -15,10 +15,10 @@ dependencies, so they are derived from what each item declares:
     an activity runs and the tables a Copy moves between;
   * lakehouses — their table list, so a table has a container to belong to.
 
-Semantic models and reports are NOT here. Their dependencies live behind the
-Power BI scanner API, which is a different credential and a different crawl;
-until that is wired, a report would appear as an item with no edges, which
-reads as "nothing depends on this" — the one wrong answer worth avoiding.
+Semantic models and reports come from the Power BI metadata scanner
+(`scanner.py`) when the tenant permits one — a different credential and a
+different authority, so it is optional everywhere. Without it those items are
+still drawn, but marked as not-crawled rather than left looking like leaves.
 
 WHY REFS ARE QUALIFIED. `parser.build_graph` shortens every table to a bare
 name, which is right for a single-notebook Phase-1 graph and wrong here: three
@@ -40,6 +40,7 @@ from ..models import Edge, LineageGraph, Node, NodeKind, NotebookSource
 from ..parser import _READ_PATTERNS, _WRITE_PATTERNS, _find_raw, _without_python_imports
 from ..sandbox import _refs
 from .pipelines import PipelineActivity
+from .scanner import ScanResult, lakehouse_for_datasource
 
 
 @dataclass
@@ -132,6 +133,7 @@ def build_workspace_lineage(
     pipelines: list[PipelineInput] | None = None,
     other_items: list[tuple[str, str, str]] | None = None,
     name_map: dict[str, str] | None = None,
+    scan: ScanResult | None = None,
 ) -> LineageGraph:
     """Every item in one workspace, and the dependencies between them.
 
@@ -140,6 +142,13 @@ def build_workspace_lineage(
     out entirely would say the workspace is smaller than it is. They carry
     `meta["opaque"]`, so the UI can say "no dependencies known" rather than
     letting an isolated box imply "nothing depends on this".
+
+    `scan` is the Power BI metadata scan, when the tenant allows one. It turns
+    the semantic models and reports from opaque boxes into real nodes with real
+    edges — the BI half of the picture, which is the half a business reader
+    recognises. Optional throughout: without it the graph is exactly what it was
+    before, and the items it would have explained stay opaque rather than
+    vanishing.
     """
     name_map = name_map or {}
     pipelines = pipelines or []
@@ -229,12 +238,107 @@ def build_workspace_lineage(
                     Edge(source=pl_node, target=table_node_id(ref), kind="writes", via=pl_node)
                 )
 
+    # --- semantic models, reports, dashboards -------------------------------
+    # The BI half. Only the edges the scan STATES are drawn:
+    #   report -> its semantic model      (report.datasetId, a fact)
+    #   dashboard -> the reports it tiles (tile.reportId, a fact)
+    #   lakehouse -> semantic model       (inferred, and only when the model's
+    #                                      datasource resolves to a lakehouse
+    #                                      this very crawl found)
+    # A model reading a real SQL Server resolves to nothing and is left
+    # unconnected on its upstream side, which is honest: it IS upstream of
+    # nothing we know about.
+    if scan:
+        lakehouse_ids = {lh.name.strip().lower(): lh.id for lh in lakehouses}
+        for dataset in scan.datasets:
+            ds_node = item_node_id("semanticmodel", dataset.id)
+            graph.nodes.append(
+                Node(
+                    id=ds_node,
+                    kind=NodeKind.SEMANTIC_MODEL,
+                    name=dataset.name,
+                    parent_id=ws_id,
+                    meta={"item_type": "SemanticModel"},
+                )
+            )
+            for source_id in dataset.datasource_ids:
+                source = scan.datasources.get(source_id)
+                if not source:
+                    continue
+                lh_id = lakehouse_for_datasource(source, lakehouse_ids)
+                if lh_id:
+                    graph.edges.append(
+                        Edge(
+                            source=item_node_id("lakehouse", lh_id),
+                            target=ds_node,
+                            kind="reads",
+                            via=ds_node,
+                        )
+                    )
+
+        model_ids = {d.id for d in scan.datasets}
+        for report in scan.reports:
+            rep_node = item_node_id("report", report.id)
+            graph.nodes.append(
+                Node(
+                    id=rep_node,
+                    kind=NodeKind.REPORT,
+                    name=report.name,
+                    parent_id=ws_id,
+                    meta={"item_type": "Report"},
+                )
+            )
+            # Only when the model was scanned too — an edge to a node that was
+            # never emitted is an arrow pointing at empty space.
+            if report.dataset_id and report.dataset_id in model_ids:
+                graph.edges.append(
+                    Edge(
+                        source=item_node_id("semanticmodel", report.dataset_id),
+                        target=rep_node,
+                        kind="reads",
+                        via=rep_node,
+                    )
+                )
+
+        report_ids = {r.id for r in scan.reports}
+        for dashboard in scan.dashboards:
+            dash_node = item_node_id("dashboard", dashboard.id)
+            graph.nodes.append(
+                Node(
+                    id=dash_node,
+                    kind=NodeKind.DASHBOARD,
+                    name=dashboard.name,
+                    parent_id=ws_id,
+                    meta={"item_type": "Dashboard"},
+                )
+            )
+            for rid in dashboard.report_ids:
+                if rid in report_ids:
+                    graph.edges.append(
+                        Edge(
+                            source=item_node_id("report", rid),
+                            target=dash_node,
+                            kind="reads",
+                            via=dash_node,
+                        )
+                    )
+
     # --- items with no reader ----------------------------------------------
     # Namespaced by `item`, not by the Fabric type: the id prefix names the
     # NodeKind for every other node here, and a type-named prefix would break
     # that (and collide the day a type is called "Notebook"). The real Fabric
     # type is on `meta`, which is where the UI reads it for the icon anyway.
+    # Anything the scan accounted for is emitted below with its real edges;
+    # emitting it here too would draw the same report twice, once explained and
+    # once as an unexplained box.
+    explained = set()
+    if scan:
+        explained = {d.id for d in scan.datasets} | {r.id for r in scan.reports} | {
+            b.id for b in scan.dashboards
+        }
     for item_id, name, item_type in other_items or []:
+        if item_id in explained:
+            continue
         graph.nodes.append(
             Node(
                 id=item_node_id("item", item_id),

@@ -186,3 +186,8 @@
 .fl-card[data-kind='table'] {
   --fl-accent: #7a8598;
 }
+/* The BI half — warmer hues than the storage/compute end, the way Fabric's own
+   palette separates "where the data lives" from "who looks at it". */
+.fl-card[data-kind='dashboard'] {
+  --fl-accent: #c2591f;
+}

@@ -88,3 +88,27 @@ describe('toItemGraph', () => {
     expect(toItemGraph(g).links.every((l) => l.to !== 'notebook.ghost')).toBe(true)
   })
 })
+
+describe('the BI half', () => {
+  it('draws semantic models, reports and dashboards as their own kinds', () => {
+    const g = graph()
+    g.nodes.push(
+      node('semanticmodel.ds1', 'semanticmodel', 'Finance Model'),
+      node('report.rep1', 'report', 'Exec Summary'),
+      node('dashboard.dash1', 'dashboard', 'Board'),
+    )
+    g.edges.push(
+      { source: 'lakehouse.lh1', target: 'semanticmodel.ds1', kind: 'reads', columns: [] },
+      { source: 'semanticmodel.ds1', target: 'report.rep1', kind: 'reads', columns: [] },
+      { source: 'report.rep1', target: 'dashboard.dash1', kind: 'reads', columns: [] },
+    )
+    const { items, links } = toItemGraph(g)
+    const byId = new Map(items.map((i) => [i.id, i]))
+    expect(byId.get('semanticmodel.ds1')!.kind).toBe('semanticmodel')
+    expect(byId.get('semanticmodel.ds1')!.typeLabel).toBe('Semantic model')
+    expect(byId.get('dashboard.dash1')!.kind).toBe('dashboard')
+    // The whole chain survives the roll-up, so a lakehouse reaches a dashboard.
+    expect(links).toContainEqual({ from: 'lakehouse.lh1', to: 'semanticmodel.ds1', count: 1 })
+    expect(links).toContainEqual({ from: 'report.rep1', to: 'dashboard.dash1', count: 1 })
+  })
+})

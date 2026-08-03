@@ -165,3 +165,73 @@ describe('isRolledUp', () => {
     expect(c!.y1).toBe(layout.anchors.get(owner)!.cy)
   })
 })
+
+describe('an edge inside one column', () => {
+  // Two cards stacked in a single layer, and a transition between them. There
+  // is no horizontal distance to cover, so the ordinary right-edge-to-left-edge
+  // curve had nowhere to go but straight back through the column.
+  const oneColumn = (): LineageModel => ({
+    ...sampleModel(),
+    layers: [
+      {
+        id: 'L1',
+        name: 'Only',
+        objects: [
+          { id: 'a', name: 'a', children: [{ id: 'a.x', name: 'x', children: [] }] },
+          { id: 'b', name: 'b', children: [{ id: 'b.x', name: 'x', children: [] }] },
+        ],
+      },
+    ],
+    transitions: [{ id: 't', source: 'a.x', target: 'b.x' }],
+  })
+
+  const curve = () => {
+    const model = oneColumn()
+    const index = buildIndex(model)
+    const layout = layoutModel(model, new Set())
+    return {
+      layout,
+      c: curveFor(layout, (id) => index.entries.get(id)?.parentId ?? null, model.transitions[0])!,
+    }
+  }
+
+  it('leaves and arrives on the same side, so it never crosses the cards', () => {
+    const { layout, c } = curve()
+    const a = layout.anchors.get('a.x')!
+    const b = layout.anchors.get('b.x')!
+    expect(c.x0).toBe(a.right)
+    expect(c.x1).toBe(b.right)
+  })
+
+  it('bulges into the gutter beside the column, not back across it', () => {
+    const { layout, c } = curve()
+    const right = layout.anchors.get('a.x')!.right
+    // Both control points sit clear to the RIGHT of the cards — the C shape.
+    // Before this, cx1 landed left of the column and the line went behind
+    // every card between the two rows.
+    expect(c.cx0).toBeGreaterThan(right)
+    expect(c.cx1).toBeGreaterThan(right)
+  })
+
+  it('still points its arrowhead into the target', () => {
+    const { c } = curve()
+    // The head is built from the incoming tangent, which now runs leftwards
+    // back into the card's right edge.
+    expect(c.x1 - c.cx1).toBeLessThan(0)
+  })
+
+  it('reaches further for a longer hop, so two of them do not overlap', () => {
+    const model = oneColumn()
+    model.layers[0].objects.splice(1, 0, {
+      id: 'mid',
+      name: 'mid',
+      children: [{ id: 'mid.x', name: 'x', children: [] }],
+    })
+    const index = buildIndex(model)
+    const layout = layoutModel(model, new Set())
+    const parentOf = (id: string) => index.entries.get(id)?.parentId ?? null
+    const near = curveFor(layout, parentOf, { id: 'n', source: 'a.x', target: 'mid.x' })!
+    const far = curveFor(layout, parentOf, { id: 'f', source: 'a.x', target: 'b.x' })!
+    expect(far.cx0).toBeGreaterThan(near.cx0)
+  })
+})

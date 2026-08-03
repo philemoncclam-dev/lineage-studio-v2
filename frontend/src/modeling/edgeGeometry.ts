@@ -4,7 +4,7 @@
 // computed their own control points, clicking a line would select a line drawn
 // somewhere slightly else. One function, two consumers.
 
-import { resolveAnchor, type Layout } from '../model/layout'
+import { LAYER_GAP, resolveAnchor, type Layout } from '../model/layout'
 import type { EntityId } from '../model/types'
 
 export interface Curve {
@@ -65,6 +65,31 @@ export function curveFor(
   // Backwards is decided on CENTRES, not on whether the boxes overlap: two
   // near-neighbours with a slight overlap should still take the short mirrored
   // path rather than the long way around.
+  // Both ends in the SAME column — two cards stacked in one layer, or two rows
+  // of one card. There is no horizontal distance to travel, so the usual
+  // right-edge-to-left-edge curve has nowhere to go but straight back across
+  // the column, behind every card between the two rows.
+  //
+  // So leave and arrive on the same side, bulging into the gutter beside the
+  // column: a C in empty space instead of a line through the furniture. The
+  // arrowhead still reads correctly — it is built from the incoming tangent,
+  // which now points back INTO the card's right edge.
+  //
+  // The bulge grows with the vertical distance, so a long hop stands clear of a
+  // short one instead of the two overlapping, and is capped inside the gutter
+  // so it never reaches the next column's cards.
+  if (Math.abs(from.left - to.left) < 1 && Math.abs(from.right - to.right) < 1) {
+    const reach = Math.min(LAYER_GAP * 0.8, Math.max(28, Math.abs(to.cy - from.cy) * 0.4))
+    return {
+      x0: from.right,
+      y0: from.cy,
+      cx0: from.right + reach,
+      cx1: to.right + reach,
+      x1: to.right,
+      y1: to.cy,
+    }
+  }
+
   const backwards = (to.left + to.right) / 2 < (from.left + from.right) / 2
   const x0 = backwards ? from.left : from.right
   const y0 = from.cy

@@ -153,11 +153,6 @@ interface FlowEdge {
   tone?: EdgeTone
   dashed?: boolean
   /**
-   * What to write ON the line. Only Data Flow uses it: with the notebooks
-   * contracted away, the step that made the hop has nowhere else to be said.
-   */
-  label?: string
-  /**
    * `column` joins a column row to the same column on the other card; `table`
    * is the whole-table access it belongs to. Undefined for the faint order
    * edges, which join nothing in particular.
@@ -227,7 +222,7 @@ function anchorY(n: FlowNode, rowKey?: string) {
  * Both also keep TRUE edge direction: a line crossing back to an earlier band
  * is a fact about the run, not a drawing artefact.
  */
-export type CanvasView = 'stages' | 'medallion' | 'dataflow'
+export type CanvasView = 'stages' | 'medallion'
 
 const uniq = (xs: (string | undefined)[]): string[] => [
   ...new Set(xs.filter((x): x is string => !!x)),
@@ -330,99 +325,6 @@ export function stageRank(name: string): number {
     if (best < 0 && new RegExp(`(^|[^a-z])${s}([^a-z]|$)`).test(low)) best = i
   })
   return best
-}
-
-
-/**
- * The same run with the notebooks contracted away — table to table, with the
- * step that made each hop written on the line.
- *
- * A different level of abstraction rather than another axis, which is what
- * makes it worth having next to Zig-Zag and Medallion. Those two arrange the
- * same cards by owner and by stage; this asks the question a business reader
- * actually starts with — "where does this table come from?" — and answers it
- * without a single notebook card competing for the space. A step that reads
- * three tables and writes one becomes three arrows converging, all carrying
- * its name.
- *
- * TABLE LEVEL ONLY, and deliberately. Contracting the column edges would mean
- * pairing a read column with a write column across the step, and which input
- * column fed which output is exactly the thing that pairing cannot know — the
- * run resolves it properly in `column_lineage`, and guessing it here would
- * invent edges the sandbox refused to. The column ROWS stay on the cards; only
- * the lines between them are withheld.
- */
-export function contractSteps(
-  nodes: FlowNode[],
-  edges: FlowEdge[],
-): { nodes: FlowNode[]; edges: FlowEdge[] } {
-  const steps = new Map(nodes.filter((n) => n.kind !== 'table').map((n) => [n.id, n]))
-  const reads = new Map<string, { node: string; row?: string }[]>()
-  const writes = new Map<string, { node: string; row?: string }[]>()
-  for (const e of edges) {
-    if (e.kind !== 'table' || e.dashed) continue
-    if (e.tone === 'read' && steps.has(e.to))
-      reads.set(e.to, [...(reads.get(e.to) ?? []), { node: e.from, row: e.fromRow }])
-    if (e.tone === 'write' && steps.has(e.from))
-      writes.set(e.from, [...(writes.get(e.from) ?? []), { node: e.to, row: e.toRow }])
-  }
-
-  const out: FlowEdge[] = []
-  const seen = new Set<string>()
-  for (const [id, step] of steps) {
-    for (const w of writes.get(id) ?? []) {
-      const sources = reads.get(id) ?? []
-      // A write with no read is an origin — data appearing from outside the
-      // run (a file the sandbox could not resolve, a literal, an unread
-      // source). It still deserves its card; it simply has no arrow into it.
-      for (const r of sources) {
-        // A step that reads and writes the SAME table is a refresh in place,
-        // not a hop, and an arrow from a row to itself is a dot.
-        if (r.node === w.node && r.row === w.row) continue
-        const key = `${r.node}|${r.row ?? ''}|${w.node}|${w.row ?? ''}|${step.label}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        out.push({
-          from: r.node,
-          fromRow: r.row,
-          to: w.node,
-          toRow: w.row,
-          tone: 'write',
-          kind: 'table',
-          label: step.label,
-        })
-      }
-    }
-  }
-  return { nodes: nodes.filter((n) => n.kind === 'table'), edges: out }
-}
-
-/**
- * Data Flow: one column per dependency depth, tables only.
- *
- * Depth is the only axis that means anything once the steps are gone — the
- * question is how far from a source a table sits, and that is exactly what a
- * longest-path walk measures. Sources land on the left, the things derived from
- * them to the right of whatever they came from.
- */
-export function layoutDataFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
-  const depth = depthsOf(nodes, edges)
-  const columns = [...new Set(nodes.map((n) => depth.get(n.id) ?? 0))].sort((a, b) => a - b)
-  const pos: Layout['pos'] = new Map()
-  let height = 1
-  columns.forEach((d, c) => {
-    const here = nodes.filter((n) => (depth.get(n.id) ?? 0) === d)
-    height = Math.max(height, stackColumn(here, c * (NW + GX), pos))
-  })
-  const lastCol = columns.length - 1
-  return {
-    pos,
-    bands: columns.map((_, c) =>
-      band(c, c === 0 ? 'Sources' : c === lastCol ? 'Outputs' : `Derived ${c}`, c, lastCol),
-    ),
-    width: columns.length * (NW + GX) - GX,
-    height,
-  }
 }
 
 /**
@@ -751,16 +653,9 @@ function FlowCanvas({
       return next
     })
 
-  // Data Flow is the same run with the notebooks contracted into their lines,
-  // so the contraction happens before truncation and layout — everything below
-  // then works on one graph without knowing which view asked for it.
-  const graph = useMemo(
-    () => (view === 'dataflow' ? contractSteps(rawNodes, edges) : { nodes: rawNodes, edges }),
-    [view, rawNodes, edges],
-  )
   const nodes = useMemo(
-    () => graph.nodes.map((n) => (n.allRows ? { ...n, rows: truncateRows(n, expanded) } : n)),
-    [graph, expanded],
+    () => rawNodes.map((n) => (n.allRows ? { ...n, rows: truncateRows(n, expanded) } : n)),
+    [rawNodes, expanded],
   )
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
 
@@ -768,7 +663,7 @@ function FlowCanvas({
     // Both remaining views keep TRUE edge direction. A read crossing back to
     // the band on the left is a fact about ownership (Zig-Zag) or about an
     // earlier stage (Medallion), not a drawing artefact to be flipped away.
-    const base = graph.edges
+    const base = edges
     // A column edge is only drawn when BOTH of its rows are actually on screen
     // — a collapsed group would otherwise anchor every hidden column to the
     // card header, which is a fan of identical lines saying nothing. Whenever
@@ -783,19 +678,15 @@ function FlowCanvas({
       ...base.filter((e) => e.kind !== 'column' && !(e.group && covered.has(e.group))),
       ...columns,
     ]
-  }, [graph, byId])
+  }, [edges, byId])
   const { pos, bands, width, height } = useMemo(
     () =>
-      view === 'dataflow'
-        ? layoutDataFlow(nodes, graph.edges)
-        : view === 'medallion'
-          ? layoutMedallion(nodes, graph.edges)
-          : layoutStages(nodes, graph.edges),
-    [nodes, graph, view],
+      view === 'medallion' ? layoutMedallion(nodes, edges) : layoutStages(nodes, edges),
+    [nodes, edges, view],
   )
   // The horizontal space between columns in the layout above — the only place
   // an edge may bulge into without ending up behind a card.
-  const gutter = view === 'stages' ? ZIG_GX : GX
+  const gutter = view === 'medallion' ? GX : ZIG_GX
   // The rightmost column has no gutter to its right — only the canvas edge,
   // which CLIPS. Its same-band arcs bulge left instead, into the gutter it does
   // have. Gold is exactly such a column, and exactly where a notebook sits
@@ -885,32 +776,17 @@ function FlowCanvas({
                 ? `M${sx} ${sy}C${sx - LOOP} ${sy} ${tx + LOOP} ${ty} ${tx} ${ty}`
                 : `M${sx} ${sy}C${c1} ${sy} ${c2} ${ty} ${tx} ${ty}`
               return (
-                <g key={i}>
-                  <path
-                    className="sbx-flow-edge"
-                    data-tone={e.tone}
-                    data-dashed={e.dashed || undefined}
-                    data-backward={backward || undefined}
-                    d={d}
-                    fill="none"
-                    strokeDasharray={e.dashed ? '4 4' : undefined}
-                    markerEnd="url(#sbx-arrow)"
-                  />
-                  {/* The step that made the hop, written on the line, because
-                      Data Flow has contracted its card away and this is the
-                      only place left to say it. Drawn with a halo behind the
-                      text so it stays readable where lines cross under it. */}
-                  {e.label && (
-                    <text
-                      className="sbx-flow-edge-label"
-                      x={(sx + tx) / 2}
-                      y={(sy + ty) / 2 - 4}
-                      textAnchor="middle"
-                    >
-                      {e.label}
-                    </text>
-                  )}
-                </g>
+                <path
+                  key={i}
+                  className="sbx-flow-edge"
+                  data-tone={e.tone}
+                  data-dashed={e.dashed || undefined}
+                  data-backward={backward || undefined}
+                  d={d}
+                  fill="none"
+                  strokeDasharray={e.dashed ? '4 4' : undefined}
+                  markerEnd="url(#sbx-arrow)"
+                />
               )
             })}
           </svg>
@@ -1534,10 +1410,7 @@ function ToModelBar({
         results,
         defaultModelName(steps),
         'flow',
-        {
-          ...options,
-          layout: view === 'medallion' ? 'medallion' : view === 'dataflow' ? 'dataflow' : 'stages',
-        },
+        { ...options, layout: view === 'medallion' ? 'medallion' : 'stages' },
       )
       await localStore.save(model)
       await navigate({ to: '/model/$modelId', params: { modelId: model.id } })
@@ -1557,11 +1430,6 @@ function ToModelBar({
               'stages',
               'Zig-Zag',
               'One band per owner — the workspace, or the lakehouse standing in for it — with what runs on the left and what it touches on the right',
-            ],
-            [
-              'dataflow',
-              'Data flow',
-              'Tables only — where each one comes from, with the notebook that made the hop written on the line',
             ],
             [
               'medallion',

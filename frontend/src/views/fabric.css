@@ -1825,16 +1825,3 @@
 .sbx-flow-row[data-change='lost-lineage'] {
   background: rgb(190 60 60 / 0.1);
 }
-
-/* The step name on a Data Flow line. The paint-order halo is what keeps it
-   legible where another line passes under it — without it the text and the
-   stroke are the same weight and neither reads. */
-.sbx-flow-edge-label {
-  font-size: 9px;
-  fill: var(--color-text-secondary, #7b8496);
-  paint-order: stroke;
-  stroke: var(--color-bg, #fff);
-  stroke-width: 3px;
-  stroke-linejoin: round;
-  pointer-events: none;
-}

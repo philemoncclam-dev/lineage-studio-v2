@@ -12,7 +12,9 @@ import {
   refLabel,
   refLakehouse,
   refWorkspace,
+  type SandboxBiConsumer,
   type SandboxCellResult,
+  type SandboxDownstream,
   type SandboxColumn,
   type SandboxCoverage,
   type SandboxRunResult,
@@ -1334,6 +1336,58 @@ function TableRow({ name, columns }: { name: string; columns?: SandboxColumn[] }
 }
 
 /**
+ * Who is looking at what this run produced.
+ *
+ * The sandbox says what a notebook WOULD do; this says who finds out when it
+ * does not. Table lineage stops at the lakehouse, and for everyone downstream
+ * of the lakehouse that is exactly where the interesting part starts — "this
+ * notebook feeds the Finance model, which feeds the Exec Summary report" is the
+ * sentence that makes a failed run matter to somebody.
+ *
+ * Nothing renders when the scan did not happen. An empty section would say
+ * "nothing depends on this", which is a much stronger claim than "we did not
+ * look" and the exact wrong one to make about a tenant that has simply not
+ * enabled the metadata scanner.
+ */
+function DownstreamImpact({ downstream }: { downstream: SandboxDownstream }) {
+  if (!downstream.available) {
+    // The reason is worth showing — "not enabled" is actionable, silence is not.
+    return downstream.notes.length > 0 ? (
+      <p className="sbx-downstream-note">{downstream.notes[0]}</p>
+    ) : null
+  }
+  if (downstream.consumers.length === 0) {
+    return (
+      <p className="sbx-downstream-note">
+        Checked: nothing in Power BI reads what this run writes.
+      </p>
+    )
+  }
+  const label: Record<SandboxBiConsumer['kind'], string> = {
+    semanticmodel: 'Semantic model',
+    report: 'Report',
+    dashboard: 'Dashboard',
+  }
+  return (
+    <section className="sbx-downstream" aria-label="Downstream of this run">
+      <h4 className="sbx-downstream-title">
+        {downstream.consumers.length} thing
+        {downstream.consumers.length === 1 ? '' : 's'} downstream
+      </h4>
+      <ul className="sbx-downstream-list">
+        {downstream.consumers.map((c) => (
+          <li key={`${c.kind}:${c.id}`} data-kind={c.kind}>
+            <span className="sbx-downstream-kind">{label[c.kind]}</span>
+            <span className="sbx-downstream-name">{c.name}</span>
+            <span className="sbx-downstream-via">via {c.via}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/**
  * What each cell did — the answer to "what actually happened in there".
  *
  * The executor has always returned this (status, stdout, error, per cell) and
@@ -2169,6 +2223,9 @@ export function SequenceCanvas({
                             />
                           </div>
                           <CellList cells={run.result.cells ?? []} />
+                          {run.result.downstream && (
+                            <DownstreamImpact downstream={run.result.downstream} />
+                          )}
                         </>
                       )}
                     </div>

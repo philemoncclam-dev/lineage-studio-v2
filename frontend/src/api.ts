@@ -659,6 +659,29 @@ export interface SandboxCellResult {
   error: string | null
 }
 
+/** A BI object downstream of a table the run wrote. */
+export interface SandboxBiConsumer {
+  id: string
+  name: string
+  kind: 'semanticmodel' | 'report' | 'dashboard'
+  /** The lakehouse it reaches through — why it is in the list. */
+  via: string
+}
+
+/**
+ * Who is looking at what this run produced.
+ *
+ * `available: false` is NOT the same as an empty `consumers` list: the first
+ * means nothing was checked (no scanner, no permission, nothing written), the
+ * second means it was checked and nothing reads this. Collapsing the two would
+ * let an unconfigured tenant read as a notebook nobody depends on.
+ */
+export interface SandboxDownstream {
+  available: boolean
+  consumers: SandboxBiConsumer[]
+  notes: string[]
+}
+
 export interface SandboxColumn {
   name: string
   type?: string | null
@@ -743,6 +766,7 @@ export interface SandboxRunResult {
    */
   engine: 'stub' | 'spark' | 'definition'
   cells: SandboxCellResult[]
+  downstream?: SandboxDownstream | null
   reads: string[]
   writes: string[]
   /**

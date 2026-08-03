@@ -85,3 +85,44 @@ describe('the run report', () => {
     expect(screen.queryByText(/cells$/)).not.toBeInTheDocument()
   })
 })
+
+describe('downstream impact in the report', () => {
+  const withDownstream = (downstream: SandboxRunResult['downstream']) =>
+    renderReport(result({ cells: [cell(0)], downstream }))
+
+  it('names what reads the tables this run wrote', () => {
+    withDownstream({
+      available: true,
+      consumers: [
+        { id: 'ds1', name: 'Finance Model', kind: 'semanticmodel', via: 'Silver' },
+        { id: 'r1', name: 'Exec Summary', kind: 'report', via: 'Silver' },
+      ],
+      notes: [],
+    })
+    expect(screen.getByText('Finance Model')).toBeInTheDocument()
+    expect(screen.getByText('Exec Summary')).toBeInTheDocument()
+    expect(screen.getByText(/2 things downstream/)).toBeInTheDocument()
+  })
+
+  it('distinguishes "checked, nothing reads this" from "not checked"', () => {
+    // The distinction the whole `available` flag exists for: an unconfigured
+    // tenant must not read as a notebook nobody depends on.
+    withDownstream({ available: true, consumers: [], notes: [] })
+    expect(screen.getByText(/nothing in Power BI reads/)).toBeInTheDocument()
+  })
+
+  it('says why when the scan did not happen', () => {
+    withDownstream({
+      available: false,
+      consumers: [],
+      notes: ['downstream impact unavailable — scanner not enabled'],
+    })
+    expect(screen.getByText(/scanner not enabled/)).toBeInTheDocument()
+    expect(screen.queryByText(/nothing in Power BI reads/)).not.toBeInTheDocument()
+  })
+
+  it('renders nothing at all when the run carried no downstream field', () => {
+    renderReport(result({ cells: [cell(0)] }))
+    expect(screen.queryByLabelText('Downstream of this run')).not.toBeInTheDocument()
+  })
+})

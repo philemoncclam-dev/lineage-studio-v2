@@ -277,6 +277,35 @@ class CellResult(BaseModel):
     error: str | None = None
 
 
+class BiConsumer(BaseModel):
+    """A BI object downstream of a table this run wrote."""
+
+    id: str
+    name: str
+    kind: str
+    #: The lakehouse it reaches through — why it is in the list.
+    via: str = ""
+
+
+class DownstreamImpact(BaseModel):
+    """Who is looking at what this run produced.
+
+    The sandbox answers "what would this notebook do"; this answers the question
+    that follows immediately — **and who sees it**. Table lineage stops at the
+    lakehouse, and for everyone downstream of the lakehouse that is exactly
+    where the interesting part starts.
+
+    `available` is false when no scan happened at all, which is a different
+    statement from an empty `consumers` list: one means "not checked", the other
+    means "checked, nothing reads this". Collapsing them would let an
+    unconfigured tenant read as a notebook nobody depends on.
+    """
+
+    available: bool = False
+    consumers: list[BiConsumer] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class RunResult(BaseModel):
     """Executor → backend: the outcome of a sandbox run.
 
@@ -323,6 +352,8 @@ class RunResult(BaseModel):
     #: when the caller asked for it. `None` means not requested, which is a third
     #: state distinct from "asked and found nothing" (`ObservedRun.available`).
     observed: ObservedRun | None = None
+    #: The BI objects fed by what this run wrote. See `DownstreamImpact`.
+    downstream: DownstreamImpact | None = None
     comparison: RunComparison | None = None
     log: list[str] = Field(default_factory=list)
     saw_credentials: bool = False

@@ -33,15 +33,19 @@ from ..fabric.client import FabricClient, FabricError
 from ..fabric.router import onelake_token, user_token
 from ..fabric.notebooks import NotebookDecodeError, fetch_notebook_source
 from ..fabric.runs import compare, observe_run
+from ..fabric.scanner import ScannerClient, downstream_of
 from ..fabric.schema import (
     guid_name_map,
     resolve_read_schemas,
     scan_read_tables,
     workspace_index,
 )
+from . import _refs
 from ._refs import referenced_workspace_ids
 from .protocol import (
+    BiConsumer,
     ColumnSchema,
+    DownstreamImpact,
     ObservedRun,
     RunComparison,
     RunRequest,
@@ -85,6 +89,10 @@ class SandboxRunRequest(BaseModel):
     #: trips, and the sandbox is useful without it. Needs `workspace_id` +
     #: `item_id` — a cells-only run has no notebook in Fabric to have a history.
     include_observed: bool = False
+    #: Ask the Power BI scanner who consumes what this run writes. Off by
+    #: default: it is a second credential and a rate-limited admin API, so it
+    #: is opt-in per run rather than a cost paid by everything.
+    include_downstream: bool = False
 
 
 @router.post("/run", response_model=RunResult)
@@ -266,7 +274,44 @@ def sandbox_run(
         result.observed, result.comparison = _observe(
             req, token, lake, workspace, lakehouse, name_map, result
         )
+
+    # And who is looking at what it produced. Same envelope as `_observe`: the
+    # scanner needs an authority most tenants have not granted, so a refusal is
+    # information, never a failure of the run it decorates.
+    if req.include_downstream and req.workspace_id:
+        result.downstream = _downstream(req, token, lake, result)
     return result
+
+
+def _downstream(
+    req: SandboxRunRequest,
+    token: str | None,
+    lake: str | None,
+    result: RunResult,
+) -> DownstreamImpact:
+    """Semantic models and reports fed by the lakehouses this run wrote.
+
+    `available=False` with a note, never an exception: "the scanner is not
+    enabled for this tenant" is a perfectly ordinary answer and must not read
+    as "nothing depends on this notebook".
+    """
+    written = {_refs.parse_ref(ref)[1] for ref in result.writes}
+    written = {name for name in written if name}
+    if not written:
+        return DownstreamImpact(notes=["This run wrote no table, so nothing is downstream of it."])
+    try:
+        client = FabricClient(user_token=token, onelake_token=lake)
+        scan = ScannerClient(client.powerbi_request).scan([req.workspace_id])
+    except Exception as exc:  # noqa: BLE001 — enrichment never fails the run
+        return DownstreamImpact(notes=[f"downstream impact unavailable — {exc}"])
+    consumers = downstream_of(written, scan)
+    return DownstreamImpact(
+        available=True,
+        consumers=[
+            BiConsumer(id=c.id, name=c.name, kind=c.kind, via=c.via) for c in consumers
+        ],
+        notes=scan.notes,
+    )
 
 
 def _observe(

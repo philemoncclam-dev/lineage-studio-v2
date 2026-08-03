@@ -2027,3 +2027,63 @@
   color: var(--color-text-tertiary);
   font-style: italic;
 }
+
+/* ===== Downstream of a run =====
+   Who finds out when this notebook fails. Sits with the run's own I/O rather
+   than in a section of its own: it is the continuation of "what did this
+   write", not a separate topic. */
+.sbx-downstream {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--color-accent);
+  background: color-mix(in oklab, var(--color-accent) 6%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.sbx-downstream-title {
+  margin: 0 0 6px;
+  color: var(--color-text-primary);
+  font-size: var(--text-micro);
+  font-weight: 600;
+}
+.sbx-downstream-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--text-micro);
+}
+.sbx-downstream-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+/* Fixed width so the names line up into a column the eye can run down —
+   these lists are read by scanning for one name, not by reading every row. */
+.sbx-downstream-kind {
+  flex: 0 0 auto;
+  min-width: 96px;
+  color: var(--color-text-tertiary);
+}
+.sbx-downstream-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sbx-downstream-via {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+}
+/* "Not checked" and "checked, nothing there" are both this — the WORDS carry
+   the difference, which is why they are never abbreviated to an empty list. */
+.sbx-downstream-note {
+  margin: 8px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro);
+  font-style: italic;
+}

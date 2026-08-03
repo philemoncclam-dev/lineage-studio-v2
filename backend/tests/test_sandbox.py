@@ -656,3 +656,32 @@ def test_abfss_workspaces_are_collected_for_name_resolution():
         "x = 1",
     ]
     assert referenced_workspace_ids(cells) == ["87b1b30f-9939-4dbc-8a50-a7a0e82df415"]
+
+
+# --- downstream BI impact ----------------------------------------------------
+
+def test_a_run_that_writes_nothing_says_so_rather_than_scanning(client):
+    """"Nothing downstream" and "nothing written" are different answers, and
+    the second one costs no admin API call to give."""
+    resp = client.post(
+        "/fabric/sandbox/run",
+        json={
+            "notebook_name": "nb",
+            "cells": ["x = 1"],
+            "workspace_id": "ws1",
+            "include_downstream": True,
+        },
+    )
+    assert resp.status_code == 200
+    downstream = resp.json().get("downstream")
+    assert downstream is not None
+    assert downstream["available"] is False
+    assert any("wrote no table" in n for n in downstream["notes"])
+
+
+def test_downstream_is_absent_unless_asked_for(client):
+    resp = client.post(
+        "/fabric/sandbox/run",
+        json={"notebook_name": "nb", "cells": ["x = 1"]},
+    )
+    assert resp.json().get("downstream") is None

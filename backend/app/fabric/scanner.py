@@ -317,3 +317,66 @@ class ScannerClient:
         if status >= 400:
             raise ScannerError(f"Scan result could not be read [{status}].")
         return parse_scan_result(body)
+
+
+@dataclass
+class BiConsumer:
+    """One BI object downstream of something a run wrote."""
+
+    id: str
+    name: str
+    kind: str  # "semanticmodel" | "report" | "dashboard"
+    #: The lakehouse it reaches through — the reason it is in this list.
+    via: str = ""
+
+
+def downstream_of(written_lakehouses: set[str], scan: ScanResult) -> list[BiConsumer]:
+    """Semantic models, reports and dashboards fed by these lakehouses.
+
+    The question a sandbox run raises and could not previously answer: this
+    notebook writes `Silver`, so **what breaks if it fails tonight?** Table
+    lineage stops at the lakehouse; this carries it to the people looking at it.
+
+    Matching is by lakehouse, not by table. The scanner reports a semantic
+    model's DATASOURCE, which for a Fabric model is the lakehouse or its SQL
+    endpoint — it does not say which tables inside were used without parsing M,
+    which this module deliberately does not do. So the honest claim is "this
+    model reads that lakehouse", and a caller must not upgrade it to "this model
+    reads that table".
+    """
+    if not written_lakehouses or scan.empty:
+        return []
+    wanted = {name.strip().lower(): name for name in written_lakehouses if name.strip()}
+    if not wanted:
+        return []
+
+    out: list[BiConsumer] = []
+    hit_datasets: dict[str, str] = {}
+    for dataset in scan.datasets:
+        for source_id in dataset.datasource_ids:
+            source = scan.datasources.get(source_id)
+            if not source:
+                continue
+            via = lakehouse_for_datasource(source, wanted)
+            if via:
+                hit_datasets[dataset.id] = via
+                out.append(
+                    BiConsumer(id=dataset.id, name=dataset.name, kind="semanticmodel", via=via)
+                )
+                break
+
+    hit_reports: dict[str, str] = {}
+    for report in scan.reports:
+        via = hit_datasets.get(report.dataset_id)
+        if via:
+            hit_reports[report.id] = via
+            out.append(BiConsumer(id=report.id, name=report.name, kind="report", via=via))
+
+    for dashboard in scan.dashboards:
+        via = next((hit_reports[r] for r in dashboard.report_ids if r in hit_reports), "")
+        if via:
+            out.append(
+                BiConsumer(id=dashboard.id, name=dashboard.name, kind="dashboard", via=via)
+            )
+
+    return out

@@ -204,3 +204,46 @@ def test_the_documented_hundred_workspace_ceiling_is_respected():
     )
     client(transport).scan([f"ws-{i}" for i in range(150)])
     assert len(transport.calls[0][2]["json"]["workspaces"]) == 100
+
+
+# --- downstream impact (the sandbox's "what breaks if this fails") -----------
+
+from app.fabric.scanner import downstream_of
+
+
+def test_downstream_walks_lakehouse_to_model_to_report_to_dashboard():
+    result = parse_scan_result(SCAN)
+    hits = downstream_of({"Silver"}, result)
+    assert [(h.kind, h.name) for h in hits] == [
+        ("semanticmodel", "Finance Model"),
+        ("report", "Exec Summary"),
+        ("dashboard", "Board"),
+    ]
+    # Every hit says which lakehouse put it there.
+    assert {h.via for h in hits} == {"Silver"}
+
+
+def test_a_lakehouse_nothing_reads_has_no_downstream():
+    assert downstream_of({"Bronze"}, parse_scan_result(SCAN)) == []
+
+
+def test_a_report_whose_model_is_untouched_is_not_listed():
+    """Only reach through models the run actually feeds — otherwise every
+    report in the tenant looks affected by every notebook."""
+    scan = parse_scan_result(SCAN)
+    scan.reports.append(
+        __import__("app.fabric.scanner", fromlist=["BiReport"]).BiReport(
+            id="rep-9", name="Unrelated", workspace_id="ws-1", dataset_id="ds-other"
+        )
+    )
+    assert "Unrelated" not in [h.name for h in downstream_of({"Silver"}, scan)]
+
+
+def test_nothing_written_means_nothing_downstream():
+    assert downstream_of(set(), parse_scan_result(SCAN)) == []
+
+
+def test_an_empty_scan_is_not_an_error():
+    from app.fabric.scanner import ScanResult
+
+    assert downstream_of({"Silver"}, ScanResult()) == []

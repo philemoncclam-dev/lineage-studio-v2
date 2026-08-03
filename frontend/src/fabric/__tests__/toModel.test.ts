@@ -1069,3 +1069,42 @@ describe('a pipeline in the medallion layout', () => {
     expect(JSON.stringify(model.layers.map((l) => l.objects.map((o) => o.name)))).toContain('pl_master')
   })
 })
+
+describe('the data flow layout', () => {
+  const chain = () => {
+    const a: Step = { key: 'a', kind: 'notebook', ws: 'plat', itemId: 'a', name: 'nb_bronze' }
+    const b: Step = { key: 'b', kind: 'notebook', ws: 'plat', itemId: 'b', name: 'nb_silver' }
+    return {
+      steps: [a, b],
+      results: new Map<string, StepResult>([
+        ['a', { status: 'ok', runs: [{ name: 'nb_bronze', status: 'ok', result: result({ reads: ['raw'], writes: ['bronze'] }) }] } as StepResult],
+        ['b', { status: 'ok', runs: [{ name: 'nb_silver', status: 'ok', result: result({ reads: ['bronze'], writes: ['silver'] }) }] } as StepResult],
+      ]),
+    }
+  }
+  const model = () => {
+    const { steps, results } = chain()
+    return sequenceToModel(steps, results, 'M', 'flow', {
+      ...DEFAULT_PORT_OPTIONS,
+      layout: 'dataflow',
+    }).model
+  }
+
+  it('exports tables only — the notebooks are contracted into the lines', () => {
+    const names = model().layers.flatMap((l) => l.objects.map((o) => o.name))
+    expect(names).toEqual(['raw', 'bronze', 'silver'])
+  })
+
+  it('names the layers for how far from a source each table sits', () => {
+    expect(model().layers.map((l) => l.name)).toEqual(['Sources', 'Derived 1', 'Outputs'])
+  })
+
+  it('joins table to table, carrying the notebook that made the hop', () => {
+    const m = model()
+    const idOf = (name: string) => m.layers.flatMap((l) => l.objects).find((o) => o.name === name)!.id
+    const hop = m.transitions.find((t) => t.source === idOf('raw') && t.target === idOf('bronze'))
+    expect(hop).toBeTruthy()
+    // The notebook has no object left to be named on, so it rides on the edge.
+    expect(m.properties[hop!.id].Via).toBe('nb_bronze')
+  })
+})

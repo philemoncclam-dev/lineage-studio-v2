@@ -112,6 +112,11 @@ interface Link {
    * activities is two rows, and an edge has to land on the right one.
    */
   group: number
+  /**
+   * The step that made this hop. Data Flow only, where the notebook has been
+   * contracted into the line and this is the only place its name survives.
+   */
+  via?: string
 }
 
 const tableId = (name: string) => `t:${name.toLowerCase()}`
@@ -437,7 +442,7 @@ export interface PortOptions {
   layout?: ModelLayout
 }
 
-export type ModelLayout = 'view' | 'stages' | 'medallion'
+export type ModelLayout = 'view' | 'stages' | 'medallion' | 'dataflow'
 
 export const DEFAULT_PORT_OPTIONS: PortOptions = {
   kindTags: true,
@@ -639,6 +644,44 @@ export function sequenceToModel(
     }
   })
 
+  // Data Flow: contract every step into the lines it made, so what is exported
+  // is table → table with the notebook named on the edge. Done here, on the
+  // finished node/link lists, rather than threaded through the builder above:
+  // the contraction is one rule about the graph, and the rest of this file
+  // stays a single path that never asks which view it is serving.
+  if (layout === 'dataflow') {
+    const readsOf = new Map<string, string[]>()
+    const writesOf = new Map<string, string[]>()
+    for (const l of links) {
+      if (l.kind === 'read') readsOf.set(l.to, [...(readsOf.get(l.to) ?? []), l.from])
+      else writesOf.set(l.from, [...(writesOf.get(l.from) ?? []), l.to])
+    }
+    const contracted: Link[] = []
+    const seen = new Set<string>()
+    for (const step of nodes.filter((n) => n.kind !== 'table')) {
+      for (const to of writesOf.get(step.id) ?? [])
+        for (const from of readsOf.get(step.id) ?? []) {
+          // Read and written by one step is a refresh in place, not a hop.
+          if (from === to) continue
+          const key = `${from}|${to}|${step.name}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          const target = byId.get(to)
+          contracted.push({
+            from,
+            to,
+            kind: 'write',
+            table: target?.ref ?? target?.name ?? '',
+            group: -1,
+            via: step.name,
+          })
+        }
+    }
+    const tables = nodes.filter((n) => n.kind === 'table')
+    nodes.splice(0, nodes.length, ...tables)
+    links.splice(0, links.length, ...contracted)
+  }
+
   // --- build the model --------------------------------------------------
   const model = emptyModel(name)
   const props: LineageModel['properties'] = {}
@@ -662,7 +705,11 @@ export function sequenceToModel(
     // `stages` used to give a layer per medallion stage, which split one
     // workspace across four layers and drew the same workspace band repeatedly;
     // it now orders the lakehouses INSIDE its layer by stage instead.
-    if (layout === 'medallion')
+    if (layout === 'dataflow')
+      // Depth is the only axis left once the steps are gone: how far from a
+      // source a table sits, which is what a longest-path walk measures.
+      for (const [id, c] of columnsOf(nodes, links)) col.set(id, c)
+    else if (layout === 'medallion')
       for (const [id, c] of stageColumnsOf(nodes, links, refs)) col.set(id, c)
     else for (const [id, c] of ownerColumnsOf(nodes, links, refs, true)) col.set(id, c)
   else if (view === 'sequence')
@@ -691,9 +738,15 @@ export function sequenceToModel(
     const name = feeds.length
       ? `Into ${feeds.join(' + ')}`
       : semantic
-        ? layout === 'medallion'
-          ? stageLayerName(inColumn, refs)
-          : semanticLayerName(inColumn)
+        ? layout === 'dataflow'
+          ? c === 0
+            ? 'Sources'
+            : c === lastCol
+              ? 'Outputs'
+              : `Derived ${c}`
+          : layout === 'medallion'
+            ? stageLayerName(inColumn, refs)
+            : semanticLayerName(inColumn)
         : view === 'sequence'
           ? c === 0
             ? 'Notebooks & pipelines'
@@ -1044,6 +1097,8 @@ export function sequenceToModel(
     const bag = {
       ...(options.provenance ? { Source: 'Fabric sandbox' } : {}),
       ...(options.accessTags ? { Access: access } : {}),
+      // Data Flow's notebook, which has no card of its own to be named on.
+      ...(l.via ? { Via: l.via } : {}),
     }
 
     if (view === 'sequence') {

@@ -19,6 +19,7 @@ const observedRun = (over: Partial<SandboxObservedRun> = {}): SandboxObservedRun
   application_id: 'app_1',
   state: 'Success',
   submitted_at: '2026-08-01T09:00:00Z',
+  code_changed_at: '',
   submitter: 'Ada',
   reads: [],
   writes: [],

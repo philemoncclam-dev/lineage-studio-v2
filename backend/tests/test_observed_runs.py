@@ -51,7 +51,7 @@ SESSION = {
 class FakeClient:
     """Returns REST payloads by path; `raise_on` makes a substring refuse."""
 
-    def __init__(self, sessions=None, executions=None, raise_on=()):
+    def __init__(self, sessions=None, executions=None, raise_on=(), item=None):
         self._sessions = sessions if sessions is not None else [SESSION]
         self._executions = (
             executions
@@ -59,6 +59,10 @@ class FakeClient:
             else [{"id": 1, "status": "COMPLETED", "planDescription": PLAN}]
         )
         self._raise_on = raise_on
+        # The item payload carries the notebook's edit time. Defaulting to an
+        # empty one models the common tenant: the call succeeds and simply
+        # names no timestamp.
+        self._item = item if item is not None else {}
 
     def request(self, method, path, **kwargs):
         for fragment in self._raise_on:
@@ -68,6 +72,8 @@ class FakeClient:
             return self._executions
         if path.endswith("/livySessions"):
             return {"value": self._sessions}
+        if "/items/" in path:
+            return self._item
         raise AssertionError(f"unexpected path {path}")
 
 
@@ -293,3 +299,37 @@ def test_a_broken_history_lookup_never_fails_the_sandbox_run(client, monkeypatch
     assert body["ok"] is True
     assert body["observed"]["available"] is False
     assert any("unavailable" in note for note in body["observed"]["notes"])
+
+
+# --- the notebook edited since the run --------------------------------------
+#
+# The single most common false alarm the comparison can raise: a table is
+# predicted because a line writes it, and the run predates that line.
+
+
+def test_a_notebook_edited_after_the_run_says_so():
+    result = observe(FakeClient(item={"lastUpdatedDate": "2026-08-01T18:00:00Z"}))
+    assert result.code_changed_at == "2026-08-01T18:00:00Z"
+    assert any("edited after that run" in note for note in result.notes)
+
+
+def test_a_notebook_older_than_the_run_makes_no_such_claim():
+    result = observe(FakeClient(item={"lastUpdatedDate": "2026-07-01T09:00:00Z"}))
+    assert result.code_changed_at == "2026-07-01T09:00:00Z"
+    assert not any("edited after" in note for note in result.notes)
+
+
+def test_a_tenant_that_names_no_edit_time_claims_nothing():
+    """Absent must mean unknown, never unchanged — the panel only speaks when
+    there is a timestamp to speak from."""
+    result = observe(FakeClient(item={}))
+    assert result.code_changed_at == ""
+    assert not any("edited after" in note for note in result.notes)
+
+
+def test_an_item_lookup_that_refuses_does_not_fail_the_run():
+    """Enrichment on enrichment. A tenant that will not serve the item payload
+    still gets its observed run."""
+    result = observe(FakeClient(raise_on=("/items/",)))
+    assert result.available is True
+    assert result.code_changed_at == ""

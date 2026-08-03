@@ -813,6 +813,14 @@ export interface SandboxObservedRun {
   application_id: string
   state: string
   submitted_at: string
+  /**
+   * When the notebook was last edited, `''` when Fabric would not say.
+   *
+   * Newer than `submitted_at` means the analysis describes code the run never
+   * executed, which explains every predicted-but-unseen table on its own. The
+   * panel says so instead of reporting a discrepancy.
+   */
+  code_changed_at: string
   /** Who ran it. A real run has a submitter; a sandbox run does not. */
   submitter: string
   reads: string[]

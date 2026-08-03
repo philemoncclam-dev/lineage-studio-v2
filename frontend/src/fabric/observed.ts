@@ -48,6 +48,15 @@ export interface ObservedSummary {
   lastRunBy: string
   /** State of that newest run — `Success`, `Error`, … */
   lastRunState: string
+  /**
+   * Some notebook was edited after the run it is compared against.
+   *
+   * The one fact that decides what `predictedOnly` means. Newer code explains
+   * every predicted-but-unseen table by itself — the run predates the line that
+   * writes it — so the panel reports that rather than a disagreement. Any step
+   * being stale is enough: the sequence is compared as a whole.
+   */
+  codeIsNewer: boolean
   /** ref → parts, merged, so labels resolve for observed-only tables too. */
   tables: Record<string, SandboxTableRef>
   /** True when nothing was asked at all — render nothing, not an empty report. */
@@ -65,6 +74,7 @@ const EMPTY: ObservedSummary = {
   lastRunAt: '',
   lastRunBy: '',
   lastRunState: '',
+  codeIsNewer: false,
   tables: {},
   empty: true,
 }
@@ -86,6 +96,7 @@ export function observedSummary(results: Map<string, StepResult>): ObservedSumma
   let lastRunAt = ''
   let lastRunBy = ''
   let lastRunState = ''
+  let codeIsNewer = false
 
   for (const res of results.values())
     for (const entry of res.runs) {
@@ -100,6 +111,10 @@ export function observedSummary(results: Map<string, StepResult>): ObservedSumma
         continue
       }
       available++
+      // Both are ISO-8601 from Fabric, and an empty string sorts below every
+      // real one — so a tenant that returned no edit time never trips this.
+      if (observed.code_changed_at && observed.code_changed_at > observed.submitted_at)
+        codeIsNewer = true
       // Newest wins. String compare is safe and stable: these are ISO-8601 from
       // Fabric, so lexical order IS chronological order, and parsing a date only
       // to re-sort it would add a failure mode for nothing.
@@ -134,6 +149,7 @@ export function observedSummary(results: Map<string, StepResult>): ObservedSumma
     lastRunAt,
     lastRunBy,
     lastRunState,
+    codeIsNewer,
     tables,
     empty: false,
   }
@@ -159,12 +175,25 @@ export function observedHeadline(s: ObservedSummary): string {
     parts.push(
       `${s.observedOnly.size} table${s.observedOnly.size === 1 ? '' : 's'} the run touched that this analysis did not predict`,
     )
+  // Said last, because it reframes everything before it: the reader needs the
+  // counts first and the reason they may not line up second.
+  if (s.codeIsNewer) parts.push('the notebook has been edited since that run')
   return parts.join(' · ')
 }
 
-/** Whether prediction and observation lined up exactly. */
+/**
+ * Whether prediction and observation lined up exactly.
+ *
+ * Code edited since the run is not a disagreement and must not read as one:
+ * the analysis describes lines that run never executed, so a predicted table it
+ * did not touch is the expected outcome rather than a finding. Tables the run
+ * touched that the analysis missed still count — those are facts about code
+ * that DID run, and no amount of editing since explains them away.
+ */
 export function observedAgrees(s: ObservedSummary): boolean {
-  return !s.empty && s.available > 0 && s.predictedOnly.size === 0 && s.observedOnly.size === 0
+  if (s.empty || s.available === 0) return false
+  if (s.observedOnly.size) return false
+  return s.predictedOnly.size === 0 || s.codeIsNewer
 }
 
 /** Short date for the summary line — the timestamp without its microseconds. */

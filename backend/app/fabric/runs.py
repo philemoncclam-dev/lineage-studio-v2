@@ -88,6 +88,33 @@ def latest_run(sessions: list[dict]) -> dict | None:
     return sessions[0] if sessions else None
 
 
+def notebook_modified_at(client: FabricClient, workspace_id: str, item_id: str) -> str:
+    """When the notebook was last edited, or `""` when Fabric will not say.
+
+    Best-effort twice over. The item payload is the one surface that carries a
+    modification time at all, and which spelling arrives has drifted across
+    revisions the same way the Livy fields have — hence `_first` rather than one
+    key. A tenant that returns none is normal and must degrade to `""`: the
+    caller only ever makes a claim when there is a timestamp to make it from,
+    and "unknown" outranks a guess.
+    """
+    try:
+        payload = client.request("GET", f"/workspaces/{workspace_id}/items/{item_id}")
+    except FabricError:
+        return ""
+    return str(
+        _first(
+            payload,
+            "lastUpdatedDate",
+            "lastUpdatedTime",
+            "modifiedDate",
+            "lastModifiedDateTime",
+            "updatedDate",
+        )
+        or ""
+    )
+
+
 def _sql_executions(
     client: FabricClient, workspace_id: str, item_id: str, livy_id: str, app_id: str
 ) -> list[dict]:
@@ -155,6 +182,15 @@ def observe_run(
         if isinstance(submitter, dict)
         else str(submitter)
     )
+
+    observed.code_changed_at = notebook_modified_at(client, workspace_id, item_id)
+    if observed.code_changed_at > observed.submitted_at > "":
+        # ISO-8601 from the same API, so lexical order is chronological — the
+        # same reasoning `observedSummary` uses to pick the newest run.
+        observed.notes.append(
+            "this notebook was edited after that run, so the analysis describes "
+            "newer code than the run it is being compared against."
+        )
 
     if not (livy_id and app_id):
         observed.notes.append(

@@ -20,7 +20,13 @@ import {
 import { StepIcon } from './SequencePanel'
 import { stepReads, stepTables, stepWrites, type Step, type StepResult, type StepStatus } from './sequence'
 import { coverageBadge, coverageOf, coverageSummary, type CoverageLevel } from './coverage'
-import { observedAgrees, observedHeadline, observedSummary, runWhen } from './observed'
+import {
+  observedAgrees,
+  observedHeadline,
+  observedSummary,
+  runWhen,
+  type ObservedSummary,
+} from './observed'
 import { columnKey, diffIsClean, diffRuns, type RunDiff } from './runDiff'
 import {
   sequenceToModel,
@@ -227,8 +233,14 @@ function anchorY(n: FlowNode, rowKey?: string) {
  * left, down.
  *
  * Both mirror the layout of the same name that Create model exports.
+ *
+ * `observed` — not an arrangement of the same graph at all, but a DIFFERENT
+ * graph: the executions a real Fabric run performed, in order, from Spark's own
+ * plans. It shares the sequence layout because the shape fits (steps down one
+ * column in time order, tables in the other), not because it shows the same
+ * thing. See `buildObservedFlow`.
  */
-export type CanvasView = 'flow' | 'sequence' | 'stages'
+export type CanvasView = 'flow' | 'sequence' | 'stages' | 'observed'
 
 /** The view that names bands for what is in them rather than where it sits. */
 const SEMANTIC_VIEWS: readonly CanvasView[] = ['stages']
@@ -615,7 +627,11 @@ function FlowCanvas({
     // canonical tables column to point everything at. The workspace view keeps
     // true direction, because a read crossing back to the workspace on the left
     // is a fact about ownership, not a drawing artefact.
-    const base = view === 'sequence' ? sequenceEdges(edges, stepIds) : edges
+    // Confirmed uses the sequence layout, so it needs the same flip: every line
+    // must leave the execution's own read or write row and run into the tables
+    // column, or a read loops back under the whole column.
+    const base =
+      view === 'sequence' || view === 'observed' ? sequenceEdges(edges, stepIds) : edges
     // A column edge is only drawn when BOTH of its rows are actually on screen
     // — a collapsed group would otherwise anchor every hidden column to the
     // card header, which is a fan of identical lines saying nothing. Whenever
@@ -635,7 +651,9 @@ function FlowCanvas({
     () =>
       view === 'stages'
         ? layoutStages(nodes, edges)
-        : view === 'sequence'
+        : // Confirmed shares the sequence layout: executions down one column in
+          // the order they ran, the tables they touched in the other.
+          view === 'sequence' || view === 'observed'
           ? layoutSequence(nodes)
           : layoutFlow(nodes, edges),
     [nodes, edges, view],
@@ -805,6 +823,95 @@ function collectSchemas(results: Map<string, StepResult>): Map<string, SandboxCo
       for (const [table, cols] of Object.entries(run.result?.table_schemas ?? {}))
         if (cols.length && !out.get(table)?.length) out.set(table, cols)
   return out
+}
+
+/**
+ * The graph of what a real run ACTUALLY did — one card per SQL execution.
+ *
+ * Every other view draws what the notebooks *would* do: static reading, or a
+ * sandbox execution of code against shimmed sinks. Both are predictions, both
+ * abstain, and both can be wrong about a cell they could not read. This one is
+ * assembled entirely out of `ObservedStatement`s — the physical plans Spark
+ * itself produced while the job ran — so every card and every line on it is
+ * something that demonstrably happened. Nothing predicted appears at all.
+ *
+ * WHY A CARD PER EXECUTION rather than per notebook. The merged `reads`/`writes`
+ * on an `ObservedRun` already exist and the other views can show them; what only
+ * this data has is ORDER and GRANULARITY. Spark opens one SQL execution per
+ * action, so the executions are the run's real steps, in the real sequence, each
+ * with its own call site (`save at cell:12`), its own duration, and its own
+ * inputs and outputs. Laid out in the sequence layout, top-to-bottom is time:
+ * you can see the run happen.
+ *
+ * A table gets its own card here rather than nesting under its lakehouse the way
+ * `buildFlow` does. The nesting exists to keep a wide predicted graph readable;
+ * this graph is only ever as wide as one run's real I/O, and a flat table column
+ * keeps each execution's inputs adjacent to it.
+ *
+ * TABLE LEVEL ONLY, and that is not a gap to be filled later — see
+ * `app/fabric/plans.py`. Spark truncates long column lists inside the plan text
+ * before we ever see it, so columns here would be a guess, and a guess has no
+ * place in the one view whose entire claim is that it is not guessing.
+ */
+export function buildObservedFlow(observed: ObservedSummary): {
+  nodes: FlowNode[]
+  edges: FlowEdge[]
+} {
+  const nodes: FlowNode[] = []
+  const edges: FlowEdge[] = []
+  const tableNodes = new Map<string, string>()
+
+  const ensureTable = (ref: string): string => {
+    const existing = tableNodes.get(ref)
+    if (existing) return existing
+    const id = `ot:${ref}`
+    const parts = observed.tables[ref]
+    nodes.push({
+      id,
+      kind: 'table',
+      label: parts?.table || ref,
+      ws: parts?.workspace ?? '',
+      lakehouse: parts?.lakehouse ?? '',
+      isFile: parts?.kind === 'file',
+      rows: [],
+    })
+    tableNodes.set(ref, id)
+    return id
+  }
+
+  for (const row of observed.rows) {
+    if (!row.observed.available) continue
+    for (const st of row.observed.statements) {
+      const id = `ox:${row.name}:${st.execution_id}`
+      // The call site is the useful name — `save at notebook.py:12` says which
+      // line did this. Spark does not always provide one, so the execution id
+      // stands in rather than an empty card.
+      const label = st.description || `execution ${st.execution_id}`
+      const rows: FlowRow[] = [
+        ...st.reads.map((ref) => ({ key: `r:${ref}`, label: refLabelOf(ref, observed), tone: 'read' as const })),
+        ...st.writes.map((ref) => ({ key: `w:${ref}`, label: refLabelOf(ref, observed), tone: 'write' as const })),
+      ]
+      nodes.push({
+        id,
+        kind: 'notebook',
+        label,
+        sub: row.name,
+        // Duration is the one number a real run has and a prediction never can.
+        badge: st.duration_ms == null ? undefined : `${Math.round(st.duration_ms)} ms`,
+        rows,
+      })
+      for (const ref of st.reads)
+        edges.push({ from: ensureTable(ref), to: id, toRow: `r:${ref}`, tone: 'read', kind: 'table' })
+      for (const ref of st.writes)
+        edges.push({ from: id, fromRow: `w:${ref}`, to: ensureTable(ref), tone: 'write', kind: 'table' })
+    }
+  }
+  return { nodes, edges }
+}
+
+/** A ref's leaf name for a row label, falling back to the ref itself. */
+function refLabelOf(ref: string, observed: ObservedSummary): string {
+  return observed.tables[ref]?.table || ref
 }
 
 /**
@@ -1225,6 +1332,7 @@ function ToModelBar({
   diffOn,
   onDiff,
   canDiff,
+  hasObserved,
 }: {
   steps: Step[]
   results: Map<string, StepResult>
@@ -1235,6 +1343,12 @@ function ToModelBar({
   onDiff: (on: boolean) => void
   /** False until a second run — one run has nothing to compare against. */
   canDiff: boolean
+  /**
+   * Whether any notebook had a readable real run. Confirmed has nothing to draw
+   * without one, and an enabled tab leading to an empty canvas reads as "this
+   * run touched nothing" — the opposite of what it would mean.
+   */
+  hasObserved: boolean
 }) {
   const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
@@ -1276,6 +1390,11 @@ function ToModelBar({
             ['flow', 'Flow', 'One column per dependency depth'],
             ['sequence', 'Sequence', 'Tables in one column, steps in run order in the other'],
             ['stages', 'Zig-Zag', 'Steps on the left, their tables on the right — the run zig-zags between the two'],
+            [
+              'observed',
+              'Confirmed',
+              'Only what a real Fabric run actually did — one card per SQL execution, in the order they ran, read back from Spark’s own plans',
+            ],
           ] as const
         ).map(([key, label, hint]) => (
           <button
@@ -1284,7 +1403,12 @@ function ToModelBar({
             role="tab"
             aria-selected={view === key}
             data-active={view === key || undefined}
-            title={hint}
+            disabled={key === 'observed' && !hasObserved}
+            title={
+              key === 'observed' && !hasObserved
+                ? 'No readable run history for these notebooks — run with history enabled, or the notebook has not run in the last ~30 days'
+                : hint
+            }
             onClick={() => onView(key)}
           >
             {label}
@@ -1320,8 +1444,18 @@ function ToModelBar({
       <button
         className="fx-btn"
         onClick={create}
-        disabled={!ran || busy}
-        title={ran ? 'Create an editable model from this run' : 'Run the sequence first'}
+        // Confirmed is a different graph, and the port only knows how to
+        // export the predicted one. Exporting it from here would hand back a
+        // model that is not the picture on screen — the exact thing the
+        // layouts above go to some trouble to avoid.
+        disabled={!ran || busy || view === 'observed'}
+        title={
+          view === 'observed'
+            ? 'Create model exports the predicted lineage — switch to Flow, Sequence or Zig-Zag'
+            : ran
+              ? 'Create an editable model from this run'
+              : 'Run the sequence first'
+        }
       >
         {busy ? 'Creating…' : 'Create model'}
       </button>
@@ -1484,13 +1618,20 @@ export function SequenceCanvas({
   const semanticView = SEMANTIC_VIEWS.includes(view)
   const [diffOn, setDiffOn] = useState(false)
   const diff = useMemo(() => diffRuns(previous, results), [previous, results])
-  const flow = useMemo(
+  const predicted = useMemo(
     () => buildFlow(steps, results, semanticView, diffOn && !diff.empty ? diff : undefined),
     [steps, results, semanticView, diffOn, diff],
   )
   const coverage = useMemo(() => coverageSummary(results), [results])
   // What these notebooks last really did in Fabric, when the run asked for it.
   const observed = useMemo(() => observedSummary(results), [results])
+  // Confirmed is a different GRAPH, not a different arrangement of this one —
+  // the executions a real run performed rather than the ones we predict it
+  // would. Everything else on this screen keeps reading the predicted graph.
+  const flow = useMemo(
+    () => (view === 'observed' ? buildObservedFlow(observed) : predicted),
+    [view, observed, predicted],
+  )
   //: how far a running sequence has got — the canvas was a spinner until the
   //  whole thing finished, on a pipeline that can be minutes.
   const done = [...results.values()].filter((r) => r.status === 'ok' || r.status === 'error').length
@@ -1567,6 +1708,7 @@ export function SequenceCanvas({
           diffOn={diffOn}
           onDiff={setDiffOn}
           canDiff={!diff.empty}
+          hasObserved={observed.available > 0}
         />
         {/* One strip under the bar, carrying whichever of the three things is
             true right now: a run in progress, a diff being read, or how much of

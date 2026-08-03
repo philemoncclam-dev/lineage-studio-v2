@@ -154,6 +154,17 @@ class ObservedRun(BaseModel):
     application_id: str = ""
     state: str = ""
     submitted_at: str = ""
+    #: When the notebook was last EDITED, when Fabric would say.
+    #:
+    #: The one fact that decides whether a disagreement means anything. Code
+    #: newer than the run it is compared against explains every predicted table
+    #: the run did not touch — the run simply predates the line that writes it —
+    #: and without this the panel reports that as a discrepancy to investigate.
+    #:
+    #: `""` when the tenant did not return it. Absent means "unknown", never
+    #: "unchanged": a claim about staleness is only made when there is a
+    #: timestamp to make it from.
+    code_changed_at: str = ""
     #: Who ran it — a real run has a submitter, a sandbox run does not.
     submitter: str = ""
     reads: list[str] = Field(default_factory=list)

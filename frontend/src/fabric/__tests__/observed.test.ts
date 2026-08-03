@@ -15,6 +15,7 @@ const observedRun = (over: Partial<SandboxObservedRun> = {}): SandboxObservedRun
   application_id: 'app_1',
   state: 'Success',
   submitted_at: '2026-08-01T09:00:00Z',
+  code_changed_at: '',
   submitter: 'Ada',
   reads: [],
   writes: [],
@@ -87,6 +88,50 @@ describe('observedSummary', () => {
     expect([...s.predictedOnly]).toEqual(['never_ran'])
     expect([...s.observedOnly]).toEqual(['surprise'])
     expect(s.available).toBe(1)
+  })
+
+  it('reports a notebook edited since the run instead of a disagreement', () => {
+    // The single most common false alarm: the code predicts a table because a
+    // line writes it, and the run predates that line. That is not the analysis
+    // and the run disagreeing about anything.
+    const stale = results(
+      result({
+        observed: observedRun({ code_changed_at: '2026-08-01T18:00:00Z' }),
+        comparison: comparison({ agreed_writes: ['silver'], predicted_only_writes: ['new_table'] }),
+      }),
+    )
+    const s = observedSummary(stale)
+    expect(s.codeIsNewer).toBe(true)
+    expect(observedAgrees(s)).toBe(true)
+    expect(observedHeadline(s)).toContain('edited since that run')
+  })
+
+  it('still disagrees about a table the run really touched, however stale', () => {
+    // Newer code explains a prediction the run never reached. It explains
+    // nothing about a table the run DID touch and the analysis missed — that is
+    // a fact about code that ran.
+    const s = observedSummary(
+      results(
+        result({
+          observed: observedRun({ code_changed_at: '2026-08-01T18:00:00Z' }),
+          comparison: comparison({ observed_only_writes: ['surprise'] }),
+        }),
+      ),
+    )
+    expect(observedAgrees(s)).toBe(false)
+  })
+
+  it('claims nothing about staleness when Fabric gave no edit time', () => {
+    const s = observedSummary(
+      results(
+        result({
+          observed: observedRun({ code_changed_at: '' }),
+          comparison: comparison({ predicted_only_writes: ['never_ran'] }),
+        }),
+      ),
+    )
+    expect(s.codeIsNewer).toBe(false)
+    expect(observedAgrees(s)).toBe(false)
   })
 
   it('a table confirmed by one notebook is not unconfirmed by another', () => {

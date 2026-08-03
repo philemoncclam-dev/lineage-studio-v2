@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildFlow, truncateRows, type FlowNode, type FlowRow } from '../SequenceCanvas'
-import type { Step, StepResult } from '../sequence'
+import { activityLabel, type Step, type StepResult } from '../sequence'
 import type { SandboxRunResult } from '../../api'
 
 const step = (key: string, name: string): Step => ({
@@ -523,11 +523,11 @@ describe('splitting a pipeline into its activities', () => {
     const { steps, results } = spanning()
     const { nodes } = buildFlow(steps, results, false, undefined, true)
     const cards = nodes.filter((n) => n.kind !== 'table')
-    // Only the orchestration PREFIX is trimmed — `invoke pl_master /` on every
-    // card says nothing. The last segment is kept whole, verb and all, because
-    // that is exactly what `toModel`'s `leafName` keeps and the two must agree
-    // or Create model renames every card.
-    expect(cards.map((n) => n.label)).toEqual(['run nb_bronze', 'run nb_silver'])
+    // Both the orchestration prefix and the activity VERB go: `invoke
+    // pl_master /` is the subtitle already, and `run` describes how Data
+    // Factory invoked the thing rather than what the thing is. `toModel` shares
+    // the helper, so a card and the object it exports to are named the same.
+    expect(cards.map((n) => n.label)).toEqual(['nb_bronze', 'nb_silver'])
     // The pipeline is not lost — it is the subtitle, so the boundary is still
     // readable where it still matters.
     expect(cards.every((n) => n.sub === 'pl_master')).toBe(true)
@@ -549,5 +549,55 @@ describe('splitting a pipeline into its activities', () => {
     // exists — the ids have to follow the split.
     const order = edges.filter((e) => e.dashed)
     expect(order).toEqual([{ from: cards[0].id, to: cards[1].id, dashed: true }])
+  })
+})
+
+describe('activityLabel', () => {
+  it('drops the orchestration prefix and the invocation verb', () => {
+    expect(activityLabel('invoke pl_20_bronze / run nb_orders')).toBe('nb_orders')
+    expect(activityLabel('invoke pl_master / invoke pl_dims / run nb_dim')).toBe('nb_dim')
+  })
+
+  it('leaves a plain notebook name alone', () => {
+    expect(activityLabel('nb_orders')).toBe('nb_orders')
+  })
+
+  it('keeps an activity that is genuinely CALLED run', () => {
+    // Stripping unconditionally would blank the card.
+    expect(activityLabel('invoke pl_x / run')).toBe('run')
+  })
+})
+
+describe('card numbering', () => {
+  it('numbers the cards in run order, not by which step they came from', () => {
+    // A split pipeline turns one step into several. Numbering them by step put
+    // the same digit on every notebook in the run, which says nothing.
+    const p = pipelineStep('p', 'pl_master')
+    const results = new Map<string, StepResult>([
+      [
+        'p',
+        {
+          status: 'ok',
+          runs: [
+            { name: 'invoke pl_master / run nb_a', status: 'ok', result: result({ writes: ['x'] }) },
+            { name: 'invoke pl_master / run nb_b', status: 'ok', result: result({ writes: ['y'] }) },
+            { name: 'invoke pl_master / run nb_c', status: 'ok', result: result({ writes: ['z'] }) },
+          ],
+        } as StepResult,
+      ],
+    ])
+    const { nodes } = buildFlow([p], results, false, undefined, true)
+    expect(nodes.filter((n) => n.kind !== 'table').map((n) => n.badge)).toEqual(['1', '2', '3'])
+  })
+
+  it('still numbers plain steps 1, 2, 3', () => {
+    const a = step('a', 'first')
+    const b = step('b', 'second')
+    const results = new Map([
+      [a.key, ran('first', result({ writes: ['t1'] }))],
+      [b.key, ran('second', result({ writes: ['t2'] }))],
+    ])
+    const { nodes } = buildFlow([a, b], results)
+    expect(nodes.filter((n) => n.kind !== 'table').map((n) => n.badge)).toEqual(['1', '2'])
   })
 })

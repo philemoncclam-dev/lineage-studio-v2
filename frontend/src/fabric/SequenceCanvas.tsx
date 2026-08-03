@@ -18,7 +18,15 @@ import {
   type SandboxTableRef,
 } from '../api'
 import { StepIcon } from './SequencePanel'
-import { stepReads, stepTables, stepWrites, type Step, type StepResult, type StepStatus } from './sequence'
+import {
+  activityLabel,
+  stepReads,
+  stepTables,
+  stepWrites,
+  type Step,
+  type StepResult,
+  type StepStatus,
+} from './sequence'
 import { coverageBadge, coverageOf, coverageSummary, type CoverageLevel } from './coverage'
 import {
   observedAgrees,
@@ -1135,17 +1143,15 @@ export function buildFlow(
    * split — one per activity it ran. `nest` says whether the card holds its
    * runs as activity rows, which only a whole pipeline does.
    */
-  const unitsOf = (step: Step, i: number) => {
+  const unitsOf = (step: Step) => {
     const res = results.get(step.key)
     const runs = res?.runs ?? []
     if (splitPipelines && step.kind === 'pipeline' && runs.length)
       return runs.map((run, ri) => ({
         id: `s:${step.key}:a${ri}`,
-        // The activity's own name, with the orchestration prefix the backend
-        // builds (`invoke pl_x / run nb_y`) trimmed off the front.
-        label: run.name.includes(' / ') ? run.name.slice(run.name.lastIndexOf(' / ') + 3) : run.name,
+        label: activityLabel(run.name),
         sub: step.name,
-        badge: `${i + 1}.${ri + 1}`,
+        badge: '',
         kind: 'notebook' as FlowKind,
         runs: [run],
         nest: false,
@@ -1163,7 +1169,7 @@ export function buildFlow(
               : step.kind === 'pipeline' && res?.activities
                 ? `${res.activities.length} act · ${res.runs.length} run`
                 : undefined,
-        badge: String(i + 1),
+        badge: '',
         kind: step.kind,
         runs,
         nest: step.kind === 'pipeline' && runs.length > 0,
@@ -1172,7 +1178,15 @@ export function buildFlow(
     ]
   }
 
-  const units = steps.flatMap((step, i) => unitsOf(step, i).map((u) => ({ ...u, step })))
+  // Numbered over the CARDS, not the steps. A split pipeline turns one step
+  // into several, and giving them all its step number put "1" on every notebook
+  // in the run; `1.1`/`1.2` was no better, since the part a reader takes in is
+  // the leading digit. Sequential numbering says what the badge has always
+  // meant — the order these ran — and is identical to the step number whenever
+  // nothing is split.
+  const units = steps
+    .flatMap((step) => unitsOf(step).map((u) => ({ ...u, step })))
+    .map((u, n) => ({ ...u, badge: String(n + 1) }))
 
   units.forEach((unit) => {
     const step = unit.step

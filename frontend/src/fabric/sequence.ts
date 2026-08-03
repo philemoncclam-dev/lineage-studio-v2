@@ -341,3 +341,22 @@ export function __resetSequence() {
   }
   listeners.forEach((l) => l())
 }
+
+/**
+ * A pipeline activity's run name → what to put on a card.
+ *
+ * The backend names an expanded step for the path that reached it —
+ * `invoke pl_20_bronze / invoke pl_21_dims / run nb_orders`. Two parts of that
+ * are noise on a card: the orchestration prefix, which is the same on every
+ * sibling and is already the card's subtitle, and the activity VERB, which
+ * describes how Data Factory invoked the thing rather than what the thing is.
+ * `run nb_orders` and `nb_orders` say the same, and only one of them reads like
+ * a notebook.
+ *
+ * The verb is stripped only when something follows it, so an activity actually
+ * called `run` keeps its name rather than becoming blank.
+ */
+export function activityLabel(name: string): string {
+  const leaf = name.includes(' / ') ? name.slice(name.lastIndexOf(' / ') + 3) : name
+  return leaf.replace(/^(?:run|invoke|execute|call)\s+(?=\S)/i, '')
+}

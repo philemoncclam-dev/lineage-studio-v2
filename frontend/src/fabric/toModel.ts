@@ -29,7 +29,7 @@ import {
   type SandboxColumnFlow,
   type SandboxTableRef,
 } from '../api'
-import { stepReads, stepTables, stepWrites, type Step, type StepResult } from './sequence'
+import { activityLabel, stepReads, stepTables, stepWrites, type Step, type StepResult } from './sequence'
 
 /** A node on the way to becoming an object. */
 interface Node {
@@ -229,11 +229,12 @@ function parentPipeline(name: string): string {
   return cut === -1 ? '' : name.slice(0, cut)
 }
 
-/** The step's own name, with the orchestration prefix removed. */
-function leafName(name: string): string {
-  const cut = name.lastIndexOf(' / ')
-  return cut === -1 ? name : name.slice(cut + 3)
-}
+/**
+ * The step's own name, with the orchestration prefix and activity verb removed
+ * — see `activityLabel`. Shared with the canvas so a card and the object it
+ * exports to are called the same thing.
+ */
+const leafName = activityLabel
 
 const uniq = (xs: (string | undefined)[]): string[] => [
   ...new Set(xs.filter((x): x is string => !!x)),
@@ -565,7 +566,7 @@ export function sequenceToModel(
     if (layout === 'medallion' && step.kind === 'pipeline' && runs.length)
       return runs.map((run, ri) => ({
         id: `${stepId(step.key)}:a${ri}`,
-        name: run.name.includes(' / ') ? run.name.slice(run.name.lastIndexOf(' / ') + 3) : run.name,
+        name: activityLabel(run.name),
         kind: 'notebook' as const,
         ordinal: i + 1,
         io: [

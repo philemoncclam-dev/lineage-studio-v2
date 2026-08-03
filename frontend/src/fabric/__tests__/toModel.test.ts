@@ -963,7 +963,7 @@ describe('pipeline grouping in the semantic layouts', () => {
     const eng = model.layers.find((l) => l.name === 'Engineering')!
     expect(eng.objects.map((o) => o.name)).toEqual(['invoke pl_20_bronze'])
     // and the orchestration prefix is stripped off the steps themselves
-    expect(eng.objects[0].children.map((c) => c.name).sort()).toEqual(['run nb_customers', 'run nb_products'])
+    expect(eng.objects[0].children.map((c) => c.name).sort()).toEqual(['nb_customers', 'nb_products'])
   })
 
   it('nests an invoked pipeline inside the master that invoked it', () => {
@@ -987,7 +987,7 @@ describe('pipeline grouping in the semantic layouts', () => {
       'invoke pl_20_bronze',
       'invoke pl_30_silver',
     ])
-    expect(eng.objects[0].children[0].children.map((c) => c.name)).toEqual(['run nb_customers'])
+    expect(eng.objects[0].children[0].children.map((c) => c.name)).toEqual(['nb_customers'])
   })
 
   it('leaves a directly-run notebook as its own object', () => {
@@ -1054,8 +1054,8 @@ describe('a pipeline in the medallion layout', () => {
     expect(JSON.stringify(named)).not.toContain('pl_master')
     const bronze = model.layers.find((l) => l.name === 'Bronze')!
     const silver = model.layers.find((l) => l.name === 'Silver')!
-    expect(bronze.objects.map((o) => o.name)).toContain('run nb_bronze')
-    expect(silver.objects.map((o) => o.name)).toContain('run nb_silver')
+    expect(bronze.objects.map((o) => o.name)).toContain('nb_bronze')
+    expect(silver.objects.map((o) => o.name)).toContain('nb_silver')
   })
 
   it('keeps the pipeline whole in the Zig-Zag layout', () => {

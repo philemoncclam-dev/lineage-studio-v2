@@ -121,3 +121,18 @@ def test_a_partitioned_path_is_kept_verbatim_too():
 
 def test_a_folder_and_a_file_under_it_are_different_sources():
     assert qualify(f"{ABFSS}/Files/orders") != qualify(f"{ABFSS}/Files/orders/jan.csv")
+
+
+# A TABLE path is the opposite rule: storage under the table directory belongs to
+# the table, and naming it separately invented one "table" per Delta commit file.
+
+
+def test_a_delta_log_commit_resolves_to_its_table():
+    ref = qualify(f"{ABFSS}/Tables/orders/_delta_log/00000000000000000000.json")
+    assert parse_ref(ref)[2] == "orders"
+    assert ref == qualify(f"{ABFSS}/Tables/orders")
+
+
+def test_a_data_file_under_a_table_resolves_to_its_table():
+    ref = qualify(f"{ABFSS}/Tables/gold/orders/part-00000-abc.snappy.parquet")
+    assert parse_ref(ref)[2] == "orders"

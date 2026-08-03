@@ -114,6 +114,12 @@ _NOT_LINEAGE = re.compile(
 #: Spark's own default catalog, which is not a lakehouse and must not become one.
 _DEFAULT_CATALOGS = {"spark_catalog", "hive_metastore", "default", "delta"}
 
+#: Placeholder relation names the engine puts in a plan where a real table would
+#: go. Delta renders every `DeltaTableV2` as `DummyDeltaTable` — it is the name
+#: of a Scala class, not of anything in a lakehouse, and the path alongside it is
+#: where the actual identity lives.
+_PLACEHOLDER_TABLES = {"dummydeltatable", "onerowrelation", "unresolvedrelation"}
+
 #: The tree drawing and codegen marker leading an operator in a non-formatted
 #: plan — `   +- *(1) FileScan parquet …`. Stripped so the operator name is at
 #: the start of what gets matched.
@@ -172,7 +178,7 @@ def _table_ref(dotted: str, ctx: dict) -> str:
     parts = [p for p in dotted.replace("`", "").split(".") if p]
     while parts and parts[0].lower() in _DEFAULT_CATALOGS:
         parts.pop(0)
-    if not parts:
+    if not parts or parts[-1].lower() in _PLACEHOLDER_TABLES:
         return ""
     ref = qualify(".".join(parts), **ctx)
     return ref if table_of(ref) else ""

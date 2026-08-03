@@ -67,13 +67,31 @@ def is_file_ref(ref: str) -> bool:
     return leaf == FILES or leaf.lower().startswith(FILES.lower() + SEP)
 
 
+#: Physical storage under a table directory, not the table. A Spark plan names
+#: paths INTO a Delta table — `…/Tables/orders/_delta_log/00000000000000000000.json`,
+#: `…/Tables/orders/part-0000-….snappy.parquet` — and the leaf of those is a
+#: commit file, not a table anyone wrote. Taking it literally invented one
+#: "table" per log file and buried the real observed-only finds under them.
+_STORAGE_LEAF = re.compile(
+    r"^[_.]|^part-|\.(?:json|parquet|crc|checkpoint|txt|avro)$", re.I
+)
+
+
 def _leaf_from_path(segments: list[str]) -> str:
     """The identity leaf for a path: a file dataset keeps its `Files/` head, a
-    table is just its name."""
+    table is just its name.
+
+    A path reaching inside a table's storage resolves to the TABLE — the
+    directory that owns the log or data file — because that is the thing with
+    an identity. Only the `Files` layer keeps its filename, and it is handled
+    first: there the filename is the point (see `_dataset_path`).
+    """
     lowered = [s.lower() for s in segments]
     if FILES.lower() in lowered:
         return _dataset_path(segments[lowered.index(FILES.lower()) :])
     tail = [s for s in segments if s.lower() != "tables"]
+    while tail and _STORAGE_LEAF.search(tail[-1]):
+        tail.pop()
     return tail[-1] if tail else ""
 
 

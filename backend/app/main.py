@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from fastapi import HTTPException
 
@@ -29,6 +30,7 @@ from .fabric.router import router as fabric_router
 from .sandbox.router import router as sandbox_router
 from .share.router import router as share_router
 from .sample import SAMPLE
+from .integrations import describe_integrations
 from .sandbox.runner import spark_available
 from .startup_checks import assert_safe_to_start
 
@@ -103,3 +105,29 @@ def purview_graph() -> LineageGraph:
     except PurviewError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return _last_graph
+
+
+class IntegrationOut(BaseModel):
+    key: str
+    name: str
+    vendor: str
+    host: str
+    configured: bool
+    purpose: str
+    degrades: str
+    needs: str
+    detail: str = ""
+    caveats: list[str] = []
+
+
+@app.get("/integrations", response_model=list[IntegrationOut])
+def list_integrations() -> list[IntegrationOut]:
+    """Every external service this app calls, and what breaks without each.
+
+    Configuration, not liveness — nothing here makes a network call. See
+    `app/integrations.py` for why, and for the rule that no secret leaves this
+    endpoint: every field is a boolean, a hostname, or something already public.
+    """
+    return [
+        IntegrationOut(**vars(i)) for i in describe_integrations(get_settings())
+    ]

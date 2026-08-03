@@ -567,6 +567,32 @@ export async function fetchWorkspaceLineage(workspaceId: string): Promise<Lineag
   return res.json()
 }
 
+/** One external service this app calls. See backend/app/integrations.py. */
+export interface Integration {
+  key: string
+  name: string
+  vendor: string
+  host: string
+  configured: boolean
+  purpose: string
+  degrades: string
+  needs: string
+  detail: string
+  caveats: string[]
+}
+
+/**
+ * Every external service, and what breaks without each.
+ *
+ * Configuration, not liveness — this makes no upstream calls, so it is safe to
+ * load on view and cannot hang behind a firewalled host.
+ */
+export async function fetchIntegrations(): Promise<Integration[]> {
+  const res = await fetch(`${BASE}/integrations`)
+  if (!res.ok) return detail(res, 'integrations')
+  return res.json()
+}
+
 export async function fetchFabricCatalog(): Promise<FabricCatalogEntry[]> {
   const res = await fabricFetch(`${BASE}/fabric/catalog`)
   if (!res.ok) return detail(res, 'fabric catalog')

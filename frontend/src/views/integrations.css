@@ -1,0 +1,145 @@
+/* /fabric/integrations — the inventory of external services.
+   A reading page, not a canvas: it scrolls in the normal flow and is capped so
+   the prose in each card stays a readable measure. */
+
+.ig-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--spacing-6) var(--spacing-4);
+}
+.ig-head {
+  max-width: 900px;
+  margin: 0 auto var(--spacing-6);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--spacing-2);
+  align-items: baseline;
+}
+.ig-head h1 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--text-heading);
+}
+.ig-count {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.ig-sub {
+  grid-column: 1 / -1;
+  margin: 0;
+  max-width: 62ch;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-sm);
+}
+.ig-error {
+  max-width: 900px;
+  margin: 0 auto;
+  color: var(--color-destructive);
+  font-size: var(--text-sm);
+}
+.ig-loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--spacing-8);
+}
+
+.ig-list {
+  list-style: none;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+/* The unconfigured ones are the point of visiting, so they are NOT dimmed —
+   a greyed-out row reads as "ignore me", which is the opposite of the truth.
+   The configured ones get the quiet treatment instead. */
+.ig-card {
+  padding: var(--spacing-3) var(--spacing-4);
+  border: var(--border-width) solid var(--color-border);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-1);
+}
+.ig-card[data-configured] {
+  border-left-color: var(--color-success);
+}
+
+.ig-card-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-2);
+}
+.ig-status {
+  order: 3;
+  margin-left: auto;
+  padding: 1px var(--spacing-2);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ig-status[data-on] {
+  background: color-mix(in oklab, var(--color-success) 16%, transparent);
+  color: var(--color-success);
+}
+.ig-name {
+  color: var(--color-text-primary);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+.ig-host {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-micro);
+}
+
+/* Label column fixed so the answers line up down the page and can be compared
+   between services without re-reading the labels. */
+.ig-facts {
+  margin: 0;
+  display: grid;
+  gap: var(--spacing-1) var(--spacing-3);
+  font-size: var(--text-sm);
+}
+.ig-facts > div {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: var(--spacing-3);
+}
+.ig-facts dt {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-top: 2px;
+}
+.ig-facts dd {
+  margin: 0;
+  max-width: 70ch;
+  color: var(--color-text-secondary);
+}
+
+.ig-caveats {
+  margin: var(--spacing-2) 0 0;
+  padding-left: var(--spacing-4);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro);
+}
+.ig-caveats li + li {
+  margin-top: 2px;
+}
+
+@media (max-width: 640px) {
+  .ig-facts > div {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}

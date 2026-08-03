@@ -14,6 +14,7 @@ import { Route as FabricRouteRouteImport } from './routes/fabric/route'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as ProductsRouteRouteImport } from './routes/products/route'
 import { Route as FabricExploreRouteImport } from './routes/fabric/explore'
+import { Route as FabricIntegrationsRouteImport } from './routes/fabric/integrations'
 import { Route as FabricLineageRouteImport } from './routes/fabric/lineage'
 import { Route as FabricOverviewRouteImport } from './routes/fabric/overview'
 import { Route as ModelModelIdRouteImport } from './routes/model.$modelId'
@@ -47,6 +48,11 @@ const ProductsRouteRoute = ProductsRouteRouteImport.update({
 const FabricExploreRoute = FabricExploreRouteImport.update({
   id: '/explore',
   path: '/explore',
+  getParentRoute: () => FabricRouteRoute,
+} as any)
+const FabricIntegrationsRoute = FabricIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
   getParentRoute: () => FabricRouteRoute,
 } as any)
 const FabricLineageRoute = FabricLineageRouteImport.update({
@@ -101,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/products': typeof ProductsRouteRouteWithChildren
   '/models': typeof ModelsRoute
   '/fabric/explore': typeof FabricExploreRoute
+  '/fabric/integrations': typeof FabricIntegrationsRoute
   '/fabric/lineage': typeof FabricLineageRoute
   '/fabric/overview': typeof FabricOverviewRoute
   '/model/$modelId': typeof ModelModelIdRoute
@@ -116,6 +123,7 @@ export interface FileRoutesByTo {
   '/fabric': typeof FabricRouteRouteWithChildren
   '/models': typeof ModelsRoute
   '/fabric/explore': typeof FabricExploreRoute
+  '/fabric/integrations': typeof FabricIntegrationsRoute
   '/fabric/lineage': typeof FabricLineageRoute
   '/fabric/overview': typeof FabricOverviewRoute
   '/model/$modelId': typeof ModelModelIdRoute
@@ -133,6 +141,7 @@ export interface FileRoutesById {
   '/products': typeof ProductsRouteRouteWithChildren
   '/models': typeof ModelsRoute
   '/fabric/explore': typeof FabricExploreRoute
+  '/fabric/integrations': typeof FabricIntegrationsRoute
   '/fabric/lineage': typeof FabricLineageRoute
   '/fabric/overview': typeof FabricOverviewRoute
   '/model/$modelId': typeof ModelModelIdRoute
@@ -151,6 +160,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/models'
     | '/fabric/explore'
+    | '/fabric/integrations'
     | '/fabric/lineage'
     | '/fabric/overview'
     | '/model/$modelId'
@@ -166,6 +176,7 @@ export interface FileRouteTypes {
     | '/fabric'
     | '/models'
     | '/fabric/explore'
+    | '/fabric/integrations'
     | '/fabric/lineage'
     | '/fabric/overview'
     | '/model/$modelId'
@@ -182,6 +193,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/models'
     | '/fabric/explore'
+    | '/fabric/integrations'
     | '/fabric/lineage'
     | '/fabric/overview'
     | '/model/$modelId'
@@ -237,6 +249,13 @@ declare module '@tanstack/react-router' {
       path: '/explore'
       fullPath: '/fabric/explore'
       preLoaderRoute: typeof FabricExploreRouteImport
+      parentRoute: typeof FabricRouteRoute
+    }
+    '/fabric/integrations': {
+      id: '/fabric/integrations'
+      path: '/integrations'
+      fullPath: '/fabric/integrations'
+      preLoaderRoute: typeof FabricIntegrationsRouteImport
       parentRoute: typeof FabricRouteRoute
     }
     '/fabric/lineage': {
@@ -307,12 +326,14 @@ declare module '@tanstack/react-router' {
 
 interface FabricRouteRouteChildren {
   FabricExploreRoute: typeof FabricExploreRoute
+  FabricIntegrationsRoute: typeof FabricIntegrationsRoute
   FabricLineageRoute: typeof FabricLineageRoute
   FabricOverviewRoute: typeof FabricOverviewRoute
 }
 
 const FabricRouteRouteChildren: FabricRouteRouteChildren = {
   FabricExploreRoute: FabricExploreRoute,
+  FabricIntegrationsRoute: FabricIntegrationsRoute,
   FabricLineageRoute: FabricLineageRoute,
   FabricOverviewRoute: FabricOverviewRoute,
 }

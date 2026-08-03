@@ -79,6 +79,9 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
     // Item-level lineage for a whole workspace — the question Explore's tree
     // cannot answer, because a tree shows containment and this shows flow.
     { key: 'lineage', label: 'Lineage', icon: 'layers', to: '/fabric/lineage' },
+    // What this app calls, and what breaks without each. Last in the mode
+    // because it is setup and diagnosis rather than daily work.
+    { key: 'integrations', label: 'Integrations', icon: 'definitions', to: '/fabric/integrations' },
   ],
   products: [
     { key: 'catalog', label: 'Products', icon: 'products', to: '/products' },

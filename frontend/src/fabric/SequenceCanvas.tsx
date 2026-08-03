@@ -1332,7 +1332,6 @@ function ToModelBar({
   diffOn,
   onDiff,
   canDiff,
-  hasObserved,
 }: {
   steps: Step[]
   results: Map<string, StepResult>
@@ -1343,12 +1342,6 @@ function ToModelBar({
   onDiff: (on: boolean) => void
   /** False until a second run — one run has nothing to compare against. */
   canDiff: boolean
-  /**
-   * Whether any notebook had a readable real run. Confirmed has nothing to draw
-   * without one, and an enabled tab leading to an empty canvas reads as "this
-   * run touched nothing" — the opposite of what it would mean.
-   */
-  hasObserved: boolean
 }) {
   const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
@@ -1403,12 +1396,7 @@ function ToModelBar({
             role="tab"
             aria-selected={view === key}
             data-active={view === key || undefined}
-            disabled={key === 'observed' && !hasObserved}
-            title={
-              key === 'observed' && !hasObserved
-                ? 'No readable run history for these notebooks — run with history enabled, or the notebook has not run in the last ~30 days'
-                : hint
-            }
+            title={hint}
             onClick={() => onView(key)}
           >
             {label}
@@ -1708,7 +1696,6 @@ export function SequenceCanvas({
           diffOn={diffOn}
           onDiff={setDiffOn}
           canDiff={!diff.empty}
-          hasObserved={observed.available > 0}
         />
         {/* One strip under the bar, carrying whichever of the three things is
             true right now: a run in progress, a diff being read, or how much of
@@ -1748,7 +1735,30 @@ export function SequenceCanvas({
             </span>
           </div>
         ) : null}
-        <FlowCanvas nodes={flow.nodes} edges={flow.edges} view={view} />
+        {/* Confirmed can legitimately have nothing to draw, and an empty canvas
+            would read as "the run touched nothing" — the opposite of what it
+            means. The tab stays selectable either way: disabling it hid the
+            reason behind a tooltip nobody hovers, and the reason is the useful
+            part. `observed.notes` already carries it, verbatim from Fabric. */}
+        {view === 'observed' && flow.nodes.length === 0 ? (
+          <div className="fx-detail-empty">
+            <StepIcon kind="notebook" />
+            <p>
+              {observed.empty
+                ? 'This run did not ask Fabric for history. Tick “Compare with last real run” beside Run sequence, then run again.'
+                : observed.available === 0
+                  ? 'No readable run history for these notebooks.'
+                  : 'The runs were readable, but none of their SQL executions named a table this parser could resolve.'}
+            </p>
+            {observed.notes.map((note) => (
+              <p key={note} className="sbx-observed-notes">
+                {note}
+              </p>
+            ))}
+          </div>
+        ) : (
+          <FlowCanvas nodes={flow.nodes} edges={flow.edges} view={view} />
+        )}
       </div>
     )
 

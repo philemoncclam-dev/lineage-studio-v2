@@ -1,39 +1,31 @@
-// /fabric/lineage — the workspace lineage view, Fabric's own lineage tab as
-// this app draws it.
+// /fabric/lineage — the workspace lineage view, modelled on Fabric's own.
 //
-// Pick a workspace, run the crawl, get every item in it and the dependencies
-// between them on the Modeling canvas. It opens item-level (lakehouse cards
-// folded) because that is the question this view answers — "what depends on
-// what" — and unfolding a lakehouse turns the same picture into table lineage.
+// Pick a workspace, run the crawl, and get every item in it drawn the way
+// Fabric draws them: one card per item with its type icon, arrows for the
+// dependencies, laid out left to right. Item-level throughout — a lakehouse is
+// one box and its tables are not on the canvas, exactly as in the real product.
 //
 // The crawl is a BUTTON, not a load. It costs one Fabric call per item in the
 // workspace, so a page that fetched on mount would hammer a large tenant every
 // time someone navigated here.
-//
-// Read-only, deliberately. What is on screen is derived from Fabric, and an
-// edit here would be silently thrown away by the next crawl — "Open in
-// Modeling" is the way to get an editable copy, and it hands over a snapshot
-// that no longer follows the tenant.
 
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useMemo, useState } from 'react'
+import { createFileRoute } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
 import { fetchFabricWorkspaces, fetchWorkspaceLineage, type FabricWorkspace } from '../../api'
-import { graphToModel } from '../../fabric/graphToModel'
-import { localStore } from '../../model/store'
-import ModelViewer from '../../modeling/ModelViewer'
+import { LineageCanvas } from '../../fabric/LineageCanvas'
+import { toItemGraph, type ItemGraph } from '../../fabric/lineageItems'
 import { BarsSpinner } from '../../shell/BarsSpinner'
-import type { LineageModel } from '../../model/types'
 import '../../views/fabric.css'
+import '../../views/fabricLineage.css'
 
 export const Route = createFileRoute('/fabric/lineage')({
   component: WorkspaceLineageRoute,
 })
 
 function WorkspaceLineageRoute() {
-  const navigate = useNavigate()
   const [workspaces, setWorkspaces] = useState<FabricWorkspace[]>([])
   const [workspaceId, setWorkspaceId] = useState('')
-  const [model, setModel] = useState<LineageModel | null>(null)
+  const [graph, setGraph] = useState<ItemGraph | null>(null)
   const [opaque, setOpaque] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -60,33 +52,15 @@ function WorkspaceLineageRoute() {
     setBusy(true)
     setError(null)
     try {
-      const graph = await fetchWorkspaceLineage(workspaceId)
-      const { model: built, opaque: skipped } = graphToModel(
-        graph,
-        workspaces.find((w) => w.id === workspaceId)?.name,
-      )
-      setModel(built)
-      setOpaque(skipped)
+      const items = toItemGraph(await fetchWorkspaceLineage(workspaceId))
+      setGraph(items)
+      setOpaque(items.items.filter((i) => i.opaque).map((i) => i.name))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-      setModel(null)
+      setGraph(null)
     } finally {
       setBusy(false)
     }
-  }
-
-  // Every card starts folded: this view is about items, and a lakehouse
-  // unfolded to its tables is the other question.
-  const folded = useMemo(
-    () => new Set(model?.layers.flatMap((l) => l.objects.map((o) => o.id)) ?? []),
-    [model],
-  )
-
-  /** Hand the crawl over as an editable model — a snapshot, not a live link. */
-  const openInModeling = async () => {
-    if (!model) return
-    await localStore.save(model)
-    await navigate({ to: '/model/$modelId', params: { modelId: model.id } })
   }
 
   return (
@@ -102,16 +76,14 @@ function WorkspaceLineageRoute() {
             ))}
           </select>
         </label>
-        <button onClick={crawl} disabled={!workspaceId || busy}>
-          {busy ? 'Reading items…' : model ? 'Re-read' : 'Build lineage'}
+        <button onClick={() => void crawl()} disabled={!workspaceId || busy}>
+          {busy ? 'Reading items…' : graph ? 'Re-read' : 'Build lineage'}
         </button>
-        {model && (
-          <>
-            <span className="fx-lineage-hint">
-              T traces · ⇧T upstream · ⌥T downstream · open a card for its tables
-            </span>
-            <button onClick={() => void openInModeling()}>Open in Modeling</button>
-          </>
+        {graph && (
+          <span className="fx-lineage-hint">
+            {graph.items.length} items · {graph.links.length} dependencies · click an
+            item to see what it touches
+          </span>
         )}
       </header>
 
@@ -129,30 +101,23 @@ function WorkspaceLineageRoute() {
       {error && <p className="fx-lineage-error">{error}</p>}
 
       <div className="fx-lineage-canvas">
-        {busy && !model && (
+        {busy && !graph && (
           <div className="fx-lineage-empty" role="status" aria-live="polite">
             <BarsSpinner />
             <p>Reading every notebook and pipeline in the workspace…</p>
           </div>
         )}
-        {!busy && !model && !error && (
+        {!busy && !graph && !error && (
           <div className="fx-lineage-empty">
             <p>Pick a workspace and build its lineage.</p>
           </div>
         )}
-        {model && (
-          <ModelViewer
-            key={model.id}
-            model={model}
-            initialCollapsed={folded}
-            onChange={() => {}}
-            onUndo={() => {}}
-            onRedo={() => {}}
-            canUndo={false}
-            canRedo={false}
-            readOnly
-          />
+        {graph && graph.items.length === 0 && (
+          <div className="fx-lineage-empty">
+            <p>Nothing readable in this workspace.</p>
+          </div>
         )}
+        {graph && graph.items.length > 0 && <LineageCanvas graph={graph} />}
       </div>
     </div>
   )

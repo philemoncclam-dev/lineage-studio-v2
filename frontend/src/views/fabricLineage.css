@@ -1,0 +1,183 @@
+/* The Fabric-style lineage canvas.
+   Cards are DOM buttons absolutely placed by dagre; edges are one SVG layer
+   underneath them. Colour is carried per item TYPE, the way Fabric's own view
+   does it — the icon is the primary signal and the card border echoes it, so a
+   pipeline reads as a pipeline before you read its name. */
+
+.fl-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Floats over the canvas rather than taking a row of its own: the canvas is the
+   content here, and a toolbar strip would eat height on every screen. */
+.fl-zoom {
+  position: absolute;
+  z-index: 2;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control, 6px);
+  background: var(--color-surface-1, var(--color-surface-canvas));
+  box-shadow: var(--shadow-raised, 0 2px 8px rgb(0 0 0 / 0.18));
+  font-size: var(--text-micro, 11px);
+  color: var(--color-text-tertiary);
+}
+.fl-zoom button {
+  min-width: 24px;
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  background: none;
+  color: var(--color-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.fl-zoom button:hover {
+  background: var(--color-surface-2, rgb(127 127 127 / 0.12));
+  color: var(--color-text-primary);
+}
+.fl-zoom span {
+  min-width: 38px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.fl-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+/* Sized to the SCALED world so the scrollbars match what is on screen — a
+   transform does not change layout size, so without this the scroll range stays
+   at 100% no matter the zoom. */
+.fl-world {
+  position: relative;
+}
+.fl-scale {
+  position: absolute;
+  inset: 0;
+}
+
+.fl-edges {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  color: var(--color-border-strong, var(--color-border));
+  pointer-events: none;
+}
+.fl-edge path {
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+.fl-edge[data-dim] {
+  opacity: 0.12;
+}
+.fl-edge-count {
+  fill: var(--color-text-tertiary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  /* Punched out of the line it sits on, so the number is readable where the
+     curve passes under it. */
+  paint-order: stroke;
+  stroke: var(--color-surface-canvas);
+  stroke-width: 3px;
+}
+
+/* ===== Item cards ===== */
+.fl-card {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--fl-accent, var(--color-border-strong, var(--color-border)));
+  border-radius: var(--radius-card, 8px);
+  background: var(--color-surface-1, var(--color-surface-canvas));
+  box-shadow: var(--shadow-card, 0 1px 3px rgb(0 0 0 / 0.16));
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity 120ms ease, border-color 120ms ease;
+}
+.fl-card:hover {
+  border-color: var(--fl-accent, var(--color-accent));
+}
+.fl-card[data-selected] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+.fl-card[data-dim] {
+  opacity: 0.25;
+}
+
+.fl-card-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  color: var(--fl-accent, var(--color-text-secondary));
+}
+.fl-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.fl-card-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+  font-size: var(--text-sm, 13px);
+  font-weight: 600;
+}
+.fl-card-type {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro, 11px);
+}
+/* Says the box is a stub, not a leaf. An item drawn with no arrows otherwise
+   reads as "nothing depends on this", which is the opposite of the truth. */
+.fl-card-flag {
+  color: var(--color-warning, #b0751a);
+}
+
+/* One accent per Fabric item type. These follow Fabric's own family — greens
+   for storage, purple-blue for compute, amber for BI — so the canvas is
+   recognisable to someone who lives in the real product. */
+.fl-card[data-kind='lakehouse'] {
+  --fl-accent: #38a169;
+}
+.fl-card[data-kind='warehouse'] {
+  --fl-accent: #2f855a;
+}
+.fl-card[data-kind='notebook'] {
+  --fl-accent: #6b7cff;
+}
+.fl-card[data-kind='pipeline'] {
+  --fl-accent: #3b8fd4;
+}
+.fl-card[data-kind='dataflow'] {
+  --fl-accent: #4aa3a3;
+}
+.fl-card[data-kind='semanticmodel'] {
+  --fl-accent: #b98900;
+}
+.fl-card[data-kind='report'] {
+  --fl-accent: #d98324;
+}
+.fl-card[data-kind='eventhouse'] {
+  --fl-accent: #9c6ade;
+}
+.fl-card[data-kind='table'] {
+  --fl-accent: #7a8598;
+}

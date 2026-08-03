@@ -65,6 +65,9 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
     { key: 'mapping', label: 'Auto-Mapper', icon: 'mapping', action: 'mapping' },
     { key: 'import', label: 'Import', icon: 'import', action: 'import' },
     { key: 'export', label: 'Export', icon: 'export', action: 'export' },
+    // Snapshot history. Next to Share because both are about the model as a
+    // whole rather than about anything selected inside it.
+    { key: 'versions', label: 'History', icon: 'layers', action: 'versions' },
     // Last: sharing is what you do once the model says what you mean.
     { key: 'share', label: 'Share', icon: 'share', action: 'share' },
   ],

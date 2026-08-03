@@ -47,6 +47,7 @@ import { applyProposals } from './applyProposals'
 import { AssistantPanel } from './AssistantPanel'
 import { ExplainPanel } from './ExplainPanel'
 import { ViewsPanel } from './ViewsPanel'
+import { VersionsPanel } from './VersionsPanel'
 import { PropertiesPanel } from './PropertiesPanel'
 import {
   activeFilterCount,
@@ -186,7 +187,9 @@ export default function ModelViewer({
    * rail buttons toggle between panels in one click instead of needing the
    * other one closed first.
    */
-  const [dock, setDock] = useState<'views' | 'properties' | 'assistant' | 'explain' | null>(null)
+  const [dock, setDock] = useState<
+    'views' | 'properties' | 'assistant' | 'explain' | 'versions' | null
+  >(null)
   /**
    * The last entity clicked WITHOUT a modifier — where a shift-range starts.
    *
@@ -360,6 +363,10 @@ export default function ModelViewer({
   )
   // Both docks toggle rather than open: a second click on the rail button is the
   // obvious way to put a docked panel away again.
+  useEffect(
+    () => registerRailAction('versions', () => setDock((d) => (d === 'versions' ? null : 'versions'))),
+    [],
+  )
   useEffect(
     () => registerRailAction('views', () => setDock((d) => (d === 'views' ? null : 'views'))),
     [],
@@ -1289,6 +1296,20 @@ export default function ModelViewer({
               return next
             })
             setReveal(id)
+          }}
+          onClose={() => setDock(null)}
+        />
+      )}
+      {dock === 'versions' && (
+        <VersionsPanel
+          model={model}
+          readOnly={readOnly}
+          // Restore is ONE edit through the same path as every other, so ⌃Z
+          // undoes it. That is the safety net; the diff shown before the button
+          // is the part that stops it being needed.
+          onRestore={(restored) => {
+            onChange(restored)
+            setDock(null)
           }}
           onClose={() => setDock(null)}
         />

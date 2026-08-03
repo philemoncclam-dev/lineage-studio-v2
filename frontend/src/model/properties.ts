@@ -16,7 +16,7 @@
 //  - A bag outlives the thing it described (see types.ts). So these operations
 //    never garbage-collect a bag for an id they weren't asked about.
 import { TAGS_KEY } from './tags'
-import type { EntityId, LineageModel, PropertyBag } from './types'
+import type { Attribute, EntityId, LineageModel, PropertyBag } from './types'
 
 /**
  * Keys the generic key/value editor refuses to touch.
@@ -164,4 +164,50 @@ export function valuesForKey(model: LineageModel, key: string): string[] {
     if (value) seen.add(value)
   }
   return [...seen].sort((a, b) => a.localeCompare(b))
+}
+
+/**
+ * The model with property bags for entities that no longer exist dropped.
+ *
+ * Deleting an entity deliberately LEAVES its properties behind — see
+ * `deleteEntities` — so a value survives an accidental delete and stays in the
+ * property manager. That is right for an open document and wrong for a payload:
+ * a model edited for months carries the properties of everything it ever held,
+ * and the share endpoint refuses anything over 2MB (`share/store.py`), so the
+ * growth eventually turns into "this model cannot be shared" with no visible
+ * cause.
+ *
+ * So this is not called on save. It is called where a model LEAVES the app —
+ * share and export — which is exactly where dead weight costs something and
+ * where nobody will undo a delete afterwards.
+ */
+export function compactProperties(model: LineageModel): LineageModel {
+  const live = new Set<EntityId>()
+  const walk = (attrs: readonly Attribute[]) => {
+    for (const a of attrs) {
+      live.add(a.id)
+      walk(a.children)
+    }
+  }
+  for (const layer of model.layers) {
+    live.add(layer.id)
+    for (const object of layer.objects) {
+      live.add(object.id)
+      walk(object.children)
+    }
+  }
+
+  const properties: Record<EntityId, PropertyBag> = {}
+  for (const [id, bag] of Object.entries(model.properties)) {
+    if (live.has(id)) properties[id] = bag
+  }
+  return { ...model, properties }
+}
+
+/** How many property bags belong to entities that are gone. */
+export function orphanedPropertyCount(model: LineageModel): number {
+  return (
+    Object.keys(model.properties).length -
+    Object.keys(compactProperties(model).properties).length
+  )
 }

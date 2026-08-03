@@ -18,6 +18,7 @@
 
 import { useEffect, useState } from 'react'
 import { fetchShareStatus, shareModel } from '../api'
+import { compactProperties } from '../model/properties'
 import type { LineageModel } from '../model/types'
 
 const TTL_CHOICES: { label: string; days: number | null }[] = [
@@ -64,7 +65,16 @@ export default function ShareDialog({
     setBusy(true)
     setError(null)
     try {
-      const created = await shareModel(model, model.name || 'Shared model', ttl)
+      // Compacted on the way out. Deleting an entity leaves its properties
+      // behind so an undo can bring them back, which is right for the document
+      // and pointless in a snapshot nobody will edit — and the endpoint refuses
+      // anything over 2MB, so the dead weight eventually becomes "this model
+      // cannot be shared" with no visible cause.
+      const created = await shareModel(
+        compactProperties(model),
+        model.name || 'Shared model',
+        ttl,
+      )
       // Built from the CURRENT origin rather than a configured base: the link
       // has to work where the reader opens it, and this bundle is served from
       // exactly that host.

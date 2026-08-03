@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   commonProperties,
+  compactProperties,
   isReservedKey,
+  orphanedPropertyCount,
   propertiesOf,
   propertyKeyCounts,
   removeProperty,
@@ -153,5 +155,49 @@ describe('vocabulary helpers', () => {
   it('knows the reserved key case-insensitively', () => {
     expect(isReservedKey('tags')).toBe(true)
     expect(isReservedKey('Tagging')).toBe(false)
+  })
+})
+
+describe('compactProperties', () => {
+  const withProps = (): LineageModel => ({
+    id: 'm',
+    name: 'm',
+    createdAt: 0,
+    updatedAt: 0,
+    layers: [
+      {
+        id: 'L1',
+        name: 'Raw',
+        objects: [{ id: 'o1', name: 'orders', children: [{ id: 'a1', name: 'id', children: [] }] }],
+      },
+    ],
+    transitions: [],
+    properties: {
+      L1: { Owner: 'ada' },
+      o1: { Owner: 'ada' },
+      a1: { Type: 'bigint' },
+      ghost: { Owner: 'someone deleted' },
+    },
+  })
+
+  it('drops bags whose entity is gone and keeps every live one', () => {
+    const out = compactProperties(withProps())
+    expect(Object.keys(out.properties).sort()).toEqual(['L1', 'a1', 'o1'])
+  })
+
+  it('reaches nested attributes, not just top-level rows', () => {
+    expect(compactProperties(withProps()).properties.a1).toEqual({ Type: 'bigint' })
+  })
+
+  it('does not mutate the model it compacts', () => {
+    const model = withProps()
+    const before = JSON.stringify(model)
+    compactProperties(model)
+    expect(JSON.stringify(model)).toBe(before)
+  })
+
+  it('counts the orphans', () => {
+    expect(orphanedPropertyCount(withProps())).toBe(1)
+    expect(orphanedPropertyCount(compactProperties(withProps()))).toBe(0)
   })
 })

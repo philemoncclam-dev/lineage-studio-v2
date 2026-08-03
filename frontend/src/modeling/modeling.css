@@ -2697,3 +2697,124 @@
   margin: 0;
   color: #2c3446;
 }
+
+/* ===== Version history dock =====
+   Shares .vw-panel's frame (see the Properties dock's note): three panels in
+   one slot that looked different would read as three places. Only what the
+   history list itself needs is added here. */
+.vh-save {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.vh-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.vh-empty,
+.vh-error {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.vh-empty {
+  color: #6b7385;
+}
+.vh-error {
+  color: var(--color-destructive);
+}
+
+.vh-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vh-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vh-item-main:hover {
+  background: #eef2f7;
+}
+.vh-item[data-open] .vh-item-main {
+  background: #e8f0fe;
+}
+.vh-item-label {
+  color: #232a3a;
+  font-size: 12px;
+  font-weight: 600;
+}
+.vh-item-when {
+  color: #98a0b0;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The diff, and the only button in the app that overwrites the whole model.
+   They are one block on purpose — the button is not reachable without the
+   sentence above it having been rendered. */
+.vh-diff {
+  padding: 6px 7px 8px;
+  font-size: 11px;
+}
+.vh-diff-line {
+  margin: 0 0 6px;
+  color: #3d4557;
+}
+.vh-diff-detail {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: #6b7385;
+}
+.vh-diff-detail em {
+  color: #98a0b0;
+  font-style: normal;
+}
+.vh-diff-detail span[data-change] {
+  display: inline-block;
+  width: 10px;
+  font-weight: 700;
+}
+.vh-diff-detail span[data-change='add'] {
+  color: #168f5c;
+}
+.vh-diff-detail span[data-change='del'] {
+  color: #be3c3c;
+}
+.vh-diff-detail span[data-change='mod'] {
+  color: #b0751a;
+}
+.vh-restore {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid rgb(28 35 51 / 0.2);
+  border-radius: 5px;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.vh-restore:hover:not(:disabled) {
+  border-color: var(--color-destructive);
+  color: var(--color-destructive);
+}
+.vh-restore:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

@@ -146,124 +146,89 @@ function totalDescendants(attrs: Attribute[]): number {
  *   somewhere the user can't find it.
  */
 /**
- * Slide cards down so a transition's two ends sit at the same height.
+ * Order each layer's cards so a traced chain reads across, without moving any
+ * card off the top of its column.
  *
- * Only ever run on a TRACED canvas, and that restriction is the whole design.
- * A trace has already pruned the model to one chain, so "put the connected rows
- * on the same line" has an unambiguous answer and there is nothing else on
- * screen for the shifted cards to be measured against. In a full model the same
- * pass would fight every other card for vertical space and reorder a layout the
- * user has been reading — so it does not run there.
+ * The obvious mechanism — offset cards vertically until connected rows are
+ * level — is the wrong one, and it was what this did. Levelling can only push
+ * downwards (nothing may rise above its column top), so one low row drags the
+ * whole chain down and leaves a screenful of white space above it. Worse, a
+ * layer whose cards ALL ended up low cannot be rescued by any translation of
+ * the picture as a whole.
  *
- * Left to right, one pass, greedy: a card is offset by whatever puts its first
- * incoming row level with the row it comes from, then pushed back down if that
- * would overlap a card already placed in its own layer. Overlap wins over
- * alignment, because two cards on top of each other is not a layout.
+ * So alignment happens by ORDER instead. Every layer still packs tight from the
+ * top; what changes is which card is first. Walking left to right, a card sorts
+ * by where its upstream sits in the layer before it, so a chain that starts at
+ * the top of layer one stays at the top of every layer after it, and the lines
+ * between them stay short and roughly level without a single vertical gap being
+ * introduced.
  *
- * The result is the reason to bother: on a medallion trace, landing → bronze →
- * silver → gold becomes a straight horizontal run instead of a staircase whose
- * every step crosses the column between.
+ * Only ever run on a TRACED model, where the pruning has already left one chain
+ * and reordering cannot disturb a layout the user was reading.
  */
-function alignTracedRows(
-  cards: LayoutCard[],
-  anchors: Map<EntityId, Anchor>,
-  model: LineageModel,
-): void {
-  const layerOrder = new Map(model.layers.map((l, i) => [l.id, i]))
-  const cardOf = new Map<EntityId, LayoutCard>()
-  for (const card of cards) {
-    cardOf.set(card.id, card)
-    for (const row of card.rows) cardOf.set(row.id, card)
-  }
-
-  const shift = (card: LayoutCard, dy: number) => {
-    if (dy <= 0) return
-    card.y += dy
-    for (const row of card.rows) row.y += dy
-    for (const id of [card.id, ...card.rows.map((r) => r.id)]) {
-      const a = anchors.get(id)
-      if (a) a.cy += dy
+function orderLayersForTrace(model: LineageModel): LineageModel {
+  const ownerOf = new Map<EntityId, EntityId>()
+  const layerOfObject = new Map<EntityId, number>()
+  const claim = (owner: EntityId, attrs: readonly Attribute[]) => {
+    for (const a of attrs) {
+      ownerOf.set(a.id, owner)
+      claim(owner, a.children)
     }
   }
-  const cy = (id: EntityId) => anchors.get(id)?.cy
-
-  // Only ever DOWNWARDS, which is what makes this terminate. A card cannot rise
-  // above its column's top, so levelling a pair means lowering whichever end is
-  // higher — and since every step increases some card's y and nothing ever
-  // decreases one, the relaxation is monotone and cannot oscillate. The cap is
-  // belt and braces for a model whose transitions form a cycle.
-  const pairs = model.transitions
-    .map((t) => ({ from: cardOf.get(t.source), to: cardOf.get(t.target), source: t.source, target: t.target }))
-    .filter(
-      (p) =>
-        p.from &&
-        p.to &&
-        p.from !== p.to &&
-        (layerOrder.get(p.from.layerId) ?? 0) !== (layerOrder.get(p.to.layerId) ?? 0),
-    )
-
-  const top = CANVAS_PADDING + LAYER_HEADER_HEIGHT + CARD_GAP
-  for (let pass = 0; pass < 12; pass += 1) {
-    let moved = false
-    for (const p of pairs) {
-      const a = cy(p.source)
-      const b = cy(p.target)
-      if (a == null || b == null) continue
-      const delta = a - b
-      if (!delta) continue
-      // Lower the higher end onto the lower one.
-      if (delta > 0) shift(p.to!, delta)
-      else shift(p.from!, -delta)
-      moved = true
+  model.layers.forEach((layer, i) => {
+    for (const obj of layer.objects) {
+      ownerOf.set(obj.id, obj.id)
+      layerOfObject.set(obj.id, i)
+      claim(obj.id, obj.children)
     }
-    // Then take the overlaps out, also downwards, preserving each column's
-    // existing order. A straight line is worth having; two cards in the same
-    // place is not a layout at all, so this always wins.
-    const byLayer = new Map<EntityId, LayoutCard[]>()
-    for (const card of cards) byLayer.set(card.layerId, [...(byLayer.get(card.layerId) ?? []), card])
-    for (const column of byLayer.values()) {
-      let floor = top
-      for (const card of [...column].sort((x, y) => x.y - y.y)) {
-        if (card.y < floor) {
-          shift(card, floor - card.y)
-          moved = true
-        }
-        floor = card.y + card.height + CARD_GAP
-      }
-    }
-    if (!moved) break
+  })
+
+  /** Upstream objects, one layer or more to the left. */
+  const sourcesOf = new Map<EntityId, EntityId[]>()
+  for (const t of model.transitions) {
+    const from = ownerOf.get(t.source)
+    const to = ownerOf.get(t.target)
+    if (!from || !to || from === to) continue
+    const a = layerOfObject.get(from)
+    const b = layerOfObject.get(to)
+    if (a == null || b == null || a >= b) continue
+    sourcesOf.set(to, [...(sourcesOf.get(to) ?? []), from])
   }
 
-  // Then lift the whole thing back to the top of the canvas.
-  //
-  // Levelling can only push cards DOWN — that is what makes it terminate — so a
-  // chain that had to come down to meet one low row ends up sitting wherever
-  // the lowest constraint left it, and the reader has to scroll to a picture
-  // that is mostly empty space above it. One rigid translation fixes that
-  // without disturbing a single alignment: every card moves by the same amount,
-  // so every row that was level stays level.
-  const highest = Math.min(...cards.map((c) => c.y))
-  const lift = highest - top
-  if (lift > 0)
-    for (const card of cards) {
-      card.y -= lift
-      for (const row of card.rows) row.y -= lift
-      for (const id of [card.id, ...card.rows.map((r) => r.id)]) {
-        const a = anchors.get(id)
-        if (a) a.cy -= lift
-      }
+  // Position of each object within its own (already decided) layer, so a card
+  // can be placed against something final rather than against a moving target.
+  const placed = new Map<EntityId, number>()
+  const layers = model.layers.map((layer) => {
+    const rank = (obj: { id: EntityId }) => {
+      const positions = (sourcesOf.get(obj.id) ?? [])
+        .map((src) => placed.get(src))
+        .filter((n): n is number => n != null)
+      // No upstream: keep where it was. `sort` is stable, so an object with
+      // nothing feeding it does not jump the queue over one that has.
+      return positions.length ? Math.min(...positions) : Number.POSITIVE_INFINITY
     }
+    const objects = [...layer.objects].sort((a, b) => rank(a) - rank(b))
+    objects.forEach((obj, i) => placed.set(obj.id, i))
+    return { ...layer, objects }
+  })
+  return { ...model, layers }
 }
 
 export function layoutModel(
   model: LineageModel,
   collapsed: ReadonlySet<EntityId>,
   /**
-   * Align connected rows across layers. The viewer passes the trace's own flag:
-   * see `alignTracedRows` for why this is not something to do to a full model.
+   * Order each layer so a traced chain runs across the top. The viewer passes
+   * the trace's own flag: see `orderLayersForTrace` for why this is not
+   * something to do to a full model.
    */
   aligned = false,
 ): Layout {
+  // Ordering happens before any geometry, so the main pass simply stacks each
+  // layer from the top as it always has and every card lands where the order
+  // put it.
+  if (aligned) model = orderLayersForTrace(model)
+
   const layers: LayoutLayer[] = []
   const cards: LayoutCard[] = []
   const anchors = new Map<EntityId, Anchor>()
@@ -356,13 +321,6 @@ export function layoutModel(
 
     maxBottom = Math.max(maxBottom, y)
     x += width + LAYER_GAP
-  }
-
-  if (aligned) {
-    alignTracedRows(cards, anchors, model)
-    // Alignment only ever moves a card DOWN (the floor forbids anything else),
-    // so the world has to grow to match or the last card scrolls off.
-    for (const card of cards) maxBottom = Math.max(maxBottom, card.y + card.height + CARD_GAP)
   }
 
   // Contiguous band segments: each boundary sits halfway between two columns.

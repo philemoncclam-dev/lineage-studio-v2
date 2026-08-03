@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CARD_WIDTH, layoutModel } from '../layout'
+import { CARD_GAP, CARD_WIDTH, layoutModel } from '../layout'
 import { sampleModel } from '../sample'
 import { emptyModel } from '../store'
 import type { LineageModel } from '../types'
@@ -87,18 +87,17 @@ describe('layoutModel', () => {
   })
 })
 
-describe('aligning a traced chain', () => {
+describe('ordering a traced chain', () => {
   /**
-   * Three layers, medallion-shaped. Bronze holds a decoy card ABOVE the traced
-   * one, so the chain's row starts lower in bronze than in landing — the
-   * staircase this pass exists to flatten.
+   * Three layers, medallion-shaped. Bronze holds a decoy card that comes FIRST
+   * in the model, so the chain's card is second in its layer — the staircase
+   * this pass exists to remove.
    */
   const chain = (): LineageModel => {
-    const col = (name: string) => ({ id: `c:${name}`, name, children: [] })
     const obj = (id: string, rows: string[]) => ({
       id,
       name: id,
-      children: rows.map((r) => ({ ...col(r), id: `${id}.${r}` })),
+      children: rows.map((r) => ({ id: `${id}.${r}`, name: r, children: [] })),
     })
     return {
       ...emptyModel('m'),
@@ -114,95 +113,44 @@ describe('aligning a traced chain', () => {
     }
   }
 
-  const cyOf = (layout: ReturnType<typeof layoutModel>, id: string) => layout.anchors.get(id)!.cy
+  const topOf = (layout: ReturnType<typeof layoutModel>, layerId: string) =>
+    Math.min(...layout.cards.filter((c) => c.layerId === layerId).map((c) => c.y))
 
   it('leaves an untraced layout exactly as it was', () => {
-    // The pass must not touch a model the user is working in — it only has an
-    // unambiguous answer once a trace has pruned everything else away.
+    // The pass only has an unambiguous answer once a trace has pruned the rest
+    // away; it must not reorder a model the user is working in.
     const model = chain()
     const before = layoutModel(model, new Set())
     const after = layoutModel(model, new Set(), false)
-    expect(after.cards.map((c) => c.y)).toEqual(before.cards.map((c) => c.y))
+    expect(after.cards.map((c) => c.id)).toEqual(before.cards.map((c) => c.id))
   })
 
-  it('puts every row of the chain on one line', () => {
+  it('puts the chain first in every layer', () => {
     const layout = layoutModel(chain(), new Set(), true)
-    const ys = ['raw.order_id', 'bronze.order_id', 'silver.order_id'].map((id) => cyOf(layout, id))
-    expect(new Set(ys).size).toBe(1)
+    const first = (layerId: string) =>
+      layout.cards.filter((c) => c.layerId === layerId).sort((a, b) => a.y - b.y)[0].id
+    expect([first('L1'), first('L2'), first('L3')]).toEqual(['raw', 'bronze', 'silver'])
   })
 
-  it('was a staircase before, which is the point', () => {
+  it('was NOT first before, which is the point', () => {
     const plain = layoutModel(chain(), new Set())
-    expect(cyOf(plain, 'raw.order_id')).not.toBe(cyOf(plain, 'bronze.order_id'))
+    const bronzeCards = plain.cards.filter((c) => c.layerId === 'L2').sort((a, b) => a.y - b.y)
+    expect(bronzeCards[0].id).toBe('decoy')
   })
 
-  it('never stacks two cards of one layer on top of each other', () => {
-    // Alignment yields to overlap: two cards in the same place is not a layout,
-    // however straight it would have made the line.
+  it('starts every layer at the top of the canvas', () => {
+    // The whole complaint: no card parked far down with a line running to it.
+    // Ordering never introduces a vertical offset, so each column packs tight
+    // from the top exactly as an untraced one does.
+    const layout = layoutModel(chain(), new Set(), true)
+    const tops = ['L1', 'L2', 'L3'].map((id) => topOf(layout, id))
+    expect(new Set(tops).size).toBe(1)
+    expect(tops[0]).toBe(topOf(layoutModel(chain(), new Set()), 'L1'))
+  })
+
+  it('never leaves a gap between cards in a column', () => {
     const layout = layoutModel(chain(), new Set(), true)
     const bronze = layout.cards.filter((c) => c.layerId === 'L2').sort((a, b) => a.y - b.y)
-    expect(bronze[0].y + bronze[0].height).toBeLessThanOrEqual(bronze[1].y)
-  })
-
-  it('grows the world to fit whatever it pushed down', () => {
-    const layout = layoutModel(chain(), new Set(), true)
-    const lowest = Math.max(...layout.cards.map((c) => c.y + c.height))
-    expect(layout.height).toBeGreaterThan(lowest)
-  })
-
-  it('lowers the upstream when the downstream row sits further down its card', () => {
-    // The ordinary case: bronze carries two traced columns and the one the
-    // chain follows is the second. Bronze cannot rise above its column top, so
-    // landing descends to meet it — the only direction this pass ever moves.
-    const model: LineageModel = {
-      ...emptyModel('m'),
-      layers: [
-        {
-          id: 'L1',
-          name: 'Landing',
-          objects: [{ id: 'raw', name: 'raw', children: [{ id: 'raw.order_id', name: 'order_id', children: [] }] }],
-        },
-        {
-          id: 'L2',
-          name: 'Bronze',
-          objects: [
-            {
-              id: 'bronze',
-              name: 'bronze',
-              children: [
-                { id: 'bronze.customer_id', name: 'customer_id', children: [] },
-                { id: 'bronze.order_id', name: 'order_id', children: [] },
-              ],
-            },
-          ],
-        },
-      ],
-      transitions: [{ id: 't1', source: 'raw.order_id', target: 'bronze.order_id' }],
-    }
-    const layout = layoutModel(model, new Set(), true)
-    expect(layout.anchors.get('raw.order_id')!.cy).toBe(layout.anchors.get('bronze.order_id')!.cy)
-    expect(layout.cards.find((c) => c.id === 'raw')!.y).toBeGreaterThan(
-      layout.cards.find((c) => c.id === 'bronze')!.y,
-    )
-  })
-
-  it('lifts the aligned chain back to the top of the canvas', () => {
-    // Levelling only pushes down, so without a final translation a chain that
-    // came down to meet one low row sits far below the fold with empty space
-    // above it — and the reader has to scroll to find their own trace.
-    const layout = layoutModel(chain(), new Set(), true)
-    const top = Math.min(...layout.cards.map((c) => c.y))
-    const plain = layoutModel(chain(), new Set())
-    expect(top).toBe(Math.min(...plain.cards.map((c) => c.y)))
-  })
-
-  it('lifts without breaking the alignment it just made', () => {
-    // One rigid translation: everything moves by the same amount, so rows that
-    // were level stay level.
-    const layout = layoutModel(chain(), new Set(), true)
-    const ys = ['raw.order_id', 'bronze.order_id', 'silver.order_id'].map(
-      (id) => layout.anchors.get(id)!.cy,
-    )
-    expect(new Set(ys).size).toBe(1)
+    expect(bronze[1].y).toBe(bronze[0].y + bronze[0].height + CARD_GAP)
   })
 })

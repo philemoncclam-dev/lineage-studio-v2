@@ -31,6 +31,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    #: Which deployment this is. Only ever `production` where it is set
+    #: explicitly — the Dockerfile does, a laptop does not — because the checks
+    #: it gates (see `startup_checks.py`) must never fire on a developer who
+    #: has done nothing wrong, and must always fire on a server.
+    app_env: str = "development"
+
     purview_account_name: str | None = None
     purview_tenant_id: str | None = None
     purview_client_id: str | None = None

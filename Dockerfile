@@ -35,6 +35,12 @@ RUN pip install --no-cache-dir -r requirements.txt pyspark==4.0.0
 # Backend source.
 COPY backend/ ./
 
+# Turns on the deployment assertions in app/startup_checks.py — which is what
+# now ENFORCES the rule stated in capitals above, rather than trusting whoever
+# next edits this file to have read it. The container refuses to boot if a
+# forbidden secret is set on it, or if the sandbox auth gate has been turned off.
+ENV APP_ENV=production
+
 # Spark/Ivy want a writable HOME; Cloud Run's only reliably writable path is /tmp.
 ENV HOME=/tmp
 

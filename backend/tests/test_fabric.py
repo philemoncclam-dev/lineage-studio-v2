@@ -173,3 +173,53 @@ def test_a_table_is_resolved_once_its_workspace_is_known():
     refs = table_refs([no_lakehouse, no_workspace])
     assert refs[no_lakehouse]["resolved"] is True
     assert refs[no_workspace]["resolved"] is False
+
+
+# --- error text that reaches the caller --------------------------------------
+
+class _Resp:
+    """Enough of requests.Response for `_explain`."""
+
+    def __init__(self, status, text, payload=None):
+        self.status_code = status
+        self.text = text
+        self._payload = payload
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("no json")
+        return self._payload
+
+
+def test_an_error_does_not_leak_the_upstream_body_to_the_caller():
+    """Every router turns a FabricError into `detail=str(exc)`, so whatever this
+    returns is served to whoever made the request. Fabric's bodies routinely
+    name workspaces, items and table paths from tenants the caller may not be
+    able to see otherwise."""
+    from app.fabric.client import _explain
+
+    body = '{"errorCode":"ItemNotFound","message":"Item 9f3a-secret-lakehouse not found in workspace Contoso Finance"}'
+    message = _explain("GET", "/workspaces/x/items", _Resp(404, body, json.loads(body)))
+
+    assert "secret-lakehouse" not in message
+    assert "Contoso Finance" not in message
+    # The stable, documented code is safe and is the useful half.
+    assert "ItemNotFound" in message
+    assert "404" in message
+
+
+def test_an_unparseable_body_degrades_to_the_status_alone():
+    from app.fabric.client import _explain
+
+    message = _explain("GET", "/x", _Resp(500, "<html>Internal Server Error at /db/prod</html>"))
+    assert "/db/prod" not in message
+    assert "500" in message
+
+
+def test_the_scopes_explanation_survives_redaction():
+    """The one Fabric error that lies about its cause still has to explain
+    itself — that text is authored here, not echoed from upstream."""
+    from app.fabric.client import _explain
+
+    message = _explain("GET", "/x", _Resp(403, '{"errorCode":"InsufficientScopes"}', {"errorCode": "InsufficientScopes"}))
+    assert "sign out and back in" in message

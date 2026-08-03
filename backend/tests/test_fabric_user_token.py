@@ -74,18 +74,32 @@ def test_insufficient_scopes_is_not_reported_as_a_permissions_problem():
         status_code = 403
         text = '{"errorCode":"InsufficientScopes","message":"The caller does not have sufficient scopes"}'
 
+        def json(self):
+            return {
+                "errorCode": "InsufficientScopes",
+                "message": "The caller does not have sufficient scopes",
+            }
+
     message = _explain("POST", "/workspaces/w/items/i/getDefinition", Resp())
     assert "scopes" in message.lower()
     assert "Notebook.ReadWrite.All" in message
     # The remedy nobody guesses: a cached session keeps the scopes it was
     # issued with, so granting the permission changes nothing until sign-out.
     assert "sign out" in message.lower()
-    # The raw body survives — it carries the requestId support will ask for.
+    # The error CODE survives — a stable documented token, safe to show. The
+    # rest of the body does not: it goes to the server log instead, because
+    # every router serves this string straight to the caller.
     assert "InsufficientScopes" in message
+    assert "The caller does not have sufficient scopes" not in message
 
 
-def test_an_ordinary_failure_is_passed_through_unembellished():
-    """Only the misleading one is translated; inventing causes is worse."""
+def test_an_ordinary_failure_reports_the_status_and_the_code_only():
+    """Only the misleading one is translated; inventing causes is worse.
+
+    The body itself is no longer echoed — see the redaction tests in
+    test_fabric.py. A response object with no `.json()` at all still has to
+    produce something rather than raising from inside the error handler.
+    """
     from app.fabric.client import _explain
 
     class Resp:
@@ -93,4 +107,4 @@ def test_an_ordinary_failure_is_passed_through_unembellished():
         text = '{"errorCode":"ItemNotFound"}'
 
     message = _explain("GET", "/workspaces/w", Resp())
-    assert message == 'GET /workspaces/w failed [404]: {"errorCode":"ItemNotFound"}'
+    assert message == "GET /workspaces/w failed [404]"

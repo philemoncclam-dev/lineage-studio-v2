@@ -29,6 +29,15 @@ from .fabric.router import router as fabric_router
 from .sandbox.router import router as sandbox_router
 from .share.router import router as share_router
 from .sample import SAMPLE
+from .sandbox.runner import spark_available
+from .startup_checks import assert_safe_to_start
+
+# Before anything is served. Two safety properties of this app used to be
+# enforced only by prose — an env var away from arbitrary code execution, and a
+# Dockerfile comment away from handing every secret to a notebook cell. They are
+# assertions now, and a process that violates them does not start. See
+# `startup_checks.py`; nothing here fires outside `APP_ENV=production`.
+assert_safe_to_start(get_settings(), spark_engine=spark_available())
 
 app = FastAPI(title="Lineage Studio API", version="0.1.0")
 

@@ -14,6 +14,7 @@ rather than letting a bare HTTP error escape.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -21,6 +22,8 @@ import requests
 from azure.identity import ClientSecretCredential
 
 from ..config import Settings, get_settings
+
+log = logging.getLogger(__name__)
 
 #: Azure AD v2 scope for the Fabric data plane.
 FABRIC_SCOPE = "https://api.fabric.microsoft.com/.default"
@@ -86,7 +89,34 @@ def _explain(method: str, path: str, resp: requests.Response) -> str:
     read-only scope that can fetch a definition.
     """
     body = resp.text[:500]
-    generic = f"{method} {path} failed [{resp.status_code}]: {body}"
+    # The full body goes to the SERVER LOG, never to the caller. It routinely
+    # names resources — workspace and item GUIDs, table paths, occasionally a
+    # display name from a tenant the caller cannot otherwise see — and every
+    # router turns a FabricError into `detail=str(exc)`, so whatever is in this
+    # string is served to whoever made the request. Diagnosis belongs where the
+    # operator is, not in an HTTP response.
+    log.warning("fabric %s %s failed [%s]: %s", method, path, resp.status_code, body)
+
+    # What the caller gets: the status, and Fabric's own error CODE when it
+    # parses. A code is a stable, documented token ("ItemNotFound") with no
+    # tenant content in it; the free-text `message` beside it is where the
+    # resource names live, so it stays out.
+    code = ""
+    try:
+        payload = resp.json()
+        if isinstance(payload, dict):
+            code = str(
+                payload.get("errorCode")
+                or (payload.get("error") or {}).get("code")
+                or ""
+            )
+    # Deliberately broad: this runs while ALREADY handling a failure, and an
+    # exception raised here would replace a useful upstream error with a
+    # confusing one from the error handler itself.
+    except Exception:  # noqa: BLE001
+        code = ""
+    generic = f"{method} {path} failed [{resp.status_code}]{f': {code}' if code else ''}"
+
     if resp.status_code == 403 and "InsufficientScopes" in body:
         return (
             "Fabric refused this because of the SCOPES on the sign-in token, not "

@@ -764,9 +764,102 @@ export interface SandboxRunResult {
   tables?: Record<string, SandboxTableRef>
   /** The notebook's own workspace, for spotting cross-workspace access. */
   workspace?: string
+  /**
+   * What the notebook ACTUALLY did, last time it ran for real in Fabric.
+   *
+   * Everything else on this result describes what the notebook *would* do.
+   * Fabric proxies the Spark History Server API, so a past run's physical plans
+   * are readable retroactively — which is table-level ground truth, and the one
+   * thing no amount of static analysis can supply.
+   *
+   * Undefined when the caller did not ask (`include_observed`). That is a third
+   * state, distinct from asking and finding nothing — see `available`.
+   */
+  observed?: SandboxObservedRun | null
+  /** The prediction against the observation. Only when `observed.available`. */
+  comparison?: SandboxRunComparison | null
   log: string[]
   saw_credentials: boolean
   error: string | null
+}
+
+/** One SQL execution from a real run, and the tables it touched. */
+export interface SandboxObservedStatement {
+  execution_id: number
+  /** Spark's own description — usually the call site, e.g. `save at <cell>:12`. */
+  description: string
+  status: string
+  submitted: string
+  duration_ms?: number | null
+  reads: string[]
+  writes: string[]
+}
+
+/**
+ * A notebook's last real Fabric run (backend/app/fabric/runs.py).
+ *
+ * Table-level only, on purpose: the plan is a *rendering*, and Spark truncates
+ * long column lists before they reach us. The sandbox derives columns from live
+ * Catalyst objects, so this fills the gap it cannot — which tables really moved
+ * — rather than competing with it.
+ *
+ * `available: false` with populated `notes` is the honest empty: no run found,
+ * no permission, or nothing analysable. It must never render like a run that
+ * genuinely touched nothing.
+ */
+export interface SandboxObservedRun {
+  available: boolean
+  livy_id: string
+  application_id: string
+  state: string
+  submitted_at: string
+  /** Who ran it. A real run has a submitter; a sandbox run does not. */
+  submitter: string
+  reads: string[]
+  writes: string[]
+  statements: SandboxObservedStatement[]
+  tables: Record<string, SandboxTableRef>
+  /** Seen vs resolved tells "the run did nothing" from "we could not read it". */
+  statements_seen: number
+  statements_resolved: number
+  /** Plan node types the parser did not know, so a thin answer is diagnosable. */
+  unrecognised: string[]
+  notes: string[]
+}
+
+/**
+ * The sandbox's prediction against the observed run.
+ *
+ * Neither side is a superset of the other, which is why the diff is worth
+ * showing rather than one number:
+ *
+ * - the sandbox intercepts the write verb, so it sees writes whether or not an
+ *   action would have forced one, and reads branches that never ran;
+ * - the real run only has plans where an action executed, but it sees through
+ *   everything the static readers abstain on — an f-string query, a chain they
+ *   would not guess at, a write inside a loop.
+ *
+ * So `predicted_only` is not automatically a false positive, and
+ * `observed_only` is not automatically a miss. It is usually the more
+ * interesting half: something really happened that the static picture missed.
+ */
+export interface SandboxRunComparison {
+  agreed_reads: string[]
+  agreed_writes: string[]
+  predicted_only_reads: string[]
+  predicted_only_writes: string[]
+  observed_only_reads: string[]
+  observed_only_writes: string[]
+}
+
+/** Whether prediction and observation agreed on every table. */
+export function comparisonAgrees(c: SandboxRunComparison): boolean {
+  return (
+    c.predicted_only_reads.length === 0 &&
+    c.predicted_only_writes.length === 0 &&
+    c.observed_only_reads.length === 0 &&
+    c.observed_only_writes.length === 0
+  )
 }
 
 /** Display name for a ref, falling back to the ref when it is unknown to us. */
@@ -1046,6 +1139,14 @@ export async function runSandbox(body: {
    * may not exist there yet — and never override what it did answer.
    */
   carried_schemas?: Record<string, SandboxColumn[]>
+  /**
+   * Also fetch what this notebook actually did last time it ran, and diff it.
+   *
+   * Off by default because it costs two extra Fabric round trips and the run is
+   * useful without it. Needs `workspace_id` + `item_id` — a cells-only run has
+   * no notebook in Fabric to have a history.
+   */
+  include_observed?: boolean
 }): Promise<SandboxRunResult> {
   // A scaled-to-zero host answers the first request after idle with a gateway
   // error, not a result: the ingress gives up before the container has pulled
@@ -1066,5 +1167,29 @@ export async function runSandbox(body: {
     })
   }
   if (!res.ok) return detail(res, 'sandbox run')
+  return res.json()
+}
+
+/**
+ * What a notebook actually did, without running the sandbox at all.
+ *
+ * For when the question is "what did this touch last night" rather than "what
+ * would it touch". Same data `runSandbox({ include_observed: true })` attaches.
+ */
+export async function fetchObservedRun(params: {
+  workspace_id: string
+  item_id: string
+  /** The notebook's own workspace/lakehouse — what bare names resolve against. */
+  workspace?: string
+  lakehouse?: string
+}): Promise<SandboxObservedRun> {
+  const query = new URLSearchParams({
+    workspace_id: params.workspace_id,
+    item_id: params.item_id,
+    workspace: params.workspace ?? '',
+    lakehouse: params.lakehouse ?? '',
+  })
+  const res = await fabricFetch(`${SANDBOX_BASE}/fabric/sandbox/observed?${query}`)
+  if (!res.ok) return detail(res, 'run history')
   return res.json()
 }

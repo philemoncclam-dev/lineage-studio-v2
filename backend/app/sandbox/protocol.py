@@ -115,6 +115,103 @@ class Coverage(BaseModel):
     writes_without_column_lineage: list[str] = Field(default_factory=list)
 
 
+class ObservedStatement(BaseModel):
+    """One SQL execution from a real Fabric run, and the tables it touched."""
+
+    execution_id: int
+    #: Spark's own description — usually the call site, e.g. `save at <cell>:12`.
+    description: str = ""
+    status: str = ""
+    submitted: str = ""
+    duration_ms: int | None = None
+    reads: list[str] = Field(default_factory=list)
+    writes: list[str] = Field(default_factory=list)
+
+
+class ObservedRun(BaseModel):
+    """What a notebook ACTUALLY did, from the plans Fabric kept for a past run.
+
+    The counterpart to everything else on `RunResult`, which describes what the
+    notebook *would* do. Fabric proxies the Spark History Server REST API, so a
+    completed run's physical plans are readable retroactively with no emitter and
+    no configuration — see `app/fabric/plans.py` for what that yields and, just
+    as importantly, what it does not.
+
+    Table-level only, deliberately. The plan is a rendering: long column lists are
+    truncated by Spark before they reach us, and recovering column flows would
+    mean parsing an expression format that is not a contract. The sandbox already
+    derives columns from live Catalyst objects, so this fills the gap it cannot —
+    ground truth about which tables really moved — rather than competing with it.
+
+    `available: False` with a populated `notes` is the honest empty: no run
+    found, no permission, or nothing analysable. It is NOT the same as a run that
+    genuinely touched nothing, and the two must not render alike.
+    """
+
+    available: bool = False
+    #: The Livy session and Spark application this came from, for a deep link.
+    livy_id: str = ""
+    application_id: str = ""
+    state: str = ""
+    submitted_at: str = ""
+    #: Who ran it — a real run has a submitter, a sandbox run does not.
+    submitter: str = ""
+    reads: list[str] = Field(default_factory=list)
+    writes: list[str] = Field(default_factory=list)
+    statements: list[ObservedStatement] = Field(default_factory=list)
+    #: ref → its parts, same side table as `RunResult.tables`.
+    tables: dict[str, TableRef] = Field(default_factory=dict)
+    #: How many SQL executions the run had, and how many yielded any table. The
+    #: pair distinguishes "the run did nothing" from "we could not read it".
+    statements_seen: int = 0
+    statements_resolved: int = 0
+    #: Plan node types this parser did not recognise, so a thin answer is
+    #: diagnosable rather than mysterious.
+    unrecognised: list[str] = Field(default_factory=list)
+    #: One line per thing that went wrong or was skipped, in order.
+    notes: list[str] = Field(default_factory=list)
+
+
+class RunComparison(BaseModel):
+    """The sandbox's prediction against the observed run — the point of both.
+
+    Neither side is a superset of the other, and that is exactly why the diff is
+    worth computing:
+
+      * the sandbox intercepts the write verb, so it captures a write whether or
+        not an action would have forced it — and it reads cells that never ran
+        at all, including branches not taken;
+      * the observed run only has plans where an ACTION executed, but it sees
+        through everything the sandbox abstains on: a query built from an
+        f-string, a chain the reader would not guess at, a write inside a loop.
+
+    So `predicted_only` is not automatically a false positive and `observed_only`
+    is not automatically a miss. Read together they say where the static picture
+    and the running system disagree, which is the question a lineage tool exists
+    to answer and could not.
+    """
+
+    #: Present in both. The confident core.
+    agreed_reads: list[str] = Field(default_factory=list)
+    agreed_writes: list[str] = Field(default_factory=list)
+    #: The sandbox expected it; the run's plans do not show it.
+    predicted_only_reads: list[str] = Field(default_factory=list)
+    predicted_only_writes: list[str] = Field(default_factory=list)
+    #: The run did it; the sandbox did not predict it. Usually a cell the static
+    #: reader deliberately abstained on — the highest-value half of this diff.
+    observed_only_reads: list[str] = Field(default_factory=list)
+    observed_only_writes: list[str] = Field(default_factory=list)
+
+    @property
+    def agrees(self) -> bool:
+        return not (
+            self.predicted_only_reads
+            or self.predicted_only_writes
+            or self.observed_only_reads
+            or self.observed_only_writes
+        )
+
+
 class RunRequest(BaseModel):
     """Backend → executor: what to run and the schemas to stand up.
 
@@ -209,6 +306,13 @@ class RunResult(BaseModel):
     #: returns — the child process has no network and no credential, so it could
     #: not report this even in principle. See `SchemaResolution`.
     schema_resolution: SchemaResolution | None = None
+    #: What the notebook ACTUALLY did on its last real Fabric run, and how that
+    #: compares. Filled by the backend for the same reason as `schema_resolution`
+    #: — it takes network and a credential the child does not have — and only
+    #: when the caller asked for it. `None` means not requested, which is a third
+    #: state distinct from "asked and found nothing" (`ObservedRun.available`).
+    observed: ObservedRun | None = None
+    comparison: RunComparison | None = None
     log: list[str] = Field(default_factory=list)
     saw_credentials: bool = False
     error: str | None = None

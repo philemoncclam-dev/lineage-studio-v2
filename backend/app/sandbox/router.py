@@ -11,6 +11,13 @@ is also what the deployed frontend uses for every re-run, and it hands code
 straight to the child. `run_sandbox`'s guarantees are about what the child can
 REACH — no credential, a throwaway home and cwd — and were never a claim that
 running a stranger's code is safe.
+
+A run can additionally carry what the notebook ACTUALLY did the last time it ran
+in Fabric (`include_observed`), read back from the Spark plans Fabric keeps — see
+`app/fabric/runs.py`. That is attached here rather than in the executor for the
+same reason `schema_resolution` is: it takes network and a credential the child
+deliberately does not have. It is enrichment throughout, and wrapped so that a
+history lookup which fails cannot fail the run it was decorating.
 """
 
 from __future__ import annotations
@@ -25,6 +32,7 @@ from ..fabric.access import assert_visible, limit_to_visible, visible_workspace_
 from ..fabric.client import FabricClient, FabricError
 from ..fabric.router import onelake_token, user_token
 from ..fabric.notebooks import NotebookDecodeError, fetch_notebook_source
+from ..fabric.runs import compare, observe_run
 from ..fabric.schema import (
     guid_name_map,
     resolve_read_schemas,
@@ -32,7 +40,14 @@ from ..fabric.schema import (
     workspace_index,
 )
 from ._refs import referenced_workspace_ids
-from .protocol import ColumnSchema, RunRequest, RunResult, SchemaResolution
+from .protocol import (
+    ColumnSchema,
+    ObservedRun,
+    RunComparison,
+    RunRequest,
+    RunResult,
+    SchemaResolution,
+)
 from .runner import run_sandbox
 
 router = APIRouter(prefix="/fabric/sandbox", tags=["sandbox"])
@@ -65,6 +80,11 @@ class SandboxRunRequest(BaseModel):
     #: name is looked up from the id.
     workspace: str | None = None
     lakehouse: str | None = None
+    #: Also fetch what the notebook ACTUALLY did on its last real Fabric run, and
+    #: diff it against this one. Off by default: it is two extra Fabric round
+    #: trips, and the sandbox is useful without it. Needs `workspace_id` +
+    #: `item_id` — a cells-only run has no notebook in Fabric to have a history.
+    include_observed: bool = False
 
 
 @router.post("/run", response_model=RunResult)
@@ -237,4 +257,67 @@ def sandbox_run(
     # Attached here rather than inside the executor: the child has no network
     # and no credential, so it could not know any of this even in principle.
     result.schema_resolution = resolution
+
+    # What the notebook really did, last time it ran for real. Same reasoning as
+    # above — network and a credential — and best-effort for a different one:
+    # this is enrichment, and a history lookup that fails must not take a
+    # perfectly good sandbox run down with it.
+    if req.include_observed and req.workspace_id and req.item_id:
+        result.observed, result.comparison = _observe(
+            req, token, lake, workspace, lakehouse, name_map, result
+        )
     return result
+
+
+def _observe(
+    req: SandboxRunRequest,
+    token: str | None,
+    lake: str | None,
+    workspace: str,
+    lakehouse: str,
+    name_map: dict[str, str],
+    result: RunResult,
+) -> tuple[ObservedRun, RunComparison | None]:
+    """The last real run of this notebook, and how the sandbox compares.
+
+    Wrapped in its own function so the failure envelope is total: any exception
+    from the Fabric surface becomes a note on the result rather than an error on
+    the response. `observe_run` already degrades on `FabricError`; this covers
+    the rest, because "the enrichment broke" must never read as "the run broke".
+    """
+    try:
+        client = FabricClient(user_token=token, onelake_token=lake)
+        observed = observe_run(
+            client, req.workspace_id, req.item_id, workspace, lakehouse, name_map
+        )
+    except Exception as exc:  # noqa: BLE001 — enrichment never fails the run
+        return ObservedRun(notes=[f"run history unavailable — {exc}"]), None
+    if not observed.available:
+        return observed, None
+    return observed, compare(result.reads, result.writes, observed)
+
+
+@router.get("/observed", response_model=ObservedRun)
+def sandbox_observed(
+    workspace_id: str,
+    item_id: str,
+    workspace: str = "",
+    lakehouse: str = "",
+    token: Annotated[str | None, Depends(user_token)] = None,
+    lake: Annotated[str | None, Depends(onelake_token)] = None,
+) -> ObservedRun:
+    """What a notebook actually did, without running the sandbox at all.
+
+    The same lineage `/run` can attach, standalone — for the case where the
+    question is "what did this notebook touch last night" rather than "what would
+    it touch". Gated exactly as `/run` is: Fabric decides who may look, and
+    `assert_visible` is a fast 404 in front of a check Fabric makes for real on
+    the fetch itself.
+    """
+    visible = visible_workspace_ids(token)
+    assert_visible(visible, workspace_id)
+    try:
+        client = FabricClient(user_token=token, onelake_token=lake)
+    except FabricError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return observe_run(client, workspace_id, item_id, workspace, lakehouse, {})

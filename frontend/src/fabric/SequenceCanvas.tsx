@@ -593,6 +593,46 @@ export function truncateRows(
   return out
 }
 
+/**
+ * The path for an edge whose two ends sit in the SAME band.
+ *
+ * A notebook and the lakehouse it writes share a stage column in Medallion, and
+ * two cards of one owner share a band in Zig-Zag, so there is no horizontal
+ * distance for the usual right-edge-to-left-edge curve to cover — it would run
+ * straight back across the column, behind every card between the two rows.
+ * Instead the line leaves and arrives on the same side, arcing out into the
+ * gutter beside the band.
+ *
+ * Two constraints, and both were learned the hard way:
+ *
+ *  - the arc must stay INSIDE the gutter. Cards are DOM nodes above the edge
+ *    canvas, so an arc reaching past the gutter is drawn under the next column
+ *    and all that shows is the sliver that escapes — an arrowhead with no line
+ *    attached. Medallion's columns sit `GX` apart, barely half Zig-Zag's
+ *    `ZIG_GX`, so a reach sized for one view disappeared in the other.
+ *  - the LAST column has no gutter to its right, only the canvas edge, which
+ *    clips. It arcs left instead, into the gutter it does have.
+ */
+export function sameBandArc(o: {
+  /** Card left edge, already in canvas space. */
+  x: number
+  sy: number
+  ty: number
+  /** Horizontal space between columns in this view. */
+  gutter: number
+  /** Whether this is the rightmost column. */
+  last: boolean
+}): { d: string; side: number; reach: number } {
+  const reach = Math.min(o.gutter * 0.8, Math.max(20, Math.abs(o.ty - o.sy) * 0.4))
+  const side = o.last ? o.x : o.x + NW
+  const out = o.last ? -reach : reach
+  return {
+    d: `M${side} ${o.sy}C${side + out} ${o.sy} ${side + out} ${o.ty} ${side} ${o.ty}`,
+    side,
+    reach,
+  }
+}
+
 function FlowCanvas({
   nodes: rawNodes,
   edges,
@@ -644,6 +684,14 @@ function FlowCanvas({
       view === 'medallion' ? layoutMedallion(nodes, edges) : layoutStages(nodes, edges),
     [nodes, edges, view],
   )
+  // The horizontal space between columns in the layout above — the only place
+  // an edge may bulge into without ending up behind a card.
+  const gutter = view === 'medallion' ? GX : ZIG_GX
+  // The rightmost column has no gutter to its right — only the canvas edge,
+  // which CLIPS. Its same-band arcs bulge left instead, into the gutter it does
+  // have. Gold is exactly such a column, and exactly where a notebook sits
+  // beside the lakehouse it writes.
+  const lastX = Math.max(0, ...[...pos.values()].map((p) => p.x))
   const w = width + PAD * 2
   const h = height + PAD * 2
   return (
@@ -696,9 +744,13 @@ function FlowCanvas({
               // gutter beside the band. The two canvases draw one lineage and
               // should not disagree about how a line is shaped.
               if (s.x === t.x) {
-                const side = s.x + NW + PAD
-                const reach = Math.min(ZIG_GX * 0.8, Math.max(28, Math.abs(ty - sy) * 0.4))
-                const d = `M${side} ${sy}C${side + reach} ${sy} ${side + reach} ${ty} ${side} ${ty}`
+                const { d } = sameBandArc({
+                  x: s.x + PAD,
+                  sy,
+                  ty,
+                  gutter,
+                  last: s.x === lastX,
+                })
                 return (
                   <path
                     key={i}

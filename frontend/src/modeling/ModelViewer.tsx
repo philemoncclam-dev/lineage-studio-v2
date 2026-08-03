@@ -400,6 +400,18 @@ export default function ModelViewer({
     setSearchOpen(false)
   }
 
+  // Starting or clearing a trace rebuilds the whole canvas, so the viewport it
+  // was scrolled to describes a picture that no longer exists — the reader ends
+  // up staring at empty space where their model used to be and has to scroll
+  // back up to find the chain. The layout puts the chain at the top; this puts
+  // the reader there too. Horizontal position is left alone: the layers have
+  // not moved sideways, and which stage you were looking at is still true.
+  useEffect(() => {
+    // Optional call: jsdom gives an element no `scrollTo`, and a viewport
+    // convenience must not be the thing that fails a test run.
+    scrollRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' })
+  }, [trace])
+
   // Runs after the layout has been recomputed for any expansion above, so the
   // anchor we scroll to is the final one rather than a pre-expansion position.
   useEffect(() => {

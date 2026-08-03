@@ -185,4 +185,24 @@ describe('aligning a traced chain', () => {
       layout.cards.find((c) => c.id === 'bronze')!.y,
     )
   })
+
+  it('lifts the aligned chain back to the top of the canvas', () => {
+    // Levelling only pushes down, so without a final translation a chain that
+    // came down to meet one low row sits far below the fold with empty space
+    // above it — and the reader has to scroll to find their own trace.
+    const layout = layoutModel(chain(), new Set(), true)
+    const top = Math.min(...layout.cards.map((c) => c.y))
+    const plain = layoutModel(chain(), new Set())
+    expect(top).toBe(Math.min(...plain.cards.map((c) => c.y)))
+  })
+
+  it('lifts without breaking the alignment it just made', () => {
+    // One rigid translation: everything moves by the same amount, so rows that
+    // were level stay level.
+    const layout = layoutModel(chain(), new Set(), true)
+    const ys = ['raw.order_id', 'bronze.order_id', 'silver.order_id'].map(
+      (id) => layout.anchors.get(id)!.cy,
+    )
+    expect(new Set(ys).size).toBe(1)
+  })
 })

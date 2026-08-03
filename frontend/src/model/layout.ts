@@ -233,6 +233,26 @@ function alignTracedRows(
     }
     if (!moved) break
   }
+
+  // Then lift the whole thing back to the top of the canvas.
+  //
+  // Levelling can only push cards DOWN — that is what makes it terminate — so a
+  // chain that had to come down to meet one low row ends up sitting wherever
+  // the lowest constraint left it, and the reader has to scroll to a picture
+  // that is mostly empty space above it. One rigid translation fixes that
+  // without disturbing a single alignment: every card moves by the same amount,
+  // so every row that was level stays level.
+  const highest = Math.min(...cards.map((c) => c.y))
+  const lift = highest - top
+  if (lift > 0)
+    for (const card of cards) {
+      card.y -= lift
+      for (const row of card.rows) row.y -= lift
+      for (const id of [card.id, ...card.rows.map((r) => r.id)]) {
+        const a = anchors.get(id)
+        if (a) a.cy -= lift
+      }
+    }
 }
 
 export function layoutModel(

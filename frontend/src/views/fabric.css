@@ -1891,7 +1891,9 @@
   color: var(--color-text-tertiary);
 }
 .fx-lineage-error {
-  color: var(--color-danger, #d92d20);
+  /* `--color-destructive` is the real token; `--color-danger` does not exist,
+     so this silently painted its hardcoded fallback and never themed. */
+  color: var(--color-destructive);
 }
 /* A flex COLUMN, not a plain block. `.mv-host` sizes itself with `flex: 1;
    min-height: 0` (see the note on it in modeling.css), so a block parent gives

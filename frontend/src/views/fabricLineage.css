@@ -146,9 +146,14 @@
   font-size: var(--text-micro, 11px);
 }
 /* Says the box is a stub, not a leaf. An item drawn with no arrows otherwise
-   reads as "nothing depends on this", which is the opposite of the truth. */
+   reads as "nothing depends on this", which is the opposite of the truth.
+   The WORDS carry that, not a colour — there is no warning token in the system
+   (the semantic set is accent/destructive/success), and inventing one for a
+   single label would be a design-system change made in passing. Text also
+   survives a colourblind reader, which a lone amber would not. */
 .fl-card-flag {
-  color: var(--color-warning, #b0751a);
+  color: var(--color-text-tertiary);
+  font-style: italic;
 }
 
 /* One accent per Fabric item type. These follow Fabric's own family — greens

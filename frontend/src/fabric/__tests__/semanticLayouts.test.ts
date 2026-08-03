@@ -3,7 +3,7 @@
 // one band per owner with the steps' band first, lakehouses ordered by
 // medallion stage inside it, and a heading per lakehouse and pipeline.
 import { describe, expect, it } from 'vitest'
-import { layoutStages, stageRank, type FlowNode } from '../SequenceCanvas'
+import { layoutMedallion, layoutStages, stageRank, type FlowNode } from '../SequenceCanvas'
 
 const table = (name: string, lakehouse: string, ws = 'platform'): FlowNode => ({
   id: `t:${name}`,
@@ -138,5 +138,41 @@ describe('layoutStages', () => {
     const layout = layoutStages(nodes, edges)
     expect('groups' in layout).toBe(false)
     expect(layout.pos.get('s:pl')).toEqual({ x: 0, y: 0 })
+  })
+})
+
+describe('layoutMedallion', () => {
+  it('gives one band per stage, in the order data moves through them', () => {
+    const { nodes, edges } = medallion()
+    const { bands } = layoutMedallion(nodes, edges)
+    // The business reading: Landing -> Bronze -> Silver -> Gold, left to right.
+    // Zig-Zag deliberately does NOT do this — there the band is the owner and
+    // the whole medallion collapses into one column.
+    expect(bands.map((b) => b.label)).toEqual(['Landing', 'Bronze', 'Silver', 'Gold'])
+  })
+
+  it('puts a notebook in the stage it produces, not the one it reads', () => {
+    const { nodes, edges } = medallion()
+    const { pos } = layoutMedallion(nodes, edges)
+    // `to_silver` reads bronze and writes silver. It belongs with what it
+    // builds — "Silver: these tables, and the notebooks that make them".
+    expect(pos.get('s:to_silver')!.x).toBe(pos.get('t:silver.orders')!.x)
+    expect(pos.get('s:to_gold')!.x).toBe(pos.get('t:gold.orders')!.x)
+  })
+
+  it('keeps a lakehouse that names no stage in a band of its own, last', () => {
+    const nodes: FlowNode[] = [table('ref.codes', 'lh_reference'), table('bronze.a', 'lh_bronze')]
+    const { bands, pos } = layoutMedallion(nodes, [])
+    // Guessing a stage from anything but the name would invent a fact about
+    // the data, so an unrecognised lakehouse is named as what it is.
+    expect(bands.map((b) => b.label)).toEqual(['Bronze', 'Unstaged'])
+    expect(pos.get('t:ref.codes')!.x).toBeGreaterThan(pos.get('t:bronze.a')!.x)
+  })
+
+  it('draws no band for a stage the run never touched', () => {
+    // An empty Landing column between the left edge and Bronze would say
+    // something false: that there is a landing layer here and it is empty.
+    const nodes: FlowNode[] = [table('bronze.a', 'lh_bronze'), table('gold.a', 'lh_gold')]
+    expect(layoutMedallion(nodes, []).bands.map((b) => b.label)).toEqual(['Bronze', 'Gold'])
   })
 })

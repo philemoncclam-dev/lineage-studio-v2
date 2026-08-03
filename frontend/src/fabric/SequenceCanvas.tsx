@@ -240,10 +240,10 @@ function anchorY(n: FlowNode, rowKey?: string) {
  * column in time order, tables in the other), not because it shows the same
  * thing. See `buildObservedFlow`.
  */
-export type CanvasView = 'flow' | 'sequence' | 'stages' | 'observed'
+export type CanvasView = 'flow' | 'sequence' | 'stages' | 'medallion' | 'observed'
 
 /** The view that names bands for what is in them rather than where it sits. */
-const SEMANTIC_VIEWS: readonly CanvasView[] = ['stages']
+const SEMANTIC_VIEWS: readonly CanvasView[] = ['stages', 'medallion']
 
 const uniq = (xs: (string | undefined)[]): string[] => [
   ...new Set(xs.filter((x): x is string => !!x)),
@@ -433,6 +433,81 @@ export function layoutStages(nodes: FlowNode[], edges: FlowEdge[]): Layout {
     pos,
     bands: spaces.map((ws, c) => band(c, owner.label(ws), c, lastCol, ZIG_GX)),
     width: spaces.length * (NW + ZIG_GX) - ZIG_GX,
+    height,
+  }
+}
+
+/** How a stage name is written on a band and in an exported layer. */
+export const stageLabel = (stage: string) => stage.charAt(0).toUpperCase() + stage.slice(1)
+
+/** The band a card sits in when the axis is medallion stage, `-1` for none. */
+export function stageOf(
+  nodes: FlowNode[],
+  edges: FlowEdge[],
+): (n: FlowNode) => number {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  // A step has no lakehouse of its own. It belongs to the stage it PRODUCES —
+  // "Silver: these tables, and the notebooks that build them" is the sentence
+  // this view exists to draw. A step that writes nothing (a read-only
+  // validation notebook) falls back to what it reads, so it still lands beside
+  // the data it concerns rather than in the unstaged bucket.
+  const viaEdge = (n: FlowNode, kind: 'write' | 'read'): number => {
+    for (const e of edges) {
+      const other =
+        kind === 'write' && e.from === n.id ? byId.get(e.to) : kind === 'read' && e.to === n.id ? byId.get(e.from) : undefined
+      if (e.tone !== kind || !other || other.kind !== 'table') continue
+      const rank = stageRank(other.lakehouse || '')
+      if (rank >= 0) return rank
+    }
+    return -1
+  }
+  return (n) => {
+    if (n.kind === 'table') return stageRank(n.lakehouse || '')
+    const written = viaEdge(n, 'write')
+    return written >= 0 ? written : viaEdge(n, 'read')
+  }
+}
+
+/**
+ * Medallion: one band per STAGE, in the order data moves through them.
+ *
+ * The business reading of a lakehouse, and the one arrangement here that a
+ * non-engineer already has a mental model for: raw data lands, gets cleaned,
+ * gets conformed, gets served. Landing → Bronze → Silver → Gold, left to right,
+ * with every table in the band of the stage it belongs to and every notebook in
+ * the band of the stage it PRODUCES.
+ *
+ * It is deliberately NOT what Zig-Zag does. There the axis is ownership and
+ * stage is only a tie-break inside a band, because that view answers "who owns
+ * this and who runs it". This one answers "how far along is it", which is a
+ * different question and the one a business reader actually asks. A workspace
+ * appearing in four bands is correct here: the band means stage, not owner.
+ *
+ * A lakehouse whose name matches no stage keeps a band of its own at the end,
+ * rather than being forced into one it does not belong to. Guessing a stage
+ * from anything other than the name would be inventing a fact about the data.
+ */
+export function layoutMedallion(nodes: FlowNode[], edges: FlowEdge[]): Layout {
+  const stage = stageOf(nodes, edges)
+  // Only the stages actually present, in medallion order, with the unstaged
+  // band last. An empty Landing column between Bronze and the left edge is a
+  // gap that says something false about the run.
+  const present = [...new Set(nodes.map(stage))].sort((a, b) => (a < 0 ? 1 : b < 0 ? -1 : a - b))
+
+  const pos: Layout['pos'] = new Map()
+  let height = 1
+  present.forEach((rank, c) => {
+    const here = nodes.filter((n) => stage(n) === rank)
+    height = Math.max(height, stackColumn(here, c * (NW + GX), pos))
+  })
+
+  const lastCol = present.length - 1
+  return {
+    pos,
+    bands: present.map((rank, c) =>
+      band(c, rank < 0 ? 'Unstaged' : stageLabel(STAGE_ORDER[rank]), c, lastCol),
+    ),
+    width: present.length * (NW + GX) - GX,
     height,
   }
 }
@@ -651,7 +726,9 @@ function FlowCanvas({
     () =>
       view === 'stages'
         ? layoutStages(nodes, edges)
-        : // Confirmed shares the sequence layout: executions down one column in
+        : view === 'medallion'
+          ? layoutMedallion(nodes, edges)
+          : // Confirmed shares the sequence layout: executions down one column in
           // the order they ran, the tables they touched in the other.
           view === 'sequence' || view === 'observed'
           ? layoutSequence(nodes)
@@ -1364,7 +1441,7 @@ function ToModelBar({
         results,
         defaultModelName(steps),
         view === 'sequence' ? 'sequence' : 'flow',
-        { ...options, layout: semantic ? 'stages' : 'view' },
+        { ...options, layout: semantic ? (view === 'medallion' ? 'medallion' : 'stages') : 'view' },
       )
       await localStore.save(model)
       await navigate({ to: '/model/$modelId', params: { modelId: model.id } })
@@ -1383,6 +1460,11 @@ function ToModelBar({
             ['flow', 'Flow', 'One column per dependency depth'],
             ['sequence', 'Sequence', 'Tables in one column, steps in run order in the other'],
             ['stages', 'Zig-Zag', 'Steps on the left, their tables on the right — the run zig-zags between the two'],
+            [
+              'medallion',
+              'Medallion',
+              'One column per stage — Landing, Bronze, Silver, Gold — with each notebook in the stage it produces',
+            ],
             [
               'observed',
               'Confirmed',

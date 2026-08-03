@@ -268,6 +268,59 @@ function stageRank(name: string): number {
 }
 
 /**
+ * One column per medallion STAGE — the `medallion` canvas layout, as layers.
+ *
+ * The stage is the axis here, not a tie-break inside an owner's layer the way
+ * `stages` uses it. So one workspace legitimately spans four layers: the layer
+ * means "how far along the data is", which is the reading a business audience
+ * already has, and the reason this exists next to the other two.
+ *
+ * A step belongs to the stage it PRODUCES, falling back to what it reads, so a
+ * notebook lands beside the data it is responsible for. Anything naming no
+ * stage at all collects in a final layer rather than being guessed into one.
+ */
+function stageColumnsOf(
+  nodes: Node[],
+  links: Link[],
+  refs: Record<string, SandboxTableRef>,
+): Map<string, number> {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const rankOfTable = (n: Node | undefined): number =>
+    n && n.kind === 'table' ? stageRank(refLakehouse(n.ref ?? n.name, refs)) : -1
+  const viaLink = (n: Node, kind: 'write' | 'read'): number => {
+    for (const l of links) {
+      if (l.kind !== kind) continue
+      const other = kind === 'write' ? (l.from === n.id ? byId.get(l.to) : undefined) : l.to === n.id ? byId.get(l.from) : undefined
+      const rank = rankOfTable(other)
+      if (rank >= 0) return rank
+    }
+    return -1
+  }
+  const rankOf = (n: Node): number => {
+    if (n.kind === 'table') return stageRank(refLakehouse(n.ref ?? n.name, refs))
+    const written = viaLink(n, 'write')
+    return written >= 0 ? written : viaLink(n, 'read')
+  }
+  const ranks = nodes.map(rankOf)
+  // Only the stages present, in order, unstaged last — the same rule the canvas
+  // uses, so an empty Landing column never appears in either.
+  const present = [...new Set(ranks)].sort((a, b) => (a < 0 ? 1 : b < 0 ? -1 : a - b))
+  const index = new Map(present.map((r, i) => [r, i]))
+  return new Map(nodes.map((n, i) => [n.id, index.get(ranks[i]) ?? 0]))
+}
+
+/** A stage name as it is written on a layer. */
+function stageLayerName(inColumn: Node[], refs: Record<string, SandboxTableRef>): string {
+  for (const n of inColumn) {
+    const rank = n.kind === 'table' ? stageRank(refLakehouse(n.ref ?? n.name, refs)) : -1
+    if (rank >= 0) return STAGE_ORDER[rank].charAt(0).toUpperCase() + STAGE_ORDER[rank].slice(1)
+  }
+  // A layer of steps only — name it for what those steps feed, which is the
+  // stage they belong to even though none of them is a table.
+  return semanticLayerName(inColumn)
+}
+
+/**
  * A layer label built from what is in the layer, not from its position.
  *
  * `Source tables`/`Tables`/`Output tables` describe where a column sits in a
@@ -383,7 +436,7 @@ export interface PortOptions {
   layout?: ModelLayout
 }
 
-export type ModelLayout = 'view' | 'stages'
+export type ModelLayout = 'view' | 'stages' | 'medallion'
 
 export const DEFAULT_PORT_OPTIONS: PortOptions = {
   kindTags: true,
@@ -575,7 +628,9 @@ export function sequenceToModel(
     // `stages` used to give a layer per medallion stage, which split one
     // workspace across four layers and drew the same workspace band repeatedly;
     // it now orders the lakehouses INSIDE its layer by stage instead.
-    for (const [id, c] of ownerColumnsOf(nodes, links, refs, layout === 'stages')) col.set(id, c)
+    if (layout === 'medallion')
+      for (const [id, c] of stageColumnsOf(nodes, links, refs)) col.set(id, c)
+    else for (const [id, c] of ownerColumnsOf(nodes, links, refs, true)) col.set(id, c)
   else if (view === 'sequence')
     // Steps left, tables right — the sequence canvas, exported as it looks.
     nodes.forEach((n) => col.set(n.id, n.kind === 'table' ? 1 : 0))
@@ -602,7 +657,9 @@ export function sequenceToModel(
     const name = feeds.length
       ? `Into ${feeds.join(' + ')}`
       : semantic
-        ? semanticLayerName(inColumn)
+        ? layout === 'medallion'
+          ? stageLayerName(inColumn, refs)
+          : semanticLayerName(inColumn)
         : view === 'sequence'
           ? c === 0
             ? 'Notebooks & pipelines'

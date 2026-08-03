@@ -798,10 +798,32 @@ function medallionRun() {
   return { steps: [s], results }
 }
 
-const layoutModel = (layout: 'stages') => {
+const layoutModel = (layout: 'stages' | 'medallion') => {
   const { steps, results } = medallionRun()
   return sequenceToModel(steps, results, 'M', 'flow', { ...DEFAULT_PORT_OPTIONS, layout }).model
 }
+
+describe('the medallion layout', () => {
+  it('gives one layer per STAGE, which is the reading a business audience has', () => {
+    const model = layoutModel('medallion')
+    // The deliberate opposite of `stages`: there the layer is the owner and the
+    // whole medallion collapses into one. Here the layer means how far along
+    // the data is, so one workspace spanning two stages is two layers — and
+    // that is the point, not a defect.
+    expect(model.layers.map((l) => l.name)).toEqual(['Bronze', 'Silver'])
+  })
+
+  it('exports the arrangement the canvas drew, layer for band', () => {
+    // The rule the other layouts already keep: pressing Create model gives back
+    // the picture it was pressed on. The notebook writes silver, so it belongs
+    // in Silver beside what it builds.
+    const model = layoutModel('medallion')
+    expect(model.layers.map((l) => l.objects.map((o) => o.name))).toEqual([
+      ['lh_bronze'],
+      ['nb_silver', 'lh_silver'],
+    ])
+  })
+})
 
 describe('semantic layouts', () => {
   it('names layers after the workspace alone — a lakehouse is an object, not a layer', () => {

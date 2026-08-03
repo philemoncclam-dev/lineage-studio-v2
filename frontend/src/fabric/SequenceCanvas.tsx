@@ -28,13 +28,7 @@ import {
   type StepStatus,
 } from './sequence'
 import { coverageBadge, coverageOf, coverageSummary, type CoverageLevel } from './coverage'
-import {
-  observedAgrees,
-  observedHeadline,
-  observedSummary,
-  runWhen,
-  type ObservedSummary,
-} from './observed'
+import { observedAgrees, observedHeadline, observedSummary, runWhen } from './observed'
 import { columnKey, diffIsClean, diffRuns, type RunDiff } from './runDiff'
 import {
   sequenceToModel,
@@ -209,49 +203,26 @@ function anchorY(n: FlowNode, rowKey?: string) {
 }
 
 /**
- * How the canvas arranges the same graph.
+ * How the sandbox canvas is arranged. Two layouts, and they answer two
+ * different questions about the same graph.
  *
- * `flow` — one column per dependency depth. Reads left-to-right end to end, but
- * a long sequence walks off to the right and the same table can appear far from
- * the step that wrote it.
+ * `stages` (Zig-Zag) — one band per OWNER: the workspace, or the lakehouse
+ * standing in where none resolved. Answers "who owns this and who runs it".
+ * Where a single owner holds everything, it splits by role instead, so the
+ * view still has two bands to zig-zag between.
  *
- * `sequence` — two columns: every notebook and pipeline on the LEFT in the
- * order the user stacked them (step 1 on top), every table on the right.
- * Process-centric: what the run DID, in order, against one canonical column of
- * tables, so a table written and then re-read is one card rather than two.
+ * `medallion` — one band per STAGE, in the order data moves through them:
+ * Landing, Bronze, Silver, Gold. Answers "how far along is it", which is the
+ * reading a business audience already has.
  *
- * Every edge runs step -> table, leaving the step's own read or write row and
- * landing on the table. A read is data moving the other way in reality, but
- * orienting it that way would loop it back under the whole tables column; the
- * direction of travel is carried by the row it leaves and the edge's colour.
- * The flow view keeps true edge direction.
+ * Both name their bands for what is IN them rather than for a position in a
+ * computed layout, and both mirror the layout of the same name that Create
+ * model exports — so pressing it gives back the picture on screen.
+ *
+ * Both also keep TRUE edge direction: a line crossing back to an earlier band
+ * is a fact about the run, not a drawing artefact.
  */
-/**
- * How the sandbox canvas is arranged.
- *
- * `flow`/`sequence` name bands for a POSITION in the layout ("Source tables").
- * The other two are arrangements in their own right, not relabellings:
- *
- * Both of the others put one band per OWNER — the workspace, or the lakehouse
- * standing in where none resolved — because that is who the thing belongs to.
- * They differ in the axis: `stages` stacks each band's lakehouses in medallion
- * order (landing, bronze, silver, gold) so the boxes read down the band, while
- * `workspace` runs dependency depth down the canvas, so a run hopping between a
- * platform and an engineering workspace draws as a zig-zag: right, down, back
- * left, down.
- *
- * Both mirror the layout of the same name that Create model exports.
- *
- * `observed` — not an arrangement of the same graph at all, but a DIFFERENT
- * graph: the executions a real Fabric run performed, in order, from Spark's own
- * plans. It shares the sequence layout because the shape fits (steps down one
- * column in time order, tables in the other), not because it shows the same
- * thing. See `buildObservedFlow`.
- */
-export type CanvasView = 'flow' | 'sequence' | 'stages' | 'medallion' | 'observed'
-
-/** The view that names bands for what is in them rather than where it sits. */
-const SEMANTIC_VIEWS: readonly CanvasView[] = ['stages', 'medallion']
+export type CanvasView = 'stages' | 'medallion'
 
 const uniq = (xs: (string | undefined)[]): string[] => [
   ...new Set(xs.filter((x): x is string => !!x)),
@@ -278,53 +249,6 @@ function band(key: number, label: string, col: number, lastCol: number, gap = GX
   const left = col * (NW + gap) - (col === 0 ? 0 : gap / 2)
   const right = col * (NW + gap) + NW + (col === lastCol ? 0 : gap / 2)
   return { key, label, left, width: right - left, centerX: col * (NW + gap) + NW / 2 }
-}
-
-/**
- * Two columns: steps on the left in run order, tables on the right in
- * first-touch order.
- *
- * Exactly what `sequenceToModel` exports from this view — two layers,
- * `Notebooks & pipelines` then `Tables`, with the tables flat inside theirs.
- * The canvas used to regroup the tables column by workspace, with its own
- * headers, its own extra gap and a band reading `Tables · 2 workspaces`, none
- * of which the ported model had: pressing Create model rearranged the picture
- * you pressed it on. Grouping by owner is what Zig-Zag is for, and it does it
- * on both sides.
- *
- * Node order is preserved from `buildFlow`, which pushes steps in sequence
- * order, so "first step on top" needs no sorting.
- */
-function layoutSequence(nodes: FlowNode[]): Layout {
-  const pos: Layout['pos'] = new Map()
-  const stepH = stackColumn(nodes.filter((n) => n.kind !== 'table'), 0, pos)
-  const tableH = stackColumn(nodes.filter((n) => n.kind === 'table'), NW + GX, pos)
-  return {
-    pos,
-    bands: [band(0, 'Notebooks & pipelines', 0, 1), band(1, 'Tables', 1, 1)],
-    width: 2 * (NW + GX) - GX,
-    height: Math.max(1, stepH, tableH),
-  }
-}
-
-/**
- * The sequence view's edges: order edges dropped (the column order already
- * says it), and reads flipped to leave the step's read row so every line runs
- * left-to-right into the tables column. See the CanvasView note.
- */
-function sequenceEdges(edges: FlowEdge[], stepIds: ReadonlySet<string>): FlowEdge[] {
-  const out: FlowEdge[] = []
-  for (const e of edges) {
-    if (e.dashed) continue
-    // Flipped end to end, rows included: a column edge has to land back on the
-    // table's own column row, not on its header. For a table-level edge
-    // `fromRow` is undefined, so `toRow` stays undefined and the edge anchors
-    // to the header exactly as it did before.
-    if (e.tone === 'read' && stepIds.has(e.to))
-      out.push({ ...e, from: e.to, fromRow: e.toRow, to: e.from, toRow: e.fromRow, tone: 'read' })
-    else out.push(e)
-  }
-  return out
 }
 
 /**
@@ -612,42 +536,7 @@ function ownerOf(nodes: FlowNode[], edges: FlowEdge[]) {
   return { key, label }
 }
 
-function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
-  const colOf = depthsOf(nodes, edges, true)
-
-  // Stack each column top-down; cards have different heights.
-  const nextY = new Map<number, number>()
-  const pos = new Map<string, { x: number; y: number }>()
-  nodes.forEach((n) => {
-    const c = colOf.get(n.id)!
-    const y = nextY.get(c) ?? 0
-    nextY.set(c, y + nodeHeight(n) + GY)
-    pos.set(n.id, { x: c * (NW + GX), y })
-  })
-
-  const maxCol = Math.max(0, ...colOf.values())
-  const height = Math.max(1, ...[...nextY.values()].map((y) => y - GY))
-
-  // One band segment per column, named for what the column holds — the
-  // Modeling layer band. Segments meet mid-gutter so a column reads as running
-  // divider-to-divider (see the handoff note on contiguous segments).
-  const bands = Array.from({ length: maxCol + 1 }, (_, c) => {
-    const inCol = nodes.filter((n) => colOf.get(n.id) === c)
-    const tables = inCol.filter((n) => n.kind === 'table').length
-    const label = !inCol.length
-      ? ''
-      : tables === inCol.length
-        ? c === 0
-          ? 'Source tables'
-          : 'Tables'
-        : 'Notebooks & pipelines'
-    return band(c, label, c, maxCol)
-  })
-
-  return { pos, bands, width: (maxCol + 1) * (NW + GX) - GX, height }
-}
-
-/** The expansion key for one collapsible run of columns on a card. */
+/** Key for one collapsible run of column rows inside a card. */
 const groupKey = (nodeId: string, group?: string) => `${nodeId}::${group ?? ''}`
 
 /**
@@ -731,16 +620,10 @@ function FlowCanvas({
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
 
   const shown = useMemo(() => {
-    const stepIds = new Set(rawNodes.filter((n) => n.kind !== 'table').map((n) => n.id))
-    // Only the sequence view flips reads: it is the one layout with a single
-    // canonical tables column to point everything at. The workspace view keeps
-    // true direction, because a read crossing back to the workspace on the left
-    // is a fact about ownership, not a drawing artefact.
-    // Confirmed uses the sequence layout, so it needs the same flip: every line
-    // must leave the execution's own read or write row and run into the tables
-    // column, or a read loops back under the whole column.
-    const base =
-      view === 'sequence' || view === 'observed' ? sequenceEdges(edges, stepIds) : edges
+    // Both remaining views keep TRUE edge direction. A read crossing back to
+    // the band on the left is a fact about ownership (Zig-Zag) or about an
+    // earlier stage (Medallion), not a drawing artefact to be flipped away.
+    const base = edges
     // A column edge is only drawn when BOTH of its rows are actually on screen
     // — a collapsed group would otherwise anchor every hidden column to the
     // card header, which is a fan of identical lines saying nothing. Whenever
@@ -755,18 +638,10 @@ function FlowCanvas({
       ...base.filter((e) => e.kind !== 'column' && !(e.group && covered.has(e.group))),
       ...columns,
     ]
-  }, [edges, rawNodes, view, byId])
+  }, [edges, byId])
   const { pos, bands, width, height } = useMemo(
     () =>
-      view === 'stages'
-        ? layoutStages(nodes, edges)
-        : view === 'medallion'
-          ? layoutMedallion(nodes, edges)
-          : // Confirmed shares the sequence layout: executions down one column in
-          // the order they ran, the tables they touched in the other.
-          view === 'sequence' || view === 'observed'
-          ? layoutSequence(nodes)
-          : layoutFlow(nodes, edges),
+      view === 'medallion' ? layoutMedallion(nodes, edges) : layoutStages(nodes, edges),
     [nodes, edges, view],
   )
   const w = width + PAD * 2
@@ -809,7 +684,35 @@ function FlowCanvas({
               // unusual". There, an edge is backwards only when it also goes
               // UP: back and above is a genuine write into something already
               // passed, and back-and-down is just the other half of a hop.
-              const backward = view === 'stages' ? t.x <= s.x && t.y <= s.y : t.x <= s.x
+              // Both ends in the SAME band — a notebook and the lakehouse it
+              // writes share a stage column in Medallion, and two cards of one
+              // owner share a band in Zig-Zag. There is no horizontal distance
+              // to travel, so the usual right-edge-to-left-edge curve had
+              // nowhere to go but straight back across the column, behind every
+              // card between the two rows.
+              //
+              // Same fix, and the same geometry, as the model viewer's
+              // `curveFor`: leave and arrive on the same side, arcing into the
+              // gutter beside the band. The two canvases draw one lineage and
+              // should not disagree about how a line is shaped.
+              if (s.x === t.x) {
+                const side = s.x + NW + PAD
+                const reach = Math.min(ZIG_GX * 0.8, Math.max(28, Math.abs(ty - sy) * 0.4))
+                const d = `M${side} ${sy}C${side + reach} ${sy} ${side + reach} ${ty} ${side} ${ty}`
+                return (
+                  <path
+                    key={i}
+                    className="sbx-flow-edge"
+                    data-tone={e.tone}
+                    data-dashed={e.dashed || undefined}
+                    d={d}
+                    fill="none"
+                    strokeDasharray={e.dashed ? '4 4' : undefined}
+                    markerEnd="url(#sbx-arrow)"
+                  />
+                )
+              }
+              const backward = view === 'stages' ? t.x < s.x && t.y <= s.y : t.x < s.x
               const sx = (backward ? s.x : s.x + NW) + PAD
               const tx = (backward ? t.x + NW : t.x) + PAD
               // Control points at a third rather than the midpoint: two bands
@@ -934,95 +837,6 @@ function collectSchemas(results: Map<string, StepResult>): Map<string, SandboxCo
       for (const [table, cols] of Object.entries(run.result?.table_schemas ?? {}))
         if (cols.length && !out.get(table)?.length) out.set(table, cols)
   return out
-}
-
-/**
- * The graph of what a real run ACTUALLY did — one card per SQL execution.
- *
- * Every other view draws what the notebooks *would* do: static reading, or a
- * sandbox execution of code against shimmed sinks. Both are predictions, both
- * abstain, and both can be wrong about a cell they could not read. This one is
- * assembled entirely out of `ObservedStatement`s — the physical plans Spark
- * itself produced while the job ran — so every card and every line on it is
- * something that demonstrably happened. Nothing predicted appears at all.
- *
- * WHY A CARD PER EXECUTION rather than per notebook. The merged `reads`/`writes`
- * on an `ObservedRun` already exist and the other views can show them; what only
- * this data has is ORDER and GRANULARITY. Spark opens one SQL execution per
- * action, so the executions are the run's real steps, in the real sequence, each
- * with its own call site (`save at cell:12`), its own duration, and its own
- * inputs and outputs. Laid out in the sequence layout, top-to-bottom is time:
- * you can see the run happen.
- *
- * A table gets its own card here rather than nesting under its lakehouse the way
- * `buildFlow` does. The nesting exists to keep a wide predicted graph readable;
- * this graph is only ever as wide as one run's real I/O, and a flat table column
- * keeps each execution's inputs adjacent to it.
- *
- * TABLE LEVEL ONLY, and that is not a gap to be filled later — see
- * `app/fabric/plans.py`. Spark truncates long column lists inside the plan text
- * before we ever see it, so columns here would be a guess, and a guess has no
- * place in the one view whose entire claim is that it is not guessing.
- */
-export function buildObservedFlow(observed: ObservedSummary): {
-  nodes: FlowNode[]
-  edges: FlowEdge[]
-} {
-  const nodes: FlowNode[] = []
-  const edges: FlowEdge[] = []
-  const tableNodes = new Map<string, string>()
-
-  const ensureTable = (ref: string): string => {
-    const existing = tableNodes.get(ref)
-    if (existing) return existing
-    const id = `ot:${ref}`
-    const parts = observed.tables[ref]
-    nodes.push({
-      id,
-      kind: 'table',
-      label: parts?.table || ref,
-      ws: parts?.workspace ?? '',
-      lakehouse: parts?.lakehouse ?? '',
-      isFile: parts?.kind === 'file',
-      rows: [],
-    })
-    tableNodes.set(ref, id)
-    return id
-  }
-
-  for (const row of observed.rows) {
-    if (!row.observed.available) continue
-    for (const st of row.observed.statements) {
-      const id = `ox:${row.name}:${st.execution_id}`
-      // The call site is the useful name — `save at notebook.py:12` says which
-      // line did this. Spark does not always provide one, so the execution id
-      // stands in rather than an empty card.
-      const label = st.description || `execution ${st.execution_id}`
-      const rows: FlowRow[] = [
-        ...st.reads.map((ref) => ({ key: `r:${ref}`, label: refLabelOf(ref, observed), tone: 'read' as const })),
-        ...st.writes.map((ref) => ({ key: `w:${ref}`, label: refLabelOf(ref, observed), tone: 'write' as const })),
-      ]
-      nodes.push({
-        id,
-        kind: 'notebook',
-        label,
-        sub: row.name,
-        // Duration is the one number a real run has and a prediction never can.
-        badge: st.duration_ms == null ? undefined : `${Math.round(st.duration_ms)} ms`,
-        rows,
-      })
-      for (const ref of st.reads)
-        edges.push({ from: ensureTable(ref), to: id, toRow: `r:${ref}`, tone: 'read', kind: 'table' })
-      for (const ref of st.writes)
-        edges.push({ from: id, fromRow: `w:${ref}`, to: ensureTable(ref), tone: 'write', kind: 'table' })
-    }
-  }
-  return { nodes, edges }
-}
-
-/** A ref's leaf name for a row label, falling back to the ref itself. */
-function refLabelOf(ref: string, observed: ObservedSummary): string {
-  return observed.tables[ref]?.table || ref
 }
 
 /**
@@ -1539,13 +1353,12 @@ function ToModelBar({
       // The exported model matches the picture on screen, which is the whole
       // contract of this button — so a semantic view exports semantic layers,
       // and the two arrangements map onto the two the builder already knows.
-      const semantic = SEMANTIC_VIEWS.includes(view)
       const { model } = sequenceToModel(
         steps,
         results,
         defaultModelName(steps),
-        view === 'sequence' ? 'sequence' : 'flow',
-        { ...options, layout: semantic ? (view === 'medallion' ? 'medallion' : 'stages') : 'view' },
+        'flow',
+        { ...options, layout: view === 'medallion' ? 'medallion' : 'stages' },
       )
       await localStore.save(model)
       await navigate({ to: '/model/$modelId', params: { modelId: model.id } })
@@ -1561,18 +1374,15 @@ function ToModelBar({
       <div className="sbx-views" role="tablist" aria-label="Canvas layout">
         {(
           [
-            ['flow', 'Flow', 'One column per dependency depth'],
-            ['sequence', 'Sequence', 'Tables in one column, steps in run order in the other'],
-            ['stages', 'Zig-Zag', 'Steps on the left, their tables on the right — the run zig-zags between the two'],
+            [
+              'stages',
+              'Zig-Zag',
+              'One band per owner — the workspace, or the lakehouse standing in for it — with what runs on the left and what it touches on the right',
+            ],
             [
               'medallion',
               'Medallion',
               'One column per stage — Landing, Bronze, Silver, Gold — with each notebook in the stage it produces',
-            ],
-            [
-              'observed',
-              'Confirmed',
-              'Only what a real Fabric run actually did — one card per SQL execution, in the order they ran, read back from Spark’s own plans',
             ],
           ] as const
         ).map(([key, label, hint]) => (
@@ -1618,18 +1428,8 @@ function ToModelBar({
       <button
         className="fx-btn"
         onClick={create}
-        // Confirmed is a different graph, and the port only knows how to
-        // export the predicted one. Exporting it from here would hand back a
-        // model that is not the picture on screen — the exact thing the
-        // layouts above go to some trouble to avoid.
-        disabled={!ran || busy || view === 'observed'}
-        title={
-          view === 'observed'
-            ? 'Create model exports the predicted lineage — switch to Flow, Sequence or Zig-Zag'
-            : ran
-              ? 'Create an editable model from this run'
-              : 'Run the sequence first'
-        }
+        disabled={!ran || busy}
+        title={ran ? 'Create an editable model from this run' : 'Run the sequence first'}
       >
         {busy ? 'Creating…' : 'Create model'}
       </button>
@@ -1785,11 +1585,7 @@ export function SequenceCanvas({
   previous?: Map<string, StepResult> | null
   running?: boolean
 }) {
-  const [view, setView] = useState<CanvasView>('flow')
-  // Rebuilt when the view changes, because the semantic views fold a step's
-  // read and write into one hop row and the positional ones do not — the same
-  // split `sequenceToModel` makes, so the card and the port always agree.
-  const semanticView = SEMANTIC_VIEWS.includes(view)
+  const [view, setView] = useState<CanvasView>('stages')
   const [diffOn, setDiffOn] = useState(false)
   const diff = useMemo(() => diffRuns(previous, results), [previous, results])
   const predicted = useMemo(
@@ -1797,23 +1593,19 @@ export function SequenceCanvas({
       buildFlow(
         steps,
         results,
-        semanticView,
+        // Both views fold a step's read and write into one hop row, the same
+        // split `sequenceToModel` makes, so card and port always agree.
+        true,
         diffOn && !diff.empty ? diff : undefined,
         // Medallion only: a pipeline has no stage, its notebooks do.
         view === 'medallion',
       ),
-    [steps, results, semanticView, diffOn, diff, view],
+    [steps, results, diffOn, diff, view],
   )
   const coverage = useMemo(() => coverageSummary(results), [results])
   // What these notebooks last really did in Fabric, when the run asked for it.
   const observed = useMemo(() => observedSummary(results), [results])
-  // Confirmed is a different GRAPH, not a different arrangement of this one —
-  // the executions a real run performed rather than the ones we predict it
-  // would. Everything else on this screen keeps reading the predicted graph.
-  const flow = useMemo(
-    () => (view === 'observed' ? buildObservedFlow(observed) : predicted),
-    [view, observed, predicted],
-  )
+  const flow = predicted
   //: how far a running sequence has got — the canvas was a spinner until the
   //  whole thing finished, on a pipeline that can be minutes.
   const done = [...results.values()].filter((r) => r.status === 'ok' || r.status === 'error').length
@@ -1929,34 +1721,7 @@ export function SequenceCanvas({
             </span>
           </div>
         ) : null}
-        {/* Confirmed can legitimately have nothing to draw, and an empty canvas
-            would read as "the run touched nothing" — the opposite of what it
-            means. The tab stays selectable either way: disabling it hid the
-            reason behind a tooltip nobody hovers, and the reason is the useful
-            part. `observed.notes` already carries it, verbatim from Fabric. */}
-        {view === 'observed' && flow.nodes.length === 0 ? (
-          <div className="fx-detail-empty">
-            <StepIcon kind="notebook" />
-            <p>
-              {!ran
-                ? // Said first, because every other message here describes a run
-                  // that happened, and before Run none of them can be true.
-                  'Nothing has run yet. This view draws what a real Fabric run did, so press Run sequence with “Compare with last real run” ticked — both are at the bottom of the Sandbox sequence panel.'
-                : observed.empty
-                  ? 'That run did not ask Fabric for history. Tick “Compare with last real run” at the bottom of the Sandbox sequence panel, then run again.'
-                  : observed.available === 0
-                    ? 'No readable run history for these notebooks.'
-                    : 'The runs were readable, but none of their SQL executions named a table this parser could resolve.'}
-            </p>
-            {observed.notes.map((note) => (
-              <p key={note} className="sbx-observed-notes">
-                {note}
-              </p>
-            ))}
-          </div>
-        ) : (
-          <FlowCanvas nodes={flow.nodes} edges={flow.edges} view={view} />
-        )}
+        <FlowCanvas nodes={flow.nodes} edges={flow.edges} view={view} />
       </div>
     )
 

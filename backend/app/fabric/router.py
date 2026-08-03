@@ -24,6 +24,13 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from ..config import get_settings
+from ..models import LineageGraph
+from .workspace_lineage import (
+    LakehouseTables,
+    NotebookInput,
+    PipelineInput,
+    build_workspace_lineage,
+)
 from .client import FabricClient, FabricError
 from .notebooks import NotebookDecodeError, fetch_notebook_source
 from ..sandbox._refs import workspace_of
@@ -398,4 +405,86 @@ def get_pipeline_definition(workspace_id: str, item_id: str, token: Annotated[st
         workspace_id=workspace_id,
         name_map=name_map,
         default_workspace=name_map.get(workspace_id.lower(), ""),
+    )
+
+
+@router.get("/workspaces/{workspace_id}/lineage", response_model=LineageGraph)
+def get_workspace_lineage(
+    workspace_id: str,
+    token: Annotated[str | None, Depends(user_token)] = None,
+    lake: Annotated[str | None, Depends(onelake_token)] = None,
+) -> LineageGraph:
+    """Item-level lineage for one workspace — the Fabric lineage view's graph.
+
+    The one endpoint here that is a CRAWL rather than a read: it walks every
+    notebook's source and every pipeline's definition, because that is where
+    item dependencies are actually written down (Fabric exposes no lineage API).
+    Cost is one call per item, so this is a deliberate user action in the UI,
+    never a poll.
+
+    Best-effort per item, like `/catalog`: a notebook whose definition is
+    refused contributes no edges rather than failing the workspace. Only the
+    item listing itself is fatal — an empty workspace and an unreadable one must
+    not look the same.
+    """
+    client = _client(token, lake)
+    try:
+        raw_items = client.list_items(workspace_id)
+    except FabricError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    try:
+        name_map = guid_name_map(client, [workspace_id])
+    except Exception:  # noqa: BLE001 — an unfriendly label is not a failure.
+        name_map = {}
+    workspace_name = name_map.get(workspace_id.lower(), workspace_id)
+
+    lakehouses: list[LakehouseTables] = []
+    notebooks: list[NotebookInput] = []
+    pipelines: list[PipelineInput] = []
+    others: list[tuple[str, str, str]] = []
+
+    for it in raw_items:
+        iid = it.get("id")
+        if not iid:
+            continue
+        itype = (it.get("type") or "Unknown")
+        iname = _name(it)
+        kind = itype.lower()
+        if kind == "lakehouse":
+            try:
+                tables = [t["name"] for t in client.list_lakehouse_tables(workspace_id, iid) if t.get("name")]
+            except FabricError:
+                tables = []
+            lakehouses.append(LakehouseTables(id=iid, name=iname, tables=tables))
+        elif kind == "notebook":
+            try:
+                src = fetch_notebook_source(client, workspace_id, iid, iname)
+            except (FabricError, NotebookDecodeError):
+                continue
+            notebooks.append(NotebookInput(id=iid, name=iname, source=src))
+        elif kind == "datapipeline":
+            try:
+                definition = client.get_item_definition(workspace_id, iid)
+                activities = expand_pipeline_activities(
+                    definition,
+                    lambda ws, item: client.get_item_definition(ws, item),
+                    workspace_id=workspace_id,
+                    name_map=name_map,
+                    default_workspace=workspace_name,
+                )
+            except (FabricError, ValueError):
+                continue
+            pipelines.append(PipelineInput(id=iid, name=iname, activities=activities))
+        else:
+            others.append((iid, iname, itype))
+
+    return build_workspace_lineage(
+        workspace_id=workspace_id,
+        workspace_name=workspace_name,
+        lakehouses=lakehouses,
+        notebooks=notebooks,
+        pipelines=pipelines,
+        other_items=others,
+        name_map=name_map,
     )

@@ -350,3 +350,65 @@ def test_schema_enabled_400_falls_back_to_onelake(client, monkeypatch):
     _use(monkeypatch, SchemaLakehouseClient())
     body = client.get("/fabric/workspaces/ws1/lakehouses/lh1/tables").json()
     assert body == [{"name": "dbo.orders", "type": "Managed", "format": "delta"}]
+
+
+# --- workspace lineage (the Fabric-style item view) --------------------------
+
+
+def _notebook_part(code: str) -> dict:
+    ipynb = json.dumps({"cells": [{"cell_type": "code", "source": [code]}]}).encode()
+    return {"parts": [{"path": "notebook-content.ipynb", "payload": base64.b64encode(ipynb).decode()}]}
+
+
+class LineageClient:
+    """A workspace with one lakehouse, one notebook and one unreadable item."""
+
+    def __init__(self, refuse=()):
+        self.refuse = set(refuse)
+
+    def list_workspaces(self):
+        return [{"id": "ws1", "displayName": "Analytics"}]
+
+    def list_items(self, ws):
+        if "list_items" in self.refuse:
+            raise FabricError("items refused")
+        return [
+            {"id": "lh1", "displayName": "Bronze", "type": "Lakehouse"},
+            {"id": "nb1", "displayName": "enrich", "type": "Notebook"},
+            {"id": "r1", "displayName": "Exec", "type": "Report"},
+        ]
+
+    def list_lakehouse_tables(self, ws, lh):
+        return [{"name": "raw_orders"}]
+
+    def get_notebook_definition(self, ws, item):
+        if "notebook" in self.refuse:
+            raise FabricError("definition refused")
+        return _notebook_part("spark.table('raw_orders').write.saveAsTable('out')")
+
+
+def test_workspace_lineage_crawls_items_into_a_graph(client, monkeypatch):
+    _use(monkeypatch, LineageClient())
+    body = client.get("/fabric/workspaces/ws1/lineage").json()
+    kinds = {n["id"]: n["kind"] for n in body["nodes"]}
+    assert kinds["lakehouse.lh1"] == "lakehouse"
+    assert kinds["notebook.nb1"] == "notebook"
+    # The report has no reader, so it is drawn but carries no edges.
+    assert kinds["item.r1"] == "item"
+    edges = {(e["source"], e["target"], e["kind"]) for e in body["edges"]}
+    assert any(t == "notebook.nb1" and k == "reads" for _s, t, k in edges)
+    assert any(s == "notebook.nb1" and k == "writes" for s, _t, k in edges)
+
+
+def test_a_notebook_that_cannot_be_read_loses_its_edges_not_the_workspace(client, monkeypatch):
+    """Best-effort per item: one refused definition must not blank the graph."""
+    _use(monkeypatch, LineageClient(refuse={"notebook"}))
+    body = client.get("/fabric/workspaces/ws1/lineage").json()
+    assert body["edges"] == []
+    assert any(n["id"] == "lakehouse.lh1" for n in body["nodes"])
+
+
+def test_a_refused_item_listing_is_still_an_error(client, monkeypatch):
+    """An empty workspace and an unreadable one must not look the same."""
+    _use(monkeypatch, LineageClient(refuse={"list_items"}))
+    assert client.get("/fabric/workspaces/ws1/lineage").status_code == 502

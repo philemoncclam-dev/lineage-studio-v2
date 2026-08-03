@@ -20,6 +20,16 @@ class NodeKind(str, Enum):
     LAKEHOUSE = "lakehouse"
     TABLE = "table"
     COLUMN = "column"
+    # Added for workspace-level lineage (fabric/workspace_lineage.py), which is
+    # item-shaped rather than table-shaped. Additive only — every existing
+    # producer and consumer of the older kinds is untouched, which is the
+    # promise `LineageGraph` makes.
+    PIPELINE = "pipeline"
+    #: An item this app has no reader for — a report, a semantic model, an
+    #: Eventhouse. Drawn, but never with edges: see the note in
+    #: `workspace_lineage` about why an isolated box must not imply "nothing
+    #: depends on this".
+    ITEM = "item"
 
 
 class Column(BaseModel):

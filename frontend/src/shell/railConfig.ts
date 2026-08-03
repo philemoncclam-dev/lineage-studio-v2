@@ -73,6 +73,9 @@ export const railConfig: Record<ModeKey, RailItem[]> = {
     // No Sandbox entry: the sandbox is a tab inside Explore now (its sequence
     // builder and lineage canvas both live there), not a page of its own.
     { key: 'explore', label: 'Explore', icon: 'explore', to: '/fabric/explore' },
+    // Item-level lineage for a whole workspace — the question Explore's tree
+    // cannot answer, because a tree shows containment and this shows flow.
+    { key: 'lineage', label: 'Lineage', icon: 'layers', to: '/fabric/lineage' },
   ],
   products: [
     { key: 'catalog', label: 'Products', icon: 'products', to: '/products' },

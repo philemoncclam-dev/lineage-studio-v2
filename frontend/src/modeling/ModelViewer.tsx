@@ -114,6 +114,16 @@ interface Props {
    * than what makes the UI correct.
    */
   readOnly?: boolean
+  /**
+   * Cards to open already folded.
+   *
+   * For the Fabric workspace view, which is item-level by default: a lakehouse
+   * card unfolded to its 200 tables is not the picture that view is for, and
+   * "collapse all objects" as a first action is a chore. Read once, as the
+   * initial state — later folding is the user's, and re-rendering with a
+   * different set does not refold what they opened.
+   */
+  initialCollapsed?: ReadonlySet<EntityId>
 }
 
 export default function ModelViewer({
@@ -124,6 +134,7 @@ export default function ModelViewer({
   canUndo,
   canRedo,
   readOnly = false,
+  initialCollapsed,
 }: Props) {
   // Shadows the prop deliberately: every existing call site below says
   // `onChange(...)`, and this is the single point they all pass through.
@@ -137,7 +148,9 @@ export default function ModelViewer({
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [scroll, setScroll] = useState({ x: 0, y: 0 })
-  const [collapsed, setCollapsed] = useState<ReadonlySet<EntityId>>(new Set())
+  const [collapsed, setCollapsed] = useState<ReadonlySet<EntityId>>(
+    () => initialCollapsed ?? new Set(),
+  )
   const [selection, setSelection] = useState<ReadonlySet<EntityId>>(new Set())
   /** Picked transitions, by transition id — kept separate from entity selection. */
   const [selectedEdges, setSelectedEdges] = useState<ReadonlySet<EntityId>>(new Set())

@@ -1825,3 +1825,82 @@
 .sbx-flow-row[data-change='lost-lineage'] {
   background: rgb(190 60 60 / 0.1);
 }
+
+/* ===== Workspace lineage (/fabric/lineage) =====
+   A full-height page: a control bar, an optional note, and the Modeling canvas
+   filling everything left. The canvas measures itself against its own box, so
+   the column that holds it must be a real flex child with a min-height of 0 —
+   without that it sizes to its content and the canvas gets no height at all. */
+.fx-lineage-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.fx-lineage-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  height: var(--fx-head-h, 40px);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-sm, 13px);
+}
+.fx-lineage-bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-tertiary);
+}
+.fx-lineage-bar select,
+.fx-lineage-bar button {
+  font: inherit;
+  color: var(--color-text-primary);
+  background: var(--color-surface-raised, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.fx-lineage-bar button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* Pushed right so the two buttons bracket the bar rather than crowding the
+   select — this is the hint, not a control. */
+.fx-lineage-hint {
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-micro, 11px);
+}
+.fx-lineage-note,
+.fx-lineage-error {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: var(--text-micro, 11px);
+  border-bottom: 1px solid var(--color-border);
+}
+.fx-lineage-note {
+  color: var(--color-text-tertiary);
+}
+.fx-lineage-error {
+  color: var(--color-danger, #d92d20);
+}
+.fx-lineage-canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.fx-lineage-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-sm, 13px);
+}

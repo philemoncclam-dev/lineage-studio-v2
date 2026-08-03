@@ -30,6 +30,7 @@ import {
   type SandboxTableRef,
 } from '../api'
 import { activityLabel, stepReads, stepTables, stepWrites, type Step, type StepResult } from './sequence'
+import { longestPathColumns } from './depth'
 
 /** A node on the way to becoming an object. */
 interface Node {
@@ -144,25 +145,7 @@ function activityTag(runName: string, activities?: FabricPipelineActivity[]): st
  * picture the sequence was exported from.
  */
 function columnsOf(nodes: Node[], links: Link[]): Map<string, number> {
-  const parents = new Map<string, string[]>()
-  nodes.forEach((n) => parents.set(n.id, []))
-  links.forEach((l) => parents.get(l.to)?.push(l.from))
-
-  const col = new Map<string, number>()
-  const visiting = new Set<string>()
-  const walk = (id: string): number => {
-    const seen = col.get(id)
-    if (seen !== undefined) return seen
-    if (visiting.has(id)) return 0 // defensive: a cycle must not hang the export
-    visiting.add(id)
-    const up = parents.get(id) ?? []
-    const v = up.length ? 1 + Math.max(...up.map(walk)) : 0
-    visiting.delete(id)
-    col.set(id, v)
-    return v
-  }
-  nodes.forEach((n) => walk(n.id))
-  return col
+  return longestPathColumns(nodes.map((n) => n.id), links)
 }
 
 /**

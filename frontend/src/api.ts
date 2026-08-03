@@ -1,6 +1,15 @@
 // Contract mirrors backend/app/models.py — keep in sync.
 
-export type NodeKind = 'workspace' | 'notebook' | 'lakehouse' | 'table' | 'column'
+export type NodeKind =
+  | 'workspace'
+  | 'notebook'
+  | 'lakehouse'
+  | 'table'
+  | 'column'
+  // Workspace-level lineage only (see fetchWorkspaceLineage). `item` is an item
+  // this app has no reader for — drawn, but never with edges.
+  | 'pipeline'
+  | 'item'
 
 export interface Column {
   name: string
@@ -538,6 +547,19 @@ export interface FabricCatalogEntry {
   item_type?: string | null
   lakehouse_id?: string | null
   lakehouse_name?: string | null
+}
+
+/**
+ * Item-level lineage for one workspace — the graph the Fabric-style view draws.
+ *
+ * A CRAWL, not a read: the backend walks every notebook's source and every
+ * pipeline's definition, because that is where item dependencies are written
+ * down. Costs one call per item, so this is a user action, never a poll.
+ */
+export async function fetchWorkspaceLineage(workspaceId: string): Promise<LineageGraph> {
+  const res = await fabricFetch(`${BASE}/fabric/workspaces/${workspaceId}/lineage`)
+  if (!res.ok) return detail(res, 'workspace lineage')
+  return res.json()
 }
 
 export async function fetchFabricCatalog(): Promise<FabricCatalogEntry[]> {

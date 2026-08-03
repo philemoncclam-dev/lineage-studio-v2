@@ -145,3 +145,62 @@ def test_the_endpoint_serves_the_inventory():
     body = TestClient(app).get("/integrations").json()
     assert isinstance(body, list) and body
     assert {"key", "name", "host", "configured", "purpose", "degrades", "needs"} <= set(body[0])
+
+
+# --- identity ----------------------------------------------------------------
+
+def test_identity_reports_the_principal_and_its_name():
+    """"The app can't see my workspace" is almost always "nobody granted this
+    principal access" — which is impossible to act on if its name is nowhere."""
+    from app.integrations import describe_identity
+
+    who = describe_identity(
+        settings(purview_tenant_id="tid", purview_client_id="cid"),
+        resolve_name=lambda app_id: "Lineage Studio SP",
+    )
+    assert who.mode == "service-principal"
+    assert who.display_name == "Lineage Studio SP"
+    assert who.client_id == "cid"
+
+
+def test_identity_falls_back_to_the_client_id_when_the_directory_refuses():
+    from app.integrations import describe_identity
+
+    who = describe_identity(
+        settings(purview_tenant_id="tid", purview_client_id="cid"),
+        resolve_name=lambda _app_id: "",
+    )
+    assert who.display_name == ""
+    assert "client id is exact" in who.note
+
+
+def test_a_graph_failure_is_not_an_error():
+    from app.integrations import describe_identity
+
+    def boom(_app_id):
+        raise RuntimeError("directory refused")
+
+    who = describe_identity(
+        settings(purview_tenant_id="tid", purview_client_id="cid"), resolve_name=boom
+    )
+    assert who.mode == "service-principal"
+    assert who.client_id == "cid"
+
+
+def test_without_a_principal_it_says_calls_are_made_as_the_user():
+    from app.integrations import describe_identity
+
+    who = describe_identity(settings())
+    assert who.mode == "user"
+    assert "signed-in user" in who.note
+    assert who.client_id == ""
+
+
+def test_the_secret_is_never_part_of_an_identity():
+    from app.integrations import describe_identity
+
+    who = describe_identity(
+        settings(purview_tenant_id="t", purview_client_id="c", purview_client_secret=SECRET),
+        resolve_name=lambda _a: "Name",
+    )
+    assert SECRET not in repr(vars(who))

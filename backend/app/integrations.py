@@ -201,3 +201,65 @@ def describe_integrations(
         ),
     ]
     return out
+
+
+@dataclass
+class Identity:
+    """Who this backend calls Microsoft AS.
+
+    The inventory says WHAT is called; this says who as. Both halves are needed
+    to debug the usual failure — "the app can't see my workspace" is almost
+    always "the app is a service principal nobody granted access to", and
+    without a name on screen there is no way to know which principal to grant.
+
+    Deliberately a SEPARATE endpoint from the inventory. Resolving a display
+    name means a Graph call, and the inventory's whole promise is that it makes
+    none — so this is fetched alongside and arrives when it arrives, rather than
+    holding the page behind a directory lookup that may be refused.
+    """
+
+    #: "service-principal", "user", or "none".
+    mode: str
+    #: Azure application (client) id. An identifier, not a credential — it is
+    #: visible in the portal and shipped inside every public client.
+    client_id: str = ""
+    tenant_id: str = ""
+    #: From Graph, when the directory read is granted. Empty is normal.
+    display_name: str = ""
+    #: Why the name is missing, when it is.
+    note: str = ""
+
+
+def describe_identity(settings: Settings, resolve_name=None) -> Identity:
+    """The principal this backend authenticates as.
+
+    `resolve_name` is injected so the Graph call is the caller's choice and this
+    stays testable: pass nothing and it reports the ids alone.
+    """
+    if not (settings.purview_tenant_id and settings.purview_client_id):
+        return Identity(
+            mode="user",
+            note=(
+                "No service principal is configured, so every Fabric call is made as "
+                "the signed-in user with their own permissions."
+            ),
+        )
+
+    identity = Identity(
+        mode="service-principal",
+        client_id=settings.purview_client_id,
+        tenant_id=settings.purview_tenant_id,
+    )
+    if resolve_name is None:
+        return identity
+    try:
+        identity.display_name = resolve_name(settings.purview_client_id) or ""
+    except Exception:  # noqa: BLE001 — a name is a nicety, never a failure
+        identity.display_name = ""
+    if not identity.display_name:
+        identity.note = (
+            "The directory would not name this principal — reading it needs a Graph "
+            "permission separate from anything else here. The client id is exact "
+            "regardless, and is what you grant workspace access to."
+        )
+    return identity

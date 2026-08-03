@@ -1987,10 +1987,21 @@ export function SequenceCanvas({
             </p>
           )}
 
-          {/* Not an error — the run is valid, its column lineage is just
-              incomplete in a way nothing else on screen would show. The
-              failures are listed verbatim because the distinction that matters
-              (refused vs genuinely absent) lives in the message. */}
+          {/* ONE group, not three peers. These were three separate bordered
+              blocks stacked between the summary and the detail, each with its
+              own heading and tint — so the page had no hierarchy and the eye
+              had nowhere to land. They are all the same KIND of statement
+              ("this run is valid, and here is what it could not see"), so they
+              are one disclosure with a count, closed unless something failed. */}
+          {(schemaUnresolved.length > 0 || bareWrites.length > 0) && (
+            <details className="sbx-diagnostics">
+              <summary>
+                Why some lineage is missing
+                <span className="sbx-diagnostics-count">
+                  {schemaUnresolved.length + bareWrites.length}
+                </span>
+              </summary>
+
           {schemaUnresolved.length > 0 && (
             <details className="sbx-schema-gap">
               <summary>
@@ -2044,6 +2055,8 @@ export function SequenceCanvas({
                   ))}
                 </ul>
               )}
+            </details>
+          )}
             </details>
           )}
 
@@ -2177,17 +2190,35 @@ export function SequenceCanvas({
               const r = results.get(step.key)
               if (!r) return null
               return (
-                <article className="sbx-step-report" key={step.key} data-status={r.status}>
-                  <div className="sbx-step-report-head">
+                // Each step is a DISCLOSURE, open only when it failed. The
+                // report used to print every step's full I/O, cells and
+                // downstream inline, so a five-notebook run was a page of
+                // stacked blocks with no way to see the shape of it. Closed,
+                // this is a five-line list you can read in one look; open, it
+                // is everything it always was.
+                <details
+                  className="sbx-step-report"
+                  key={step.key}
+                  data-status={r.status}
+                  open={r.status === 'error' || steps.length === 1}
+                >
+                  <summary className="sbx-step-report-head">
                     <span className="sbx-step-num">{i + 1}</span>
                     <StepIcon kind={step.kind} />
                     <span className="sbx-step-report-name" title={step.name}>
                       {step.name}
                     </span>
+                    {/* On the closed row this is the whole summary of the step,
+                        so it carries the counts rather than just the verdict. */}
+                    <span className="sbx-step-io">
+                      {(r.runs ?? []).reduce((n, run) => n + (run.result?.reads.length ?? 0), 0)} in
+                      {' · '}
+                      {(r.runs ?? []).reduce((n, run) => n + (run.result?.writes.length ?? 0), 0)} out
+                    </span>
                     <span className="sbx-status-pill" data-status={r.status}>
                       {r.status}
                     </span>
-                  </div>
+                  </summary>
                   {r.error && (
                     <div className="fx-note" data-error="true">
                       {r.error}
@@ -2230,7 +2261,7 @@ export function SequenceCanvas({
                       )}
                     </div>
                   ))}
-                </article>
+                </details>
               )
             })}
           </div>

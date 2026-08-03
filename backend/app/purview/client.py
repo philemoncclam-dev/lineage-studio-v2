@@ -95,6 +95,34 @@ class PurviewClient:
             if not continuation:
                 return
 
+    def service_principal_name(self, app_id: str = "") -> str:
+        """This principal's display name, or `""`.
+
+        Same Graph call and the same rule as `principal_object_id`: the
+        directory read is a separate grant, so an empty string is a normal
+        answer and never an error. Used by the Integrations page to say WHICH
+        principal to grant workspace access to — the whole reason "the app
+        cannot see my workspace" is hard to debug is that its name is nowhere
+        on screen.
+        """
+        try:
+            token = self._credential.get_token(
+                "https://graph.microsoft.com/.default"
+            ).token
+            resp = self._session.get(
+                "https://graph.microsoft.com/v1.0/servicePrincipals",
+                params={
+                    "$filter": f"appId eq '{app_id or self.settings.purview_client_id}'",
+                    "$select": "displayName",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=_TIMEOUT,
+            )
+            values = resp.json().get("value", []) if resp.ok else []
+            return values[0].get("displayName", "") if values else ""
+        except Exception:  # noqa: BLE001 — a name is a nicety, never a failure
+            return ""
+
     def principal_object_id(self) -> str | None:
         """Our own service principal's Entra object id, or None.
 

@@ -30,7 +30,7 @@ from .fabric.router import router as fabric_router
 from .sandbox.router import router as sandbox_router
 from .share.router import router as share_router
 from .sample import SAMPLE
-from .integrations import describe_integrations
+from .integrations import describe_identity, describe_integrations
 from .sandbox.runner import spark_available
 from .startup_checks import assert_safe_to_start
 
@@ -131,3 +131,29 @@ def list_integrations() -> list[IntegrationOut]:
     return [
         IntegrationOut(**vars(i)) for i in describe_integrations(get_settings())
     ]
+
+
+class IdentityOut(BaseModel):
+    mode: str
+    client_id: str = ""
+    tenant_id: str = ""
+    display_name: str = ""
+    note: str = ""
+
+
+@app.get("/integrations/identity", response_model=IdentityOut)
+def get_identity() -> IdentityOut:
+    """Who this backend calls Microsoft as.
+
+    Separate from `/integrations` because it may make a Graph call, and that
+    endpoint's promise is that it makes none. Best-effort throughout: an
+    unresolvable name is normal and returns the ids with a note.
+    """
+    settings = get_settings()
+
+    def resolve(app_id: str) -> str:
+        from .purview.client import PurviewClient
+
+        return PurviewClient(settings).service_principal_name(app_id)
+
+    return IdentityOut(**vars(describe_identity(settings, resolve)))

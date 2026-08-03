@@ -593,6 +593,26 @@ export async function fetchIntegrations(): Promise<Integration[]> {
   return res.json()
 }
 
+/** Who this backend calls Microsoft as. See /integrations/identity. */
+export interface Identity {
+  mode: 'service-principal' | 'user' | 'none'
+  client_id: string
+  tenant_id: string
+  display_name: string
+  note: string
+}
+
+/**
+ * Fetched SEPARATELY from the inventory, and allowed to arrive late: resolving
+ * the principal's name is a Graph call, and the inventory's whole promise is
+ * that it makes none.
+ */
+export async function fetchIdentity(): Promise<Identity> {
+  const res = await fetch(`${BASE}/integrations/identity`)
+  if (!res.ok) return detail(res, 'identity')
+  return res.json()
+}
+
 export async function fetchFabricCatalog(): Promise<FabricCatalogEntry[]> {
   const res = await fabricFetch(`${BASE}/fabric/catalog`)
   if (!res.ok) return detail(res, 'fabric catalog')

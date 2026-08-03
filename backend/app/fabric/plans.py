@@ -75,41 +75,101 @@ _BACKTICKED = re.compile(r"`(?P<parts>[^`]+(?:`\.`[^`]+)*)`")
 #: here: they read from memory, not from storage, and have no source to name.
 #: `LogicalRelation` and `HiveTableRelation` are the logical-plan counterparts of
 #: `Scan`, and appear under commands for the reason above.
+#: `LogicalRelation`/`HiveTableRelation` are the v1 shapes; `DataSourceV2Relation`
+#: and its scan/streaming variants are the v2 ones, which is what a lakehouse
+#: table goes through under a Spark 3 catalog.
 _READ_NODE = re.compile(
-    r"^(?:(?:File)?Scan|BatchScan|LogicalRelation|HiveTableRelation|Relation)\b", re.I
+    r"""^(?:
+          (?:File)?Scan
+        | BatchScan
+        | LogicalRelation
+        | HiveTableRelation
+        | Relation
+        | (?:Streaming)?DataSourceV2
+    )""",
+    re.I | re.X,
 )
 
-#: Nodes that write. Covers the file-relation commands, the Delta commands every
-#: medallion notebook is built on, and the DataSource-v2 write operators.
+#: Nodes that write.
+#:
+#: The names are the ones OpenLineage's Spark integration dispatches on
+#: (`integration/spark/**/lifecycle/plan`, and its `supported-commands.md`),
+#: which is the same classification problem solved against live `LogicalPlan`
+#: classes rather than against rendered plan text. Taking their enumeration
+#: closed real gaps: the whole v2 family (`CreateTableAsSelect`,
+#: `MergeIntoTable`, `UpdateTable`, `DeleteFromTable`) was missing, and a v2
+#: CTAS is how a notebook writes a lakehouse table under a Spark 3 catalog.
+#:
+#: Every alternative ends in `\w*` because we match the PHYSICAL plan and Spark
+#: renders the executed operator with a suffix — a logical `AppendData` arrives
+#: as `AppendDataExec` or `AppendDataExecV1`, and Databricks' Delta merge as
+#: `MergeIntoCommandEdge`. Anchoring on `\b` matched none of them.
 _WRITE_NODE = re.compile(
     r"""^(?:Execute\s+)?(?:
-          InsertIntoHadoopFsRelationCommand
-        | InsertIntoDataSourceCommand
-        | InsertIntoHiveTable
-        | CreateDataSourceTableAsSelectCommand
-        | CreateHiveTableAsSelectCommand
-        | SaveIntoDataSourceCommand
-        | WriteIntoDelta
-        | MergeIntoCommand
-        | UpdateCommand
-        | DeleteCommand
+        # Every InsertInto* is a write: the Hadoop/DataSource/Hive relation
+        # commands, the two directory forms, and the unresolved statement.
+          InsertInto
+        | CreateDataSourceTableAsSelect
+        | (?:Optimized)?CreateHiveTableAsSelect
+        | (?:Atomic)?CreateTableAsSelect
+        | (?:Atomic)?ReplaceTable
+        | SaveIntoDataSource
+        | Write(?:IntoDelta|Delta)
+        | MergeInto
+        | Update(?:Command|Table)
+        | Delete(?:Command|FromTable)
         | AppendData
         | OverwriteByExpression
         | OverwritePartitionsDynamic
         | ReplaceData
-        | AtomicCreateTableAsSelect
-        | AtomicReplaceTableAsSelect
-    )\b""",
+        | LoadData
+    )\w*""",
     re.I | re.X,
 )
 
-#: Maintenance commands that touch a table without moving data between tables.
-#: They would otherwise register as writes and put a spurious edge in the graph.
+#: Commands that touch a table without moving data into it. They would otherwise
+#: register as writes and put a spurious edge in the graph.
+#:
+#: `CreateTable` here is the empty-table form only — `CreateTableAsSelect` is a
+#: write, and is matched first (see `_classify`), which is what stops the most
+#: common medallion shape from being swallowed as maintenance.
 _NOT_LINEAGE = re.compile(
-    r"^(?:Execute\s+)?(?:Optimize|Vacuum|AnalyzeTable|RefreshTable|CreateTable|"
-    r"DescribeTable|ShowTable|SetCommand|AddJar)\w*\b",
-    re.I,
+    r"""^(?:Execute\s+)?(?:
+          Optimize
+        | Vacuum
+        | AnalyzeTable
+        | RefreshTable
+        | CreateTable
+        | CreateV2Table
+        | AlterTable
+        | (?:Noop)?DropTable
+        | TruncateTable
+        | RenameTable
+        | DescribeTable
+        | ShowTable
+        | SetCommand
+        | AddJar
+    )\w*""",
+    re.I | re.X,
 )
+
+
+def _classify(name: str) -> str:
+    """A plan node name → `write`, `read`, `skip`, or `''` for unknown.
+
+    Writes are tested BEFORE the maintenance list, which is the whole reason
+    this is one function rather than the same three `if`s written twice. The
+    two lists genuinely overlap — `CreateTableAsSelect` starts with
+    `CreateTable` — and testing maintenance first (which both call sites used
+    to do, independently) silently dropped every v2 CTAS in the run.
+    """
+    if _WRITE_NODE.match(name):
+        return "write"
+    if _READ_NODE.match(name):
+        return "read"
+    if _NOT_LINEAGE.match(name):
+        return "skip"
+    return ""
 
 #: Spark's own default catalog, which is not a lakehouse and must not become one.
 _DEFAULT_CATALOGS = {"spark_catalog", "hive_metastore", "default", "delta"}
@@ -242,15 +302,15 @@ def _scan_lines(plan: str, ctx: dict) -> PlanScan:
     """
     scan = PlanScan()
     for line in plan.splitlines():
-        stripped = _TREE_PREFIX.sub("", line)
-        if _NOT_LINEAGE.match(stripped):
+        kind = _classify(_TREE_PREFIX.sub("", line))
+        if kind in ("", "skip"):
             continue
         refs = _refs_in(line, ctx)
-        if _WRITE_NODE.match(stripped):
+        if kind == "write":
             # A one-line write names its target first; anything else on the line
             # is an option, not a second table.
             scan.writes |= set(sorted(refs)[:1]) if refs else set()
-        elif _READ_NODE.match(stripped):
+        else:
             scan.reads |= refs
     return scan
 
@@ -277,9 +337,10 @@ def scan_plan(plan: str, workspace: str = "", lakehouse: str = "", name_map: dic
 
     scan = PlanScan()
     for name, body in blocks:
-        if _NOT_LINEAGE.match(name) or _is_empty(body):
+        kind = _classify(name)
+        if kind in ("", "skip") or _is_empty(body):
             continue
-        if _WRITE_NODE.match(name):
+        if kind == "write":
             paths = _refs_in(body, ctx)
             if paths:
                 # The target is the first path in `Arguments:`; the rest of the
@@ -294,7 +355,7 @@ def scan_plan(plan: str, workspace: str = "", lakehouse: str = "", name_map: dic
                 scan.writes.add(identifiers[0])
             else:
                 scan.unrecognised.add(name)
-        elif _READ_NODE.match(name):
+        else:
             refs = _refs_in(body, ctx)
             if not refs:
                 # A catalog read names its table in the header instead.

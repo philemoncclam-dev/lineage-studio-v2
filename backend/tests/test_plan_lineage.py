@@ -260,6 +260,68 @@ Arguments: com.example.SomeSink, Map(mystery -> yes), Append
     assert "Execute SaveIntoDataSourceCommand" in scan(plan).unrecognised
 
 
+# --- the DataSource v2 family -----------------------------------------------
+#
+# The node names come from OpenLineage's Spark integration, which classifies the
+# same nodes off live `LogicalPlan` classes. Everything below used to yield
+# nothing at all.
+
+
+def _v2(node: str, target: str = "g1") -> str:
+    """A v2 write command naming its target as a backticked identifier."""
+    return f"""== Physical Plan ==
+Execute {node} (1)
+
+(1) Execute {node}
+Arguments: `spark_catalog`.`{LH}`.`{target}`, [id, region]
+"""
+
+
+def test_a_v2_ctas_is_a_write_not_a_maintenance_command():
+    """The bug this whole exercise found. `_NOT_LINEAGE` matched `CreateTable`
+    as a prefix and was tested FIRST, so `CreateTableAsSelect` — how a notebook
+    writes a lakehouse table through a Spark 3 catalog — was skipped entirely."""
+    assert scan(_v2("CreateTableAsSelect")).writes == {GOLD}
+
+
+def test_every_v2_write_command_resolves_its_target():
+    for node in (
+        "AppendDataExec",
+        "AppendDataExecV1",
+        "OverwriteByExpressionExec",
+        "OverwritePartitionsDynamicExec",
+        "AtomicCreateTableAsSelectExec",
+        "ReplaceTableAsSelectExec",
+        "MergeIntoTable",
+        "MergeIntoCommandEdge",
+        "UpdateTable",
+        "DeleteFromTable",
+        "InsertIntoDataSourceDirCommand",
+        "OptimizedCreateHiveTableAsSelectCommand",
+    ):
+        assert scan(_v2(node)).writes == {GOLD}, node
+
+
+def test_a_v2_relation_is_a_read():
+    """`DataSourceV2Relation` does not start with `Relation`, so the old
+    alternation missed the whole v2 read side."""
+    plan = f"""== Physical Plan ==
+DataSourceV2ScanRelation (1)
+
+(1) DataSourceV2ScanRelation
+Arguments: [id#4L], `spark_catalog`.`{LH}`.`orders`
+"""
+    assert scan(plan).reads == {ORDERS}
+
+
+def test_a_table_rename_is_still_not_lineage():
+    """The other half of taking their list: `AlterTable`/`DropTable`/
+    `TruncateTable` change a table without moving data into it."""
+    for node in ("AlterTableRenameCommand", "DropTableCommand", "TruncateTableCommand"):
+        result = scan(_v2(node))
+        assert (result.reads, result.writes) == (set(), set()), node
+
+
 # --- non-formatted plans ----------------------------------------------------
 
 def test_a_simple_mode_plan_still_yields_tables():

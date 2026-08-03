@@ -429,18 +429,36 @@ export function layoutStages(nodes: FlowNode[], edges: FlowEdge[]): Layout {
   const rank = (n: FlowNode) => (n.kind === 'table' && stageRank(n.lakehouse || '') + 1) || Infinity
   const byStage = [...nodes].sort((a, b) => rank(a) - rank(b))
 
+  // ONE owner is the common case, not the exotic one: a notebook usually lives
+  // in the same workspace as the lakehouse it writes. Owner bands then give a
+  // single column holding every step and every table in one tall stack — no
+  // bands to cross, and nothing left of the zig-zag this view is named for.
+  //
+  // So a lone owner splits by ROLE instead: what runs on the left, what it
+  // touches on the right. That is the same shape the view has always drawn,
+  // reached by the only distinction available once ownership says nothing.
+  const columns: { label: string; nodes: FlowNode[] }[] =
+    spaces.length === 1 && byStage.some((n) => n.kind !== 'table') && byStage.some((n) => n.kind === 'table')
+      ? [
+          { label: `${owner.label(spaces[0])} · runs`, nodes: byStage.filter((n) => n.kind !== 'table') },
+          { label: `${owner.label(spaces[0])} · tables`, nodes: byStage.filter((n) => n.kind === 'table') },
+        ]
+      : spaces.map((ws) => ({
+          label: owner.label(ws),
+          nodes: byStage.filter((n) => owner.key(n) === ws),
+        }))
+
   const pos: Layout['pos'] = new Map()
   let height = 1
-  spaces.forEach((ws, c) => {
-    const here = byStage.filter((n) => owner.key(n) === ws)
-    height = Math.max(height, stackColumn(here, c * (NW + ZIG_GX), pos))
+  columns.forEach((column, c) => {
+    height = Math.max(height, stackColumn(column.nodes, c * (NW + ZIG_GX), pos))
   })
 
-  const lastCol = spaces.length - 1
+  const lastCol = columns.length - 1
   return {
     pos,
-    bands: spaces.map((ws, c) => band(c, owner.label(ws), c, lastCol, ZIG_GX)),
-    width: spaces.length * (NW + ZIG_GX) - ZIG_GX,
+    bands: columns.map((column, c) => band(c, column.label, c, lastCol, ZIG_GX)),
+    width: columns.length * (NW + ZIG_GX) - ZIG_GX,
     height,
   }
 }
@@ -497,15 +515,23 @@ export function stageOf(
  */
 export function layoutMedallion(nodes: FlowNode[], edges: FlowEdge[]): Layout {
   const stage = stageOf(nodes, edges)
+  // Steps above tables inside a band, never interleaved. Node order puts them
+  // in whatever sequence the run happened to touch things, which drew a
+  // notebook, then a lakehouse, then another notebook down one column — three
+  // kinds of thing alternating for no reason a reader can see. Producers first,
+  // then what they produced, is the sentence the band is meant to read as.
+  const ordered = [...nodes].sort(
+    (a, b) => Number(a.kind === 'table') - Number(b.kind === 'table'),
+  )
   // Only the stages actually present, in medallion order, with the unstaged
   // band last. An empty Landing column between Bronze and the left edge is a
   // gap that says something false about the run.
-  const present = [...new Set(nodes.map(stage))].sort((a, b) => (a < 0 ? 1 : b < 0 ? -1 : a - b))
+  const present = [...new Set(ordered.map(stage))].sort((a, b) => (a < 0 ? 1 : b < 0 ? -1 : a - b))
 
   const pos: Layout['pos'] = new Map()
   let height = 1
   present.forEach((rank, c) => {
-    const here = nodes.filter((n) => stage(n) === rank)
+    const here = ordered.filter((n) => stage(n) === rank)
     height = Math.max(height, stackColumn(here, c * (NW + GX), pos))
   })
 

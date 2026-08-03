@@ -116,9 +116,11 @@ describe('layoutStages', () => {
     const nodes: FlowNode[] = [table('bronze.a', 'lh_bronze', ''), step('nb', '')]
     const edges = [{ from: 's:nb', to: 't:bronze.a', tone: 'write' as const, kind: 'table' as const }]
     // The step falls back to the lakehouse it writes into, so it shares the
-    // band rather than sitting in an unnamed one of its own.
+    // owner rather than sitting in an unnamed one of its own — and that lone
+    // owner then splits by role, which is what stops it being one tall stack.
     expect(layoutStages(nodes, edges).bands.map((b) => b.label)).toEqual([
-      'lh_bronze · workspace unknown',
+      'lh_bronze · workspace unknown · runs',
+      'lh_bronze · workspace unknown · tables',
     ])
   })
 
@@ -174,5 +176,64 @@ describe('layoutMedallion', () => {
     // something false: that there is a landing layer here and it is empty.
     const nodes: FlowNode[] = [table('bronze.a', 'lh_bronze'), table('gold.a', 'lh_gold')]
     expect(layoutMedallion(nodes, []).bands.map((b) => b.label)).toEqual(['Bronze', 'Gold'])
+  })
+})
+
+describe('one workspace owning everything', () => {
+  // The COMMON case, not the exotic one: a notebook usually lives in the same
+  // workspace as the lakehouse it writes into. Owner bands then say nothing.
+  const sameWorkspace = () => {
+    const nodes: FlowNode[] = [
+      step('to_bronze', 'plat'),
+      table('bronze.orders', 'lh_bronze', 'plat'),
+      table('landing.raw', 'lh_landing', 'plat'),
+    ]
+    const edges = [
+      { from: 't:landing.raw', to: 's:to_bronze', tone: 'read' as const, kind: 'table' as const },
+      { from: 's:to_bronze', to: 't:bronze.orders', tone: 'write' as const, kind: 'table' as const },
+    ]
+    return { nodes, edges }
+  }
+
+  it('splits by role rather than drawing one tall column', () => {
+    const { nodes, edges } = sameWorkspace()
+    const { bands, pos } = layoutStages(nodes, edges)
+    // One owner used to mean one band — every step and every table in a single
+    // stack, with no band to cross and nothing left of the zig-zag.
+    expect(bands.map((b) => b.label)).toEqual(['plat · runs', 'plat · tables'])
+    expect(pos.get('s:to_bronze')!.x).toBeLessThan(pos.get('t:bronze.orders')!.x)
+  })
+
+  it('keeps owner bands as soon as there are two owners', () => {
+    const { nodes, edges } = medallion()
+    expect(layoutStages(nodes, edges).bands.map((b) => b.label)).toEqual(['engineering', 'platform'])
+  })
+
+  it('does not split a single owner that has no tables to separate', () => {
+    const nodes: FlowNode[] = [step('a', 'plat'), step('b', 'plat')]
+    expect(layoutStages(nodes, []).bands.map((b) => b.label)).toEqual(['plat'])
+  })
+})
+
+describe('Medallion card order inside a band', () => {
+  it('puts the producers above what they produced, never interleaved', () => {
+    // Node order follows what the run touched first, which drew notebook,
+    // lakehouse, notebook down one column — three kinds alternating for no
+    // reason a reader can see.
+    const nodes: FlowNode[] = [
+      step('nb_one', 'plat'),
+      table('bronze.a', 'lh_bronze'),
+      step('nb_two', 'plat'),
+    ]
+    const edges = [
+      { from: 's:nb_one', to: 't:bronze.a', tone: 'write' as const, kind: 'table' as const },
+      { from: 's:nb_two', to: 't:bronze.a', tone: 'write' as const, kind: 'table' as const },
+    ]
+    const { pos } = layoutMedallion(nodes, edges)
+    const order = nodes
+      .map((n) => ({ id: n.id, y: pos.get(n.id)!.y }))
+      .sort((a, b) => a.y - b.y)
+      .map((n) => n.id)
+    expect(order).toEqual(['s:nb_one', 's:nb_two', 't:bronze.a'])
   })
 })

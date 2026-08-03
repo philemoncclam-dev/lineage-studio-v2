@@ -258,10 +258,17 @@
 }
 
 /* ===== Object cards ===== */
+/* The frame is an `outline`, not a `border`, and that is load-bearing.
+   `box-sizing: border-box` is global, so a 1px border makes the content box 2px
+   shorter than the height the layout computed (CARD_HEADER_HEIGHT + n *
+   ROW_HEIGHT) — and with `overflow: hidden` those 2px come off the LAST row:
+   its tint, its selection fill and the bottom edge of the red origin outline
+   were all clipped. An outline is drawn outside the box model, so the card
+   holds exactly the rows the layout sized it for. */
 .mv-card {
   position: absolute;
   background: #fff;
-  border: 1px solid rgb(28 35 51 / 0.28);
+  outline: 1px solid rgb(28 35 51 / 0.28);
   box-shadow: 0 1px 2px rgb(28 35 51 / 0.05);
   overflow: hidden;
   font-size: 12px;
@@ -269,11 +276,11 @@
 }
 
 .mv-card[data-traced] {
-  border-color: rgb(22 143 92 / 0.75);
+  outline-color: rgb(22 143 92 / 0.75);
 }
 
 .mv-card[data-selected] {
-  border-color: #1f6feb;
+  outline-color: #1f6feb;
   box-shadow: 0 0 0 1px #1f6feb;
 }
 
@@ -1148,11 +1155,14 @@
   outline: 2px solid #d92d20;
   outline-offset: -2px;
 }
-/* Rows are already `position: relative`; the card is `position: absolute` and
-   must stay that way, so only the row is lifted. Without it the next row's
-   background paints over the mark's lower edge. */
+/* Lifted above the following row, whose background otherwise paints over the
+   mark's lower edge. `position` is set here too: `.mv-row` is a static flex
+   child, and z-index on a static element does nothing — which is why this rule
+   was inert. The card is `position: absolute` and must stay that way, so only
+   the row is lifted. */
 .mv-row[data-trace-origin],
 .mv-row[data-connect-source] {
+  position: relative;
   z-index: 1;
 }
 /* The tint is for an origin that is NOT currently selected.

@@ -136,6 +136,19 @@ describe('traceFrom', () => {
     expect(out.has('junk.x')).toBe(false)
   })
 
+  it('walks one way only when a direction is given', () => {
+    const index = buildIndex(model())
+    // silver.id sits mid-chain: raw.id -> nb.raw.id -> silver.id -> gold.id.
+    const up = traceFrom(index, ['silver.id'], 'up')
+    expect(up.has('raw.id')).toBe(true)
+    expect(up.has('gold.id')).toBe(false)
+
+    const down = traceFrom(index, ['silver.id'], 'down')
+    expect(down.has('gold.id')).toBe(true)
+    expect(down.has('raw.id')).toBe(false)
+    expect(down.has('nb.raw.id')).toBe(false)
+  })
+
   it('returns nothing for no seeds, and ignores ids not in the model', () => {
     expect(traceFrom(buildIndex(model()), []).size).toBe(0)
     expect(traceFrom(buildIndex(model()), ['nope']).size).toBe(0)

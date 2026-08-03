@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ancestorsOf, buildIndex } from '../model/index'
-import { pruneModel, traceFrom } from '../model/trace'
+import { pruneModel, traceFrom, type TraceDirection } from '../model/trace'
 import { registerSearchHandler } from '../shell/searchBridge'
 import { registerRailAction } from '../shell/railActions'
 import ModelSearch from './ModelSearch'
@@ -215,6 +215,7 @@ export default function ModelViewer({
   const [trace, setTrace] = useState<{
     seeds: ReadonlySet<EntityId>
     reached: ReadonlySet<EntityId>
+    dir: TraceDirection
   } | null>(null)
 
   const index = useMemo(() => buildIndex(model), [model])
@@ -645,6 +646,28 @@ export default function ModelViewer({
   }
 
   /**
+   * Start, re-aim, or clear a trace.
+   *
+   * One entry point for the keyboard and the menu, so a trace started either way
+   * toggles the same: pressing again with the SAME seeds and the SAME direction
+   * clears, while different seeds or a different direction re-trace from there —
+   * which is how you walk a chain hop by hop, or turn a two-way trace into the
+   * upstream half without first clearing it.
+   */
+  const runTrace = (dir: TraceDirection, from?: Iterable<EntityId>) => {
+    const seeds = new Set(from ?? selection)
+    if (seeds.size === 0) {
+      setTrace(null)
+      return
+    }
+    setTrace((prev) =>
+      prev && prev.dir === dir && sameSet(prev.seeds, seeds)
+        ? null
+        : { seeds, dir, reached: traceFrom(index, seeds, dir) },
+    )
+  }
+
+  /**
    * Builds the menu for whatever was right-clicked. Item sets differ by kind
    * because the vocabulary genuinely differs — a layer holds objects, an object
    * holds attributes, and an attribute nests further attributes (becoming a
@@ -847,6 +870,26 @@ export default function ModelViewer({
       // the selection above — so there is nothing to pass it.
       { key: 'properties', label: 'Properties', separated: true, onSelect: () => setDock('properties') },
       { key: 'explain', label: 'Explain this / what breaks', onSelect: () => setDock('explain') },
+      // The only place the trace is discoverable — it was keyboard-only, which
+      // means it did not exist for anyone who had not read the shortcut list.
+      // Seeded from the clicked entity rather than the selection, matching every
+      // other item on this menu.
+      {
+        key: 'trace',
+        label: 'Trace lineage (T)',
+        separated: true,
+        onSelect: () => runTrace('both', [targetId]),
+      },
+      {
+        key: 'trace-up',
+        label: 'Trace upstream — where this comes from (⇧T)',
+        onSelect: () => runTrace('up', [targetId]),
+      },
+      {
+        key: 'trace-down',
+        label: 'Trace downstream — what depends on this (⌥T)',
+        onSelect: () => runTrace('down', [targetId]),
+      },
       { key: 'tags', label: 'Tags…', onSelect: () => setTagging([targetId]) },
       { key: 'rename', label: 'Rename', onSelect: () => setEditing(targetId) },
       {
@@ -997,15 +1040,14 @@ export default function ModelViewer({
       // Toggles, so the keystroke that narrows the canvas also restores it, but
       // re-pressing with a NEW selection retraces from there rather than
       // clearing — which is how you walk a chain hop by hop.
-      if (e.key.toLowerCase() === 't' && !e.shiftKey && !e.altKey) {
+      //
+      // Shift and Alt pick the half: ⇧T is upstream ("where did this come
+      // from"), ⌥T downstream ("what breaks if I drop it"). Both are also on the
+      // context menu, which is where anyone finds them — the modifiers are the
+      // shortcut for someone who already knows, not the way in.
+      if (e.key.toLowerCase() === 't') {
         e.preventDefault()
-        if (selection.size === 0) {
-          setTrace(null)
-          return
-        }
-        const seeds = new Set(selection)
-        const reached = traceFrom(index, seeds)
-        setTrace((prev) => (prev && sameSet(prev.seeds, seeds) ? null : { seeds, reached }))
+        runTrace(e.shiftKey ? 'up' : e.altKey ? 'down' : 'both')
         return
       }
       if (mod && e.key.toLowerCase() === 'c' && selection.size > 0) {
@@ -1471,7 +1513,15 @@ export default function ModelViewer({
             {trace && (
               <>
                 {' '}
-                · <strong>Tracing</strong>: {matched.size} shown ·{' '}
+                ·{' '}
+                <strong>
+                  {trace.dir === 'up'
+                    ? 'Tracing upstream'
+                    : trace.dir === 'down'
+                      ? 'Tracing downstream'
+                      : 'Tracing'}
+                </strong>
+                : {matched.size} shown ·{' '}
                 <span className="mv-hint">T or Esc to clear</span>
               </>
             )}

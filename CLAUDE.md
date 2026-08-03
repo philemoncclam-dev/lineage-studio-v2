@@ -19,9 +19,7 @@ are planned but out of scope for now.
 
 ## Layout
 
-- `frontend/` — React 19 + TypeScript + Vite. Renders the lineage graph.
-- `backend/` — Python + FastAPI. Lineage model, parser, and (Phase 2) the
-  Spark sandbox executor.
+- `backend/`
   - `app/models.py` — the generic node/edge lineage graph (shared across all
     ingest paths).
   - `app/parser.py` — Phase-1 static, heuristic extraction. Phase 2 swaps its
@@ -39,10 +37,7 @@ py -m venv .venv && .venv/Scripts/pip install -r requirements.txt
 cd backend && .venv/Scripts/python -m evals.run
 .venv/Scripts/python -m evals.run --model claude-haiku-4-5 --repeat 3
 
-# frontend
-cd frontend
-npm install
-npm run dev     # http://localhost:5173
+# frontend — standard Vite: npm install && npm run dev (http://localhost:5173)
 ```
 
 Note: Phase 2's PySpark needs Python 3.11/3.12 — the local `py` is 3.14, so the

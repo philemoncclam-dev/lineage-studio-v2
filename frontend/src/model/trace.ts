@@ -6,10 +6,14 @@
 // produces a match set, and the viewer hides what is not in it — so tracing
 // costs the render nothing new.
 //
-// Reachability is undirected on purpose. "Leads to that or goes through that"
-// is both halves of a lineage question: where a column came from AND what it
-// went on to feed. Walking only downstream would answer half of it and quietly
-// drop the upstream that explains the value.
+// Reachability defaults to undirected. "Leads to that or goes through that" is
+// both halves of a lineage question: where a column came from AND what it went
+// on to feed, and walking one way only would answer half of it.
+//
+// But the halves are also separate questions people actually ask — "where does
+// this number come from" is an audit, "what breaks if I drop this" is only ever
+// downstream — and answering both at once buries the one you asked in the one
+// you did not. So the direction is a parameter, with both as the default.
 
 import { ancestorsOf, type ModelIndex } from './index'
 import type { Attribute, EntityId, LineageModel } from './types'
@@ -32,7 +36,13 @@ import type { Attribute, EntityId, LineageModel } from './types'
  * every table it touched would come back with most of the model, which is the
  * one answer a trace must never give.
  */
-export function traceFrom(index: ModelIndex, seeds: Iterable<EntityId>): ReadonlySet<EntityId> {
+export type TraceDirection = 'both' | 'up' | 'down'
+
+export function traceFrom(
+  index: ModelIndex,
+  seeds: Iterable<EntityId>,
+  direction: TraceDirection = 'both',
+): ReadonlySet<EntityId> {
   const children = new Map<EntityId, EntityId[]>()
   for (const entry of index.entries.values()) {
     if (!entry.parentId) continue
@@ -54,18 +64,16 @@ export function traceFrom(index: ModelIndex, seeds: Iterable<EntityId>): Readonl
     for (const child of children.get(id) ?? []) stack.push(child)
   }
 
-  // 2 — follow every transition touching the frontier, either way.
+  // 2 — follow every transition touching the frontier, the requested way(s).
   while (frontier.length) {
     const id = frontier.pop()!
-    for (const next of index.outgoing.get(id) ?? [])
-      if (!reached.has(next)) {
-        reached.add(next)
-        frontier.push(next)
-      }
-    for (const next of index.incoming.get(id) ?? [])
-      if (!reached.has(next)) {
-        reached.add(next)
-        frontier.push(next)
+    const next: EntityId[] = []
+    if (direction !== 'up') next.push(...(index.outgoing.get(id) ?? []))
+    if (direction !== 'down') next.push(...(index.incoming.get(id) ?? []))
+    for (const to of next)
+      if (!reached.has(to)) {
+        reached.add(to)
+        frontier.push(to)
       }
   }
 

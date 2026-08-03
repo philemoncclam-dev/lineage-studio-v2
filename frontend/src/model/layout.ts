@@ -145,7 +145,105 @@ function totalDescendants(attrs: Attribute[]): number {
  *   its own affordance for expanding it again, so a layer can never be hidden
  *   somewhere the user can't find it.
  */
-export function layoutModel(model: LineageModel, collapsed: ReadonlySet<EntityId>): Layout {
+/**
+ * Slide cards down so a transition's two ends sit at the same height.
+ *
+ * Only ever run on a TRACED canvas, and that restriction is the whole design.
+ * A trace has already pruned the model to one chain, so "put the connected rows
+ * on the same line" has an unambiguous answer and there is nothing else on
+ * screen for the shifted cards to be measured against. In a full model the same
+ * pass would fight every other card for vertical space and reorder a layout the
+ * user has been reading — so it does not run there.
+ *
+ * Left to right, one pass, greedy: a card is offset by whatever puts its first
+ * incoming row level with the row it comes from, then pushed back down if that
+ * would overlap a card already placed in its own layer. Overlap wins over
+ * alignment, because two cards on top of each other is not a layout.
+ *
+ * The result is the reason to bother: on a medallion trace, landing → bronze →
+ * silver → gold becomes a straight horizontal run instead of a staircase whose
+ * every step crosses the column between.
+ */
+function alignTracedRows(
+  cards: LayoutCard[],
+  anchors: Map<EntityId, Anchor>,
+  model: LineageModel,
+): void {
+  const layerOrder = new Map(model.layers.map((l, i) => [l.id, i]))
+  const cardOf = new Map<EntityId, LayoutCard>()
+  for (const card of cards) {
+    cardOf.set(card.id, card)
+    for (const row of card.rows) cardOf.set(row.id, card)
+  }
+
+  const shift = (card: LayoutCard, dy: number) => {
+    if (dy <= 0) return
+    card.y += dy
+    for (const row of card.rows) row.y += dy
+    for (const id of [card.id, ...card.rows.map((r) => r.id)]) {
+      const a = anchors.get(id)
+      if (a) a.cy += dy
+    }
+  }
+  const cy = (id: EntityId) => anchors.get(id)?.cy
+
+  // Only ever DOWNWARDS, which is what makes this terminate. A card cannot rise
+  // above its column's top, so levelling a pair means lowering whichever end is
+  // higher — and since every step increases some card's y and nothing ever
+  // decreases one, the relaxation is monotone and cannot oscillate. The cap is
+  // belt and braces for a model whose transitions form a cycle.
+  const pairs = model.transitions
+    .map((t) => ({ from: cardOf.get(t.source), to: cardOf.get(t.target), source: t.source, target: t.target }))
+    .filter(
+      (p) =>
+        p.from &&
+        p.to &&
+        p.from !== p.to &&
+        (layerOrder.get(p.from.layerId) ?? 0) !== (layerOrder.get(p.to.layerId) ?? 0),
+    )
+
+  const top = CANVAS_PADDING + LAYER_HEADER_HEIGHT + CARD_GAP
+  for (let pass = 0; pass < 12; pass += 1) {
+    let moved = false
+    for (const p of pairs) {
+      const a = cy(p.source)
+      const b = cy(p.target)
+      if (a == null || b == null) continue
+      const delta = a - b
+      if (!delta) continue
+      // Lower the higher end onto the lower one.
+      if (delta > 0) shift(p.to!, delta)
+      else shift(p.from!, -delta)
+      moved = true
+    }
+    // Then take the overlaps out, also downwards, preserving each column's
+    // existing order. A straight line is worth having; two cards in the same
+    // place is not a layout at all, so this always wins.
+    const byLayer = new Map<EntityId, LayoutCard[]>()
+    for (const card of cards) byLayer.set(card.layerId, [...(byLayer.get(card.layerId) ?? []), card])
+    for (const column of byLayer.values()) {
+      let floor = top
+      for (const card of [...column].sort((x, y) => x.y - y.y)) {
+        if (card.y < floor) {
+          shift(card, floor - card.y)
+          moved = true
+        }
+        floor = card.y + card.height + CARD_GAP
+      }
+    }
+    if (!moved) break
+  }
+}
+
+export function layoutModel(
+  model: LineageModel,
+  collapsed: ReadonlySet<EntityId>,
+  /**
+   * Align connected rows across layers. The viewer passes the trace's own flag:
+   * see `alignTracedRows` for why this is not something to do to a full model.
+   */
+  aligned = false,
+): Layout {
   const layers: LayoutLayer[] = []
   const cards: LayoutCard[] = []
   const anchors = new Map<EntityId, Anchor>()
@@ -238,6 +336,13 @@ export function layoutModel(model: LineageModel, collapsed: ReadonlySet<EntityId
 
     maxBottom = Math.max(maxBottom, y)
     x += width + LAYER_GAP
+  }
+
+  if (aligned) {
+    alignTracedRows(cards, anchors, model)
+    // Alignment only ever moves a card DOWN (the floor forbids anything else),
+    // so the world has to grow to match or the last card scrolls off.
+    for (const card of cards) maxBottom = Math.max(maxBottom, card.y + card.height + CARD_GAP)
   }
 
   // Contiguous band segments: each boundary sits halfway between two columns.

@@ -265,7 +265,13 @@ export default function ModelViewer({
     () => (trace ? pruneModel(model, matched) : model),
     [trace, model, matched],
   )
-  const layout = useMemo(() => layoutModel(canvasModel, collapsed), [canvasModel, collapsed])
+  // Tracing also STRAIGHTENS: with the unrelated model gone there is one chain
+  // left, and its rows are laid level across the layers so it reads as a line
+  // rather than a staircase crossing every column on the way.
+  const layout = useMemo(
+    () => layoutModel(canvasModel, collapsed, !!trace),
+    [canvasModel, collapsed, trace],
+  )
 
   /**
    * Every selectable entity in READING order — layer, then each of its cards,

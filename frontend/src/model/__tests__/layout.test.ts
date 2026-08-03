@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { CARD_WIDTH, layoutModel } from '../layout'
 import { sampleModel } from '../sample'
+import { emptyModel } from '../store'
+import type { LineageModel } from '../types'
 
 describe('layoutModel', () => {
   it('centres each card in its column, leaving an equal gutter either side', () => {
@@ -82,5 +84,105 @@ describe('layoutModel', () => {
     expect(collapsedLayer.width).toBeLessThan(CARD_WIDTH)
     expect(layout.layers).toHaveLength(model.layers.length)
     expect(layout.cards.some((c) => c.layerId === target)).toBe(false)
+  })
+})
+
+describe('aligning a traced chain', () => {
+  /**
+   * Three layers, medallion-shaped. Bronze holds a decoy card ABOVE the traced
+   * one, so the chain's row starts lower in bronze than in landing — the
+   * staircase this pass exists to flatten.
+   */
+  const chain = (): LineageModel => {
+    const col = (name: string) => ({ id: `c:${name}`, name, children: [] })
+    const obj = (id: string, rows: string[]) => ({
+      id,
+      name: id,
+      children: rows.map((r) => ({ ...col(r), id: `${id}.${r}` })),
+    })
+    return {
+      ...emptyModel('m'),
+      layers: [
+        { id: 'L1', name: 'Landing', objects: [obj('raw', ['order_id'])] },
+        { id: 'L2', name: 'Bronze', objects: [obj('decoy', ['a', 'b', 'c']), obj('bronze', ['order_id'])] },
+        { id: 'L3', name: 'Silver', objects: [obj('silver', ['order_id'])] },
+      ],
+      transitions: [
+        { id: 't1', source: 'raw.order_id', target: 'bronze.order_id' },
+        { id: 't2', source: 'bronze.order_id', target: 'silver.order_id' },
+      ],
+    }
+  }
+
+  const cyOf = (layout: ReturnType<typeof layoutModel>, id: string) => layout.anchors.get(id)!.cy
+
+  it('leaves an untraced layout exactly as it was', () => {
+    // The pass must not touch a model the user is working in — it only has an
+    // unambiguous answer once a trace has pruned everything else away.
+    const model = chain()
+    const before = layoutModel(model, new Set())
+    const after = layoutModel(model, new Set(), false)
+    expect(after.cards.map((c) => c.y)).toEqual(before.cards.map((c) => c.y))
+  })
+
+  it('puts every row of the chain on one line', () => {
+    const layout = layoutModel(chain(), new Set(), true)
+    const ys = ['raw.order_id', 'bronze.order_id', 'silver.order_id'].map((id) => cyOf(layout, id))
+    expect(new Set(ys).size).toBe(1)
+  })
+
+  it('was a staircase before, which is the point', () => {
+    const plain = layoutModel(chain(), new Set())
+    expect(cyOf(plain, 'raw.order_id')).not.toBe(cyOf(plain, 'bronze.order_id'))
+  })
+
+  it('never stacks two cards of one layer on top of each other', () => {
+    // Alignment yields to overlap: two cards in the same place is not a layout,
+    // however straight it would have made the line.
+    const layout = layoutModel(chain(), new Set(), true)
+    const bronze = layout.cards.filter((c) => c.layerId === 'L2').sort((a, b) => a.y - b.y)
+    expect(bronze[0].y + bronze[0].height).toBeLessThanOrEqual(bronze[1].y)
+  })
+
+  it('grows the world to fit whatever it pushed down', () => {
+    const layout = layoutModel(chain(), new Set(), true)
+    const lowest = Math.max(...layout.cards.map((c) => c.y + c.height))
+    expect(layout.height).toBeGreaterThan(lowest)
+  })
+
+  it('lowers the upstream when the downstream row sits further down its card', () => {
+    // The ordinary case: bronze carries two traced columns and the one the
+    // chain follows is the second. Bronze cannot rise above its column top, so
+    // landing descends to meet it — the only direction this pass ever moves.
+    const model: LineageModel = {
+      ...emptyModel('m'),
+      layers: [
+        {
+          id: 'L1',
+          name: 'Landing',
+          objects: [{ id: 'raw', name: 'raw', children: [{ id: 'raw.order_id', name: 'order_id', children: [] }] }],
+        },
+        {
+          id: 'L2',
+          name: 'Bronze',
+          objects: [
+            {
+              id: 'bronze',
+              name: 'bronze',
+              children: [
+                { id: 'bronze.customer_id', name: 'customer_id', children: [] },
+                { id: 'bronze.order_id', name: 'order_id', children: [] },
+              ],
+            },
+          ],
+        },
+      ],
+      transitions: [{ id: 't1', source: 'raw.order_id', target: 'bronze.order_id' }],
+    }
+    const layout = layoutModel(model, new Set(), true)
+    expect(layout.anchors.get('raw.order_id')!.cy).toBe(layout.anchors.get('bronze.order_id')!.cy)
+    expect(layout.cards.find((c) => c.id === 'raw')!.y).toBeGreaterThan(
+      layout.cards.find((c) => c.id === 'bronze')!.y,
+    )
   })
 })

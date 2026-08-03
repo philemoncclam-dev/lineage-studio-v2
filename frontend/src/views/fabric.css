@@ -1831,10 +1831,14 @@
    filling everything left. The canvas measures itself against its own box, so
    the column that holds it must be a real flex child with a min-height of 0 —
    without that it sizes to its content and the canvas gets no height at all. */
+/* `flex: 1`, NOT `height: 100%` — the same rule `.fx-page` follows. The shell
+   drops every route into `.shell-canvas`, a column flex container with no
+   height of its own, so a percentage height has nothing to resolve against and
+   the whole page collapses to zero: it renders, and you see nothing. */
 .fx-lineage-page {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
   min-height: 0;
 }
 .fx-lineage-bar {
@@ -1889,10 +1893,19 @@
 .fx-lineage-error {
   color: var(--color-danger, #d92d20);
 }
+/* A flex COLUMN, not a plain block. `.mv-host` sizes itself with `flex: 1;
+   min-height: 0` (see the note on it in modeling.css), so a block parent gives
+   it nothing to stretch against and the canvas renders at zero height —
+   everything inside it is absolutely positioned, so there is no content to fall
+   back to and the page reads as empty. Same rules as `.sh-canvas`, which is the
+   other place this viewer is mounted. */
 .fx-lineage-canvas {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
 }
 .fx-lineage-empty {
   display: flex;
@@ -1900,7 +1913,8 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  height: 100%;
+  /* `flex: 1` for the same reason as its siblings — this is a flex child now. */
+  flex: 1;
   color: var(--color-text-tertiary);
   font-size: var(--text-sm, 13px);
 }

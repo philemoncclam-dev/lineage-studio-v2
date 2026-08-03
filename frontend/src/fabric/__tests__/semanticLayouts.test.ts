@@ -89,11 +89,8 @@ describe('layoutStages', () => {
 
   it('keeps a table in its owner band however late it is written', () => {
     const { nodes, edges } = medallion()
-    // A late step that re-reads gold and re-writes bronze pushes the bronze
-    // table DOWN — depth is the y axis now and its depth genuinely changed.
-    // What must not move is the band: ownership is not a function of the run,
-    // and a table hopping between columns is the thing this view exists to
-    // avoid.
+    // Ownership is not a function of the run, and a table hopping between
+    // columns is the thing this view exists to avoid.
     const before = layoutStages(nodes, edges).pos.get('t:bronze.orders')!
     nodes.push(step('late', 'engineering'))
     edges.push(
@@ -103,13 +100,16 @@ describe('layoutStages', () => {
     expect(layoutStages(nodes, edges).pos.get('t:bronze.orders')!.x).toBe(before.x)
   })
 
-  it('descends on every hop, so the run reads top to bottom', () => {
+  it('starts every band at the top, with no depth gaps', () => {
     const { nodes, edges } = medallion()
     const { pos } = layoutStages(nodes, edges)
-    // Both bands share one vertical scale: every edge lands strictly lower
-    // than it left. Stacking each band from the top independently is what drew
-    // the run as a fan of crossing diagonals.
-    for (const e of edges) expect(pos.get(e.to)!.y).toBeGreaterThan(pos.get(e.from)!.y)
+    // The layers of the ported model, drawn as columns: each band packs from
+    // y=0 down. Aligning them on dependency depth instead left the deepest
+    // lakehouse alone at the bottom and the short steps band adrift in space.
+    for (const c of [0, 1])
+      expect(
+        Math.min(...nodes.map((n) => pos.get(n.id)!).filter((p) => p.x === c * (208 + 150)).map((p) => p.y)),
+      ).toBe(0)
   })
 
   it('says so when a band stands in for an unknown workspace', () => {
@@ -122,7 +122,7 @@ describe('layoutStages', () => {
     ])
   })
 
-  it('heads each pipeline on its own', () => {
+  it('draws a pipeline as a plain card, with no heading above it', () => {
     const nodes: FlowNode[] = [
       table('bronze.a', 'lh_bronze'),
       table('bronze.b', 'lh_bronze'),
@@ -132,9 +132,11 @@ describe('layoutStages', () => {
       { from: 's:pl', to: 't:bronze.a', tone: 'write' as const, kind: 'table' as const },
       { from: 's:pl', to: 't:bronze.b', tone: 'write' as const, kind: 'table' as const },
     ]
-    const { groups } = layoutStages(nodes, edges)
-    // Only pipelines get a heading. A lakehouse does not need one — it is the
-    // card, and a heading above it would name it twice.
-    expect(groups.map((g) => [g.kind, g.label])).toEqual([['pipeline', 'pl']])
+    // The pipeline card already carries its name, and no other view repeats it
+    // above the card — this one used to, as a dotted label, and it read as a
+    // second unexplained object.
+    const layout = layoutStages(nodes, edges)
+    expect('groups' in layout).toBe(false)
+    expect(layout.pos.get('s:pl')).toEqual({ x: 0, y: 0 })
   })
 })

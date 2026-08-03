@@ -1699,36 +1699,6 @@
   line-height: 1.35;
 }
 
-/* Group heading above a run of cards in Zig-Zag — the lakehouse holding those
-   tables, or the pipeline running those steps. Drawn once per run rather than
-   badged on every card, since the band is already ordered by it. */
-.sbx-flow-ws {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgb(28 35 51 / 0.62);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sbx-flow-ws::before {
-  content: '';
-  flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgb(28 35 51 / 0.42);
-}
-.sbx-flow-ws[data-kind='pipeline'] {
-  text-transform: none;
-  letter-spacing: 0;
-}
-
 /* Diff sits beside the view tabs and reads as one of them, set apart by a
    divider — it changes how the canvas READS rather than how it is arranged. */
 .sbx-diff {

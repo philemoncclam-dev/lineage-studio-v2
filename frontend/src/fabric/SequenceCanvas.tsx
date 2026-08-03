@@ -240,18 +240,6 @@ const uniq = (xs: (string | undefined)[]): string[] => [
 interface Layout {
   pos: Map<string, { x: number; y: number }>
   bands: { key: number; label: string; left: number; width: number; centerX: number }[]
-  /**
-   * A heading above a run of cards that belong to one thing — the workspace of
-   * the tables below it (sequence view), or the lakehouse holding them and the
-   * pipeline running them (the semantic views).
-   *
-   * A heading rather than a box drawn behind the cards, which is what this was:
-   * the box added a second, grey, rounded rectangle behind every card and the
-   * canvas read as two nested containers everywhere without saying anything the
-   * heading does not. The name is drawn once per run rather than badged on
-   * every card, because the column is already ordered by it.
-   */
-  groups: { key: string; label: string; kind?: 'lakehouse' | 'pipeline'; x: number; y: number }[]
   width: number
   height: number
 }
@@ -271,71 +259,6 @@ function band(key: number, label: string, col: number, lastCol: number, gap = GX
   const right = col * (NW + gap) + NW + (col === lastCol ? 0 : gap / 2)
   return { key, label, left, width: right - left, centerX: col * (NW + gap) + NW / 2 }
 }
-
-/**
- * The container a card belongs to: the lakehouse holding a table, or the
- * pipeline a step IS. A card with no container sits loose in the band.
- *
- * A pipeline is its own container of one rather than a plain card because the
- * boundary is the point — a pipeline is a unit of orchestration, and the reader
- * needs to see where one ends and the next notebook begins.
- */
-function containerOf(n: FlowNode): { key: string; label: string; kind: 'lakehouse' | 'pipeline' } | null {
-  // No lakehouse heading any more: the lakehouse IS the card, holding its
-  // tables as rows, which is what the ported model has. A heading above a run
-  // of table cards was the same information drawn as a different shape.
-  if (n.kind === 'pipeline') return { key: `pl:${n.id}`, label: n.label, kind: 'pipeline' }
-  return null
-}
-
-/** Extra vertical space at a group boundary, on top of the usual gap. */
-const BOX_GAP = 16
-
-/**
- * Stack one column top-down, keeping cards of the same container together and
- * heading each run with its name.
- *
- * Contiguity is by container, not by sort order: `stableByContainer` runs first
- * so a lakehouse's tables are adjacent even when they were first touched pages
- * apart, which is what lets one heading cover them.
- */
-function stackGrouped(column: FlowNode[], x: number, y0: number, pos: Layout['pos'], out: Layout['groups']): number {
-  let y = y0
-  let prev: string | null = null
-  for (const n of column) {
-    const box = containerOf(n)
-    const key = box?.key ?? null
-    if (key !== prev) {
-      if (y > y0) y += BOX_GAP
-      if (box) {
-        out.push({ key: `${box.key}@${x}@${y}`, label: box.label, kind: box.kind, x, y })
-        y += GROUP_H
-      }
-      prev = key
-    }
-    pos.set(n.id, { x, y })
-    y += nodeHeight(n) + GY
-  }
-  return Math.max(0, y - GY)
-}
-
-/** Group a column's cards by container, keeping first-seen order of both. */
-function stableByContainer(column: FlowNode[]): FlowNode[] {
-  const order: (string | null)[] = []
-  const bins = new Map<string | null, FlowNode[]>()
-  for (const n of column) {
-    const key = containerOf(n)?.key ?? null
-    if (!bins.has(key)) {
-      bins.set(key, [])
-      order.push(key)
-    }
-    bins.get(key)!.push(n)
-  }
-  return order.flatMap((k) => bins.get(k)!)
-}
-
-/** Height reserved for a group heading above its run of cards. */
-const GROUP_H = 18
 
 /**
  * Two columns: steps on the left in run order, tables on the right in
@@ -359,7 +282,6 @@ function layoutSequence(nodes: FlowNode[]): Layout {
   return {
     pos,
     bands: [band(0, 'Notebooks & pipelines', 0, 1), band(1, 'Tables', 1, 1)],
-    groups: [],
     width: 2 * (NW + GX) - GX,
     height: Math.max(1, stepH, tableH),
   }
@@ -462,64 +384,44 @@ export function stageRank(name: string): number {
 }
 
 /**
- * Zig-Zag: owner across, depth DOWN.
+ * Zig-Zag: owner across, cards stacked DOWN from the top of each band.
  *
  * The x axis is who owns the card — the workspace, or the lakehouse standing in
  * where none resolved — with the bands that RUN things first, so the steps are
  * on the left and the tables they touch on the right.
  *
- * The y axis is dependency depth, and it is what earns the name. Both bands are
- * laid out against the SAME vertical scale, so a step and the table it reads are
- * one lane apart and every hop is a step sideways and a step down: right, down,
- * back left, down. Stacking each band independently from the top — which is what
- * this did — put step five beside the first lakehouse and drew the run as a
- * fan of long diagonals crossing each other. Two columns with lines between them
- * is not a zig-zag.
+ * The y axis is just order within the band: medallion stage first (landing,
+ * bronze, silver, gold), then first touch. Every band starts at the top, which
+ * is exactly how the ported model draws its layers — pressing Create model
+ * gives back the picture on screen, which is the whole point of this view.
  *
- * Medallion stage survives as the tie-break INSIDE a lane: two tables at the
- * same depth sort landing before bronze before silver. It cannot be the primary
- * sort any more without breaking the vertical agreement that makes the hops
- * read, and depth already puts the stages in order in the normal case, because
- * that is what a medallion run does.
- *
- * The same arrangement `sequenceToModel`'s `stages` layout exports, so pressing
- * Create model gives back the picture on screen.
+ * It used to align both bands on a shared dependency-depth scale so each hop
+ * stepped down a lane. That reads well on a toy run and badly on a real one:
+ * the deepest lakehouse landed alone at the bottom of a very tall canvas, and a
+ * short steps band next to it looked adrift in the middle of empty space.
  */
 export function layoutStages(nodes: FlowNode[], edges: FlowEdge[]): Layout {
-  const depth = depthsOf(nodes, edges)
   const owner = ownerOf(nodes, edges)
   const spaces = stepsFirst(nodes, ownerOrder(nodes, edges, owner.key), owner.key)
 
-  // Medallion order within a lane. `sort` is stable, so a lakehouse naming no
+  // Medallion order within a band. `sort` is stable, so a lakehouse naming no
   // stage — and every step, which has none — keeps its first-touch place.
   const rank = (n: FlowNode) => (n.kind === 'table' && stageRank(n.lakehouse || '') + 1) || Infinity
   const byStage = [...nodes].sort((a, b) => rank(a) - rank(b))
 
   const pos: Layout['pos'] = new Map()
-  const groups: Layout['groups'] = []
-  const maxDepth = Math.max(0, ...depth.values())
-  let y = 0
-  for (let d = 0; d <= maxDepth; d++) {
-    let lane = y
-    spaces.forEach((ws, c) => {
-      const here = stableByContainer(
-        byStage.filter((n) => owner.key(n) === ws && (depth.get(n.id) ?? 0) === d),
-      )
-      if (!here.length) return
-      lane = Math.max(lane, stackGrouped(here, c * (NW + ZIG_GX), y, pos, groups))
-    })
-    // An empty lane adds nothing: a depth no card lands on is not a gap in the
-    // run, it is an artefact of how the depths were numbered.
-    y = lane === y ? y : lane + GY * 2
-  }
+  let height = 1
+  spaces.forEach((ws, c) => {
+    const here = byStage.filter((n) => owner.key(n) === ws)
+    height = Math.max(height, stackColumn(here, c * (NW + ZIG_GX), pos))
+  })
 
   const lastCol = spaces.length - 1
   return {
     pos,
-    groups,
     bands: spaces.map((ws, c) => band(c, owner.label(ws), c, lastCol, ZIG_GX)),
     width: spaces.length * (NW + ZIG_GX) - ZIG_GX,
-    height: Math.max(1, y - GY * 2),
+    height,
   }
 }
 
@@ -621,7 +523,7 @@ function layoutFlow(nodes: FlowNode[], edges: FlowEdge[]): Layout {
     return band(c, label, c, maxCol)
   })
 
-  return { pos, bands, groups: [], width: (maxCol + 1) * (NW + GX) - GX, height }
+  return { pos, bands, width: (maxCol + 1) * (NW + GX) - GX, height }
 }
 
 /** The expansion key for one collapsible run of columns on a card. */
@@ -701,18 +603,9 @@ function FlowCanvas({
       return next
     })
 
-  // Zig-Zag opens with the columns shut: its lines are long because its cards
-  // are tall, and the schema is one click away on any card that needs it.
-  const caps = useMemo(
-    () =>
-      view === 'stages'
-        ? { table: 0, nested: 0 }
-        : { table: MAX_TABLE_ROWS, nested: MAX_NESTED_COLS },
-    [view],
-  )
   const nodes = useMemo(
-    () => rawNodes.map((n) => (n.allRows ? { ...n, rows: truncateRows(n, expanded, caps) } : n)),
-    [rawNodes, expanded, caps],
+    () => rawNodes.map((n) => (n.allRows ? { ...n, rows: truncateRows(n, expanded) } : n)),
+    [rawNodes, expanded],
   )
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
 
@@ -738,7 +631,7 @@ function FlowCanvas({
       ...columns,
     ]
   }, [edges, rawNodes, view, byId])
-  const { pos, bands, groups, width, height } = useMemo(
+  const { pos, bands, width, height } = useMemo(
     () =>
       view === 'stages'
         ? layoutStages(nodes, edges)
@@ -763,21 +656,6 @@ function FlowCanvas({
         </div>
 
         <div className="sbx-flow-canvas" style={{ width: w, height: h }}>
-          {/* One heading per run of cards — the workspace of the tables below
-              it, or the lakehouse holding them and the pipeline running them.
-              The band says which workspace; this says which thing inside it. */}
-          {groups.map((g) => (
-            <div
-              key={g.key}
-              className="sbx-flow-ws"
-              data-kind={g.kind}
-
-              style={{ left: g.x + PAD, top: g.y + PAD, width: NW, height: GROUP_H }}
-              title={g.label}
-            >
-              {g.label}
-            </div>
-          ))}
           <svg className="sbx-flow-edges" width={w} height={h}>
             <defs>
               <marker id="sbx-arrow" markerWidth="8" markerHeight="8" refX="6.5" refY="3.5" orient="auto">
